@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Harmony — CRM для бухгалтера ФОП</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="matrix.css">
+<link rel="stylesheet" href="client-card-ui.css">
+</head>
+<body>
+  <div id="bootOverlay" class="boot-overlay">
+    <div class="boot-spinner"></div>
+    <p>Завантаження даних…</p>
+  </div>
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">H</div>
+      <div class="brand-text">Harmony<small>CRM для бухгалтера ФОП</small></div>
+    </div>
+    <nav id="nav">
+      <button data-view="overview" class="active">Огляд</button>
+      <button data-view="dashboard">Картки клієнтів</button>
+      <button data-view="payments">Оплати</button>
+      <button data-view="taxes">Податки</button>
+      <button data-view="incomes">Доходи</button>
+      <button data-view="reports">Звітність</button>
+      <button data-view="inactive">Неактивні</button>
+      <button data-view="settings">Налаштування</button>
+    </nav>
+    <div class="side-note">
+      <div id="syncStatus" class="sync-status"></div>
+      <button class="link" id="exportBtn">Експортувати резервну копію</button>
+    </div>
+  </aside>
+
+  <main>
+    <header>
+      <div>
+        <p id="crumb">Огляд</p>
+        <h1 id="title">Огляд</h1>
+      </div>
+      <div class="header-actions">
+        <button class="primary" id="quickAdd" style="display:none">+ Додати ФОП</button>
+      </div>
+    </header>
+    <div id="content"></div>
+  </main>
+
+  <dialog id="modal">
+    <form id="modalForm">
+      <div class="modal-head">
+        <h2 id="modalTitle"></h2>
+        <button type="button" class="close" onclick="this.closest('dialog').close()">×</button>
+      </div>
+      <div class="form-grid" id="modalBody"></div>
+      <div id="modalDanger" class="modal-danger"></div>
+      <footer>
+        <button type="button" class="secondary" onclick="this.closest('dialog').close()">Скасувати</button>
+        <button type="submit" class="primary">Зберегти</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="./supabase-client.js"></script>
+  <script src="./supabase-persistence.js"></script>
+  <script src="./app.js"></script>
+  <script src="./client-card-ui.js"></script>
+</body>
+</html>

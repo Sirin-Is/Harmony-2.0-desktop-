@@ -1,0 +1,5 @@
+# Додати ці рядки у свій існуючий .gitignore (якщо його ще нема — створити новий):
+/src-tauri/target/
+/src-tauri/Cargo.lock
+node_modules/
+dist/
