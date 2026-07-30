@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Дозволи головного вікна Harmony.","local":true,"windows":["main"],"permissions":["core:default","core:webview:allow-internal-toggle-devtools","sql:default","sql:allow-execute","sql:allow-select"]}}

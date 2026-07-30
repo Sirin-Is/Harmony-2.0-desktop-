@@ -1,0 +1,22 @@
+# Dependencies and generated frontend files
+node_modules/
+dist/
+.npm-cache/
+
+# Rust/Tauri build artifacts
+src-tauri/target/
+
+# Local application data and environment-specific secrets
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!*.example
+tauri-updater.key
+tauri-updater.key.pub
+
+# Local historical notes and inactive legacy sources (not application code)
+Неактив-*.txt
+Примітка про зміни.txt
+gitignore-additions.txt

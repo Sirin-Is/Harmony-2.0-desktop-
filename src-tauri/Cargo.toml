@@ -1,0 +1,19 @@
+[package]
+name = "harmony"
+version = "1.5.0"
+description = "Harmony — CRM для бухгалтера ФОП"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Credentials"] }
+
+[[bin]]
+name = "harmony"
+path = "src/main.rs"
