@@ -1,8 +1,8 @@
 // report-model.ts
 // Business logic for "Звітність". Поведінка ідентична report-model.js.
 
-import { DEFAULT_WORKING_YEAR, daysUntil } from './utils';
-import { taxPeriodsFor, type Period, type TabGroup } from './tax-model';
+import { DEFAULT_WORKING_YEAR, daysUntil } from './utils.ts';
+import { taxPeriodsFor, type Period, type TabGroup } from './tax-model.ts';
 import type { Database, ReportRecord } from './types';
 
 export const REPORT_GROUPS: TabGroup[] = [

@@ -2,7 +2,7 @@
 // Business logic for the "Податки" module. Pure functions only, operating
 // on a passed-in db. Поведінка ідентична tax-model.js.
 
-import { DEFAULT_WORKING_YEAR, MONTH_NAMES_UA, monthPeriodKey, daysUntil, daysBetween } from './utils';
+import { DEFAULT_WORKING_YEAR, MONTH_NAMES_UA, monthPeriodKey, daysUntil, daysBetween } from './utils.ts';
 import type { Database, TaxRecord } from './types';
 
 export interface TaxType { key: string; label: string }

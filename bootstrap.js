@@ -15,7 +15,7 @@ import {
   deleteCustomColumn, getCustomColumns,
   copyTaxPeriodForward, getVisibleClients,
 } from './state.js';
-import { TAX_TYPES, previousPeriodKey, taxPeriodsFor } from './tax-model';
+import { TAX_TYPES, previousPeriodKey, taxPeriodsFor } from './tax-model.ts';
 import { setupTopScrollbars, bindTopScrollbarResize } from './render/layout.js';
 import { renderOverview } from './render/overview.js';
 import { renderDashboard } from './render/dashboard.js';
@@ -33,6 +33,8 @@ import { showToast } from './toast.js';
 import { openAppDialog } from './app-dialog.js';
 import { signIn, signOut, signedInEmail } from './auth/session';
 import { requestSync } from './storage.js';
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 
 const TITLES = {
   overview: ['Огляд', 'Зведення зауважень по розділах'],
@@ -325,6 +327,27 @@ function wireGlobalControls() {
   bindTopScrollbarResize();
 }
 
+/** Check installed desktop builds only; Vite in a browser never attempts an update. */
+async function checkForUpdate() {
+  if (!window.__TAURI_INTERNALS__) return;
+  try {
+    const update = await check();
+    if (!update) return;
+    const result = await openAppDialog({
+      title: `Доступне оновлення ${update.version}`,
+      message: update.body || 'Доступна нова версія Harmony. Програма завантажить і встановить її, після чого перезапуститься.',
+      confirmText: 'Оновити зараз',
+    });
+    if (!result) return;
+    showToast('Завантаження оновлення…', 'info', 0);
+    await update.downloadAndInstall();
+    await relaunch();
+  } catch (error) {
+    // Updates are optional: an unavailable release must never block accounting work.
+    console.info('Перевірка оновлень недоступна:', error);
+  }
+}
+
 async function boot() {
   showBootOverlay(true);
   try {
@@ -333,6 +356,7 @@ async function boot() {
     const email = await signedInEmail();
     if (email) $('#authBtn').textContent = `Вийти (${email})`;
     setView('overview');
+    void checkForUpdate();
   } catch (error) {
     // Захист від "тихого зависання": яка б помилка не сталась при старті,
     // overlay має зникнути, а причина — бути видимою (консоль + toast),

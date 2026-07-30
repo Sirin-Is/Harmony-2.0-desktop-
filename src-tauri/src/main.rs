@@ -68,6 +68,7 @@ fn clear_auth_session() -> Result<(), String> { credential_store::clear() }
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_sql::Builder::default().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![read_auth_session, write_auth_session, clear_auth_session])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

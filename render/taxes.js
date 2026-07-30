@@ -5,7 +5,7 @@
 
 import { escapeHtml } from '../utils';
 import { getTaxField, getClientsByTaxTab, getEffectiveTaxDeadline, getSettings } from '../state.js';
-import { TAX_TYPES, TAX_GROUPS, taxPeriodsFor, exemptionOptions, statusPillHtml, daysUntilLabel, previousPeriodKey } from '../tax-model';
+import { TAX_TYPES, TAX_GROUPS, taxPeriodsFor, exemptionOptions, statusPillHtml, daysUntilLabel, previousPeriodKey } from '../tax-model.ts';
 import { table, empty } from './layout.js';
 import { uiState } from '../ui-state.js';
 

@@ -12,8 +12,8 @@
 
 import * as storage from './storage.js';
 import * as clientModel from './client-model';
-import { getTaxRecord, effectiveDeadline as effectiveTaxDeadline, getDefaultDeadline as getDefaultTaxDeadline } from './tax-model';
-import { getReportRecord, effectiveReportDeadline } from './report-model';
+import { getTaxRecord, effectiveDeadline as effectiveTaxDeadline, getDefaultDeadline as getDefaultTaxDeadline } from './tax-model.ts';
+import { getReportRecord, effectiveReportDeadline } from './report-model.ts';
 import { toNumber, generateId } from './utils';
 
 export let db = null;

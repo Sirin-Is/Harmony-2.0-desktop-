@@ -1,6 +1,6 @@
 {
   "name": "harmony",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Harmony — CRM для бухгалтера ФОП",
   "private": true,
   "author": "",
@@ -14,7 +14,9 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-process": "2.0.0",
     "@tauri-apps/plugin-sql": "^2.0.0",
+    "@tauri-apps/plugin-updater": "2.10.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

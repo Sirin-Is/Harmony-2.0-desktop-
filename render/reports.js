@@ -5,7 +5,7 @@
 
 import { escapeHtml } from '../utils';
 import { getReportField, getClientsByTaxTab, getEffectiveReportDeadline, getSettings } from '../state.js';
-import { REPORT_GROUPS, reportPeriodsFor, reportStatusPillHtml, reportDaysUntilLabel } from '../report-model';
+import { REPORT_GROUPS, reportPeriodsFor, reportStatusPillHtml, reportDaysUntilLabel } from '../report-model.ts';
 import { table, empty } from './layout.js';
 import { uiState } from '../ui-state.js';
 

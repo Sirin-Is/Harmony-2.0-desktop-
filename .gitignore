@@ -24,7 +24,6 @@ gitignore-additions.txt
 # Legacy monolithic sources from the repository's first upload
 /Cargo.lock
 /app.js
-/client-model.js
 /dashboard.js
 /inactive.js
 /layout.js
@@ -33,4 +32,3 @@ gitignore-additions.txt
 /supabase-persistence.js
 /tax-model.js
 /taxes.js
-/utils.js
