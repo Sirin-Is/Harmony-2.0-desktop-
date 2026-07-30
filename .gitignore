@@ -20,3 +20,17 @@ tauri-updater.key.pub
 Неактив-*.txt
 Примітка про зміни.txt
 gitignore-additions.txt
+
+# Legacy monolithic sources from the repository's first upload
+/Cargo.lock
+/app.js
+/client-model.js
+/dashboard.js
+/inactive.js
+/layout.js
+/payments.js
+/supabase-client.js
+/supabase-persistence.js
+/tax-model.js
+/taxes.js
+/utils.js
