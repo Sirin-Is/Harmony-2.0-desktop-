@@ -6,9 +6,12 @@ import { join } from 'node:path';
 // Documents. Keep Cargo artifacts in a user-local cache instead. The value
 // may be overridden for CI or a managed corporate location.
 const windowsLocalAppData = process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local');
-const defaultTarget = process.platform === 'win32'
-  ? join(windowsLocalAppData, 'Harmony', 'cargo-target')
-  : join(homedir(), '.cache', 'harmony', 'cargo-target');
+const defaultTarget = process.env.GITHUB_ACTIONS === 'true'
+  // tauri-action publishes from this conventional path after a CI build.
+  ? join(process.cwd(), 'src-tauri', 'target')
+  : (process.platform === 'win32'
+    ? join(windowsLocalAppData, 'Harmony', 'cargo-target')
+    : join(homedir(), '.cache', 'harmony', 'cargo-target'));
 const cargoTarget = process.env.HARMONY_CARGO_TARGET_DIR || defaultTarget;
 const executable = join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'tauri.cmd' : 'tauri');
 const tauriArgs = process.argv.slice(2);
