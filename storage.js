@@ -61,7 +61,10 @@ export async function loadDatabase() {
   try {
     if (await repository.isEmpty()) {
       const legacy = readLegacyState();
-      if (legacy && typeof legacy === 'object') await repository.save(legacy);
+      if (legacy && typeof legacy === 'object') {
+        await repository.save(legacy);
+        try { window.localStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* browser storage is best-effort */ }
+      }
     }
     const db = await repository.load();
     setLocalStatus('saved');

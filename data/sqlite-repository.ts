@@ -127,7 +127,10 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
 
   async isEmpty(): Promise<boolean> {
     const database = await this.db();
-    const rows = await database.select<{ count: number }[]>('SELECT COUNT(*) AS count FROM clients WHERE is_deleted = 0');
+    // Settings are persisted even for an intentionally empty client list.
+    // They mark that this SQLite database has already been initialized, so a
+    // stale browser snapshot can never resurrect deleted clients on launch.
+    const rows = await database.select<{ count: number }[]>('SELECT COUNT(*) AS count FROM settings WHERE is_deleted = 0');
     return Number(rows[0]?.count || 0) === 0;
   }
 
