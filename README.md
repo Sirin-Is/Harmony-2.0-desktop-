@@ -67,6 +67,7 @@ npx supabase functions deploy manage-harmony-users
 
 ```powershell
 npx.cmd tsc --noEmit
+npm.cmd test
 npm.cmd run build
 git diff --check
 ```

@@ -24,6 +24,8 @@ jobs:
         run: npm ci
       - name: Verify TypeScript
         run: npx tsc --noEmit
+      - name: Run core business-rule tests
+        run: npm test
       - name: Build Vite bundle
         run: npm run build
 

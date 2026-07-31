@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "test": "node --test tests/core.test.mjs",
     "tauri": "node scripts/tauri.mjs"
   },
   "dependencies": {
