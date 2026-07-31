@@ -111,5 +111,10 @@ export function renderSettings() {
       <h2>Видалені</h2>
       <p class="note">Переглядайте та відновлюйте ФОП, що завершили 30-денний період очікування після запиту на видалення.</p>
       <button type="button" class="secondary" data-open-deleted>Відкрити «Видалені»</button>
-    </div>`;
+    </div>
+    ${uiState.currentUser?.role === 'administrator' ? `<div class="panel settings-panel">
+      <h2>Резервна копія</h2>
+      <p class="note">Файл містить усі дані Harmony, включно з журналом подій. Відновлення замінює поточні локальні дані та буде синхронізоване з робочим простором.</p>
+      <div class="toolbar-actions"><button type="button" class="secondary" data-download-backup>Завантажити резервну копію</button><button type="button" class="danger" data-restore-backup>Відновити з резервної копії</button><input type="file" id="backupRestoreFile" accept="application/json,.json" hidden></div>
+    </div>` : ''}`;
 }

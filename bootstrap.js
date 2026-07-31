@@ -9,7 +9,7 @@
 import { $, todayIso } from './utils';
 import { uiState } from './ui-state.js';
 import {
-  db, initDatabase, refreshDatabaseFromSync, undoLastAction, setAuditActor, setAccessRole, getClientById, deleteClientPermanently, archiveClient, requestClientDeletion, setClientLifecycle, reorderClients, setCustomFieldValue,
+  db, initDatabase, refreshDatabaseFromSync, undoLastAction, setAuditActor, setAccessRole, getClientById, deleteClientPermanently, archiveClient, requestClientDeletion, setClientLifecycle, reorderClients, setCustomFieldValue, replaceDatabase,
   setMonthlyPaymentField, setTaxField, setReportField, setIncomeValue,
   setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, getSettings,
   deleteCustomColumn, getCustomColumns,
@@ -82,6 +82,18 @@ const VIEWS = {
 function showBootOverlay(visible) {
   const el = document.getElementById('bootOverlay');
   if (el) el.style.display = visible ? 'flex' : 'none';
+}
+
+function downloadBackup() {
+  const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `fop-oblik-${todayIso()}.json`;
+  link.click();
+  // Some desktop webviews start the download on the next event-loop turn.
+  // Revoke only afterwards so a large backup is never saved as an empty file.
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  showToast('Резервну копію завантажено.', 'success');
 }
 
 export function render() {
@@ -513,6 +525,30 @@ function bindCurrentView() {
     uiState.deletedSectionUnlocked = true;
     setView('deleted');
   });
+  $('[data-download-backup]')?.addEventListener('click', downloadBackup);
+  $('[data-restore-backup]')?.addEventListener('click', () => $('#backupRestoreFile')?.click());
+  $('#backupRestoreFile')?.addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const backup = JSON.parse(await file.text());
+      const result = await openAppDialog({
+        title: 'Відновити резервну копію',
+        message: 'Поточні локальні дані буде замінено вмістом файлу. Відновлені дані буде синхронізовано з робочим простором. Введіть ВІДНОВИТИ для підтвердження.',
+        fields: [{ key: 'confirmation', label: 'Підтвердження', required: true }],
+        confirmText: 'Відновити дані',
+        danger: true,
+      });
+      if (!result || result.confirmation !== 'ВІДНОВИТИ') return;
+      await replaceDatabase(backup);
+      requestSync();
+      render();
+      showToast('Резервну копію відновлено. Запущено синхронізацію.', 'success', 7000);
+    } catch (error) {
+      showToast(`Не вдалося відновити резервну копію: ${error.message || error}`, 'error', 9000);
+    }
+  });
   $('#f_minWage')?.addEventListener('change', () => { setMinWage($('#f_minWage').value); render(); });
   document.querySelectorAll('.settings-field').forEach((field) => field.addEventListener('change', () => {
     if (field.dataset.scope === 'monthly') setMonthlyTaxDeadline(field.dataset.period, field.value);
@@ -713,14 +749,7 @@ function wireGlobalControls() {
   $('#modalCancel').addEventListener('click', closeModal);
   $('#modal').addEventListener('click', (event) => { if (event.target === $('#modal')) closeModal(); });
 
-  $('#exportBtn').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `fop-oblik-${todayIso()}.json`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  });
+  $('#exportBtn').addEventListener('click', downloadBackup);
 
   document.addEventListener('harmony:changed', () => render());
   document.addEventListener('harmony:access-denied', () => { showToast('У вас є доступ лише до перегляду.', 'warn'); render(); });

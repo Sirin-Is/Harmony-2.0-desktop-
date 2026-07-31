@@ -652,7 +652,14 @@ export function setAppearanceSetting(key, value) {
 
 /** Replace the entire in-memory database (used by "restore from backup file"). */
 export async function replaceDatabase(newDb) {
-  db = newDb;
+  if (currentAccessRole !== 'administrator') throw new Error('Відновлення резервної копії доступне лише адміністратору.');
+  if (!newDb || typeof newDb !== 'object' || !Array.isArray(newDb.clients) || !newDb.settings || typeof newDb.settings !== 'object') {
+    throw new Error('Файл не схожий на повну резервну копію Harmony.');
+  }
+  // Persist first, then reload through the repository normalizer. This keeps
+  // old, valid backups compatible when newer optional collections are added.
+  await storage.saveNow(newDb);
+  db = await storage.reloadDatabase();
   lastSnapshot = snapshot(db); undoStack.length = 0;
-  await storage.saveNow(db);
+  return db;
 }
