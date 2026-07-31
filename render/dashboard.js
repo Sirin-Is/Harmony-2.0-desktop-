@@ -10,7 +10,7 @@
 // під час структурної міграції. Це можна додати окремим, свідомим кроком.
 
 import { escapeHtml, moneyFormat, toNumber } from '../utils';
-import { rateText, phoneLines, kepStatusLabel, shortClientName } from '../client-model';
+import { rateText, phoneLines, kepDaysLabel, kepStatusLabel, shortClientName } from '../client-model';
 import { table } from './layout.js';
 import { getVisibleClients, getCustomColumns } from '../state.js';
 import { uiState } from '../ui-state.js';
@@ -26,7 +26,7 @@ function filterValue(item, key) {
     currency: item.currency || '-', phone: item.phone || '', email: item.email || '',
     bankAccess: item.bankAccess || '', prro: item.prro || '', employees: String(item.employeesCount || ''),
     serviceCost: String(toNumber(item.serviceCost) || ''), kepIssuer: item.kepIssuer || '',
-    kepExpiry: kepStatusLabel(item.kepExpiry).replace(/<[^>]*>/g, ''),
+    kepExpiry: kepDaysLabel(item.kepExpiry),
   }[key] ?? '';
 }
 

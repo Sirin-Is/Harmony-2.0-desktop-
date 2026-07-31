@@ -52,6 +52,12 @@ export function contactLinkHtml(item: Client): string {
     : escapeHtml(raw);
 }
 
+/** Plain KEP countdown for filters and other non-HTML consumers. */
+export function kepDaysLabel(dateStr?: string): string {
+  const diff = daysUntil(dateStr);
+  return diff === null ? '-' : `${Math.abs(diff)} дн.`;
+}
+
 /** Render the KEP-expiry countdown as a colored pill (or em dash if no date set). */
 export function kepStatusLabel(dateStr?: string): string {
   const diff = daysUntil(dateStr);

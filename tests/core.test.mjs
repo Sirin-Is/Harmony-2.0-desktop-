@@ -90,6 +90,7 @@ test('ставки та ліміти груп ФОП обмежені дозво
   assert.deepEqual(clients.rateOptionsForGroup('2').map((item) => item.value), ['0.2', '0.15', '0.1']);
   assert.deepEqual(clients.rateOptionsForGroup('3').map((item) => item.value), ['0.05', '0.03']);
   assert.equal(clients.groupLimitAmount('3', 8647), 10091049);
+  assert.equal(clients.kepDaysLabel('not-a-date'), '-');
 });
 
 test('попередження ліміту ігнорує порожні місяці, але враховує середній дохід', () => {
