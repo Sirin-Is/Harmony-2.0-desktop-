@@ -3,7 +3,7 @@
 // 1-2 груп, поквартальні для 3 групи й ЄСВ, дедлайни звітності).
 
 import { escapeHtml, monthPeriodKey, MONTH_SHORT_UA } from '../utils';
-import { getSettings } from '../state.js';
+import { getAuditOperations, getSettings } from '../state.js';
 import { uiState } from '../ui-state.js';
 
 const SETTINGS_QUARTERS = [{ key: 'q1', label: 'I кв.' }, { key: 'half', label: 'II кв.' }, { key: '9m', label: 'III кв.' }, { key: 'year', label: 'IV кв.' }];
@@ -81,6 +81,10 @@ export function renderSettings() {
   const workingYear = settings.workingYear;
   const appearance = settings.appearance || { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 };
   const localProtection = uiState.localStorageProtection;
+  const rollbackSnapshotBytes = getAuditOperations().reduce((sum, item) => sum + (item.beforeSnapshot ? JSON.stringify(item.beforeSnapshot).length : 0), 0);
+  const rollbackSnapshotSize = rollbackSnapshotBytes < 1024 * 1024
+    ? `${Math.round(rollbackSnapshotBytes / 1024)} КБ`
+    : `${(rollbackSnapshotBytes / (1024 * 1024)).toFixed(1)} МБ`;
   const localProtectionPanel = `<div class="panel settings-panel"><h2>Захист локальних даних</h2>${localProtection?.enabled
     ? '<p class="note">Увімкнено Windows EFS. Локальна SQLite-база та її службові файли зашифровані для поточного профілю Windows; додатковий PIN не потрібен.</p>'
     : `<p class="note">Захист Windows EFS не активний${localProtection?.detail ? `: ${escapeHtml(localProtection.detail)}` : '.'} Дані залишаються доступними програмі, але для шифрування диска використайте BitLocker або запустіть Harmony у профілі Windows, де EFS доступний.</p>`}</div>`;
@@ -120,6 +124,8 @@ export function renderSettings() {
     ${uiState.currentUser?.role === 'administrator' ? `<div class="panel settings-panel">
       <h2>Резервна копія</h2>
       <p class="note">Файл містить усі дані Harmony, включно з журналом подій. Відновлення замінює поточні локальні дані та буде синхронізоване з робочим простором.</p>
+      <p class="note">Локальні знімки для відкату: ${rollbackSnapshotSize}. Вони не передаються в Supabase, але входять до резервної копії.</p>
+      <p class="note">Увага: JSON-файл резервної копії не має окремого пароля. Зберігайте його лише у захищеному сховищі або на зашифрованому диску.</p>
       <div class="toolbar-actions"><button type="button" class="secondary" data-download-backup>Завантажити резервну копію</button><button type="button" class="danger" data-restore-backup>Відновити з резервної копії</button><input type="file" id="backupRestoreFile" accept="application/json,.json" hidden></div>
     </div>` : ''}`;
 }
