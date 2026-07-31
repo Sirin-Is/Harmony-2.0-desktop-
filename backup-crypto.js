@@ -1,6 +1,8 @@
 // Portable backups are encrypted in the renderer before they leave the app.
 // The password never becomes part of the file or local database.
 
+import { collectDatabaseRelationshipIssues } from './data/database-validation.js';
+
 const FORMAT = 'harmony-backup';
 const VERSION = 2;
 const PBKDF2_ITERATIONS = 600000;
@@ -32,6 +34,8 @@ export function validateBackupDatabase(database) {
   for (const collection of OBJECT_COLLECTIONS) {
     if (database[collection] !== undefined && !isPlainObject(database[collection])) throw new Error(`Некоректний розділ резервної копії: ${collection}.`);
   }
+  const relationshipIssues = collectDatabaseRelationshipIssues(database);
+  if (relationshipIssues.length) throw new Error(`Некоректний зв’язок у резервній копії: ${relationshipIssues[0]}`);
   return database;
 }
 

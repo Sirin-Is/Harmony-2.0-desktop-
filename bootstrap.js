@@ -14,6 +14,7 @@ import {
   setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, getSettings,
   deleteCustomColumn, getCustomColumns,
   copyTaxPeriodForward, getVisibleClients, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, canRollbackChanges, rollbackChangesAfter, rollbackRetentionStart, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField,
+  getDatabaseRelationshipIssues,
 } from './state.js';
 import { TAX_TYPES, previousPeriodKey, taxPeriodsFor } from './tax-model.ts';
 import { setupTopScrollbars, bindTopScrollbarResize } from './render/layout.js';
@@ -41,7 +42,7 @@ import { enhanceDateInputs } from './date-input.js';
 import { validateKved, openKvedResults } from './kved-validation.js';
 import { signIn, signOut, signedInEmail } from './auth/session';
 import { getCurrentHarmonyUser, listAuthenticationUsers, manageHarmonyUsers } from './auth/users';
-import { getOpenSyncConflicts, getRecentSyncLog, requestSync, requestRestoreSync, resolveSyncConflict } from './storage.js';
+import { checkLocalDatabase, getOpenSyncConflicts, getRecentSyncLog, requestSync, requestRestoreSync, resolveSyncConflict } from './storage.js';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { getLocalStorageProtection } from './local-storage-protection.ts';
@@ -609,7 +610,10 @@ function bindCurrentView() {
       catch (error) { showToast(error.message || String(error), 'error'); }
     }
     if (uiState.settingsSection === 'diagnostics' && uiState.currentUser?.role === 'administrator') {
-      try { uiState.syncLog = await getRecentSyncLog(); }
+      try {
+        [uiState.syncLog, uiState.localDatabaseHealth] = await Promise.all([getRecentSyncLog(), checkLocalDatabase()]);
+        uiState.localDatabaseIssues = getDatabaseRelationshipIssues();
+      }
       catch (error) { showToast(error.message || String(error), 'error'); }
     }
     render();
@@ -617,6 +621,14 @@ function bindCurrentView() {
   $('[data-refresh-sync-log]')?.addEventListener('click', async () => {
     try { uiState.syncLog = await getRecentSyncLog(); render(); }
     catch (error) { showToast(error.message || String(error), 'error'); }
+  });
+  $('[data-check-local-db]')?.addEventListener('click', async () => {
+    try {
+      uiState.localDatabaseHealth = await checkLocalDatabase();
+      uiState.localDatabaseIssues = getDatabaseRelationshipIssues();
+      render();
+      showToast(uiState.localDatabaseHealth.ok ? 'Цілісність локальної бази підтверджено.' : 'SQLite повідомила про проблему. Створіть резервну копію та зверніться до адміністратора.', uiState.localDatabaseHealth.ok ? 'success' : 'error', 9000);
+    } catch (error) { showToast(`Не вдалося перевірити локальну базу: ${error.message || error}`, 'error', 9000); }
   });
   document.querySelectorAll('[data-resolve-sync-conflict]').forEach((button) => button.addEventListener('click', async () => {
     const resolution = button.dataset.resolution;

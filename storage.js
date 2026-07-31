@@ -162,6 +162,11 @@ export function getRecentSyncLog(limit = 100) {
   return repository.getRecentSyncLog(limit);
 }
 
+/** Read-only local SQLite health probe. It never changes business data. */
+export function checkLocalDatabase() {
+  return repository.checkIntegrity();
+}
+
 export async function resolveSyncConflict(id, resolution) {
   const resolved = await repository.resolveSyncConflict(id, resolution);
   if (resolved) syncManager.requestSync('conflict-resolution');

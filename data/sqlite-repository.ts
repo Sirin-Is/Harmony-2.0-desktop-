@@ -1,5 +1,6 @@
 import Database from '@tauri-apps/plugin-sql';
 import { migrations } from './migrations';
+import { interpretSqliteCheck, type LocalDatabaseHealth } from './database-health';
 import type { Database as AppDatabase } from '../types';
 import { normalizeWorkingYear } from '../utils';
 import type { LocalRepository } from './repository';
@@ -132,6 +133,13 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
     // stale browser snapshot can never resurrect deleted clients on launch.
     const rows = await database.select<{ count: number }[]>('SELECT COUNT(*) AS count FROM settings WHERE is_deleted = 0');
     return Number(rows[0]?.count || 0) === 0;
+  }
+
+  /** Read-only SQLite integrity probe for the administrator diagnostics page. */
+  async checkIntegrity(): Promise<LocalDatabaseHealth> {
+    const database = await this.db();
+    const rows = await database.select<Record<string, unknown>[]>('PRAGMA quick_check');
+    return { ...interpretSqliteCheck(rows), checkedAt: now() };
   }
 
   async save(snapshot: AppDatabase): Promise<void> {

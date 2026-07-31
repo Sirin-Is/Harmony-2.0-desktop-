@@ -16,6 +16,7 @@ import { getTaxRecord, effectiveDeadline as effectiveTaxDeadline, getDefaultDead
 import { getReportRecord, effectiveReportDeadline } from './report-model.ts';
 import { toNumber, normalizeNumberInput, generateId } from './utils';
 import { validateBackupDatabase } from './backup-crypto.js';
+import { collectDatabaseRelationshipIssues } from './data/database-validation.js';
 
 export let db = null;
 let lastSnapshot = null;
@@ -214,6 +215,7 @@ export const getAuditEvents = () => {
   return db.auditEvents || [];
 };
 export const getAuditOperations = () => db.auditOperations || [];
+export const getDatabaseRelationshipIssues = () => collectDatabaseRelationshipIssues(db);
 
 /** Restores all business data to the state immediately before the first active operation after cutoff. */
 export function rollbackChangesAfter(cutoff) {

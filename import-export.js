@@ -84,7 +84,18 @@ export async function importClientsFromFile(file) {
         }
         const summary = { created: 0, updated: 0, skipped: 0, warnings: [] };
         rows.forEach((row, index) => {
-          summary.warnings.push(...validateImportRow(row, index + 2));
+          // SheetJS rows use Ukrainian column headers; validate normalized
+          // values rather than looking for internal field names in the sheet.
+          const validation = validateImportRow({
+            email: row[IMPORT_COLUMNS.find((column) => column.key === 'email').header],
+            serviceCost: row[IMPORT_COLUMNS.find((column) => column.key === 'serviceCost').header],
+          }, index + 2);
+          summary.warnings.push(...validation.warnings);
+          if (validation.errors.length) {
+            summary.skipped += 1;
+            summary.warnings.push(...validation.errors.map((message) => `${message} Рядок пропущено.`));
+            return;
+          }
           const { status } = applyImportedRow(row);
           summary[status] += 1;
         });

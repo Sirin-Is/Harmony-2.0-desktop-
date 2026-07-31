@@ -30,6 +30,8 @@ export const uiState = {
   settingsSection: 'general',
   syncConflicts: [],
   syncLog: [],
+  localDatabaseHealth: null,
+  localDatabaseIssues: [],
   currentUser: null,
   managedUsers: [],
   localStorageProtection: null,

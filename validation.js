@@ -55,14 +55,15 @@ export function validateCustomColumn(column) {
   return { errors, warnings: [] };
 }
 
-/** Loose row-level check used while importing clients from Excel/CSV. */
+/** Row-level import check. Errors are skipped rather than silently persisted. */
 export function validateImportRow(row, rowIndex) {
+  const errors = [];
   const warnings = [];
   if (row.email && !looksLikeEmail(row.email)) {
-    warnings.push(`Рядок ${rowIndex}: ел. пошта «${row.email}» виглядає некоректною — імпортовано як є.`);
+    errors.push(`Рядок ${rowIndex}: ел. пошта «${row.email}» виглядає некоректною.`);
   }
   if (row.serviceCost !== undefined && row.serviceCost !== '' && toNumber(row.serviceCost) < 0) {
-    warnings.push(`Рядок ${rowIndex}: від'ємна вартість обслуговування — імпортовано як є.`);
+    errors.push(`Рядок ${rowIndex}: вартість обслуговування не може бути від’ємною.`);
   }
-  return warnings;
+  return { errors, warnings };
 }

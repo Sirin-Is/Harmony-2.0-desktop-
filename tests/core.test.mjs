@@ -3,6 +3,7 @@ import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
 import { createEncryptedBackup, decryptBackup, validateBackupDatabase } from '../backup-crypto.js';
 import { shortDate, shortDateToIso } from '../date-input.js';
+import { collectDatabaseRelationshipIssues } from '../data/database-validation.js';
 
 let vite;
 let tax;
@@ -10,8 +11,10 @@ let reports;
 let clients;
 let income;
 let writeRetry;
+let databaseHealth;
 let SyncManager;
 let validateClient;
+let validateImportRow;
 
 before(async () => {
   // Vite's SSR loader executes the same TypeScript modules that the desktop
@@ -27,8 +30,9 @@ before(async () => {
   clients = await vite.ssrLoadModule('/client-model.ts');
   income = await vite.ssrLoadModule('/income-model.js');
   writeRetry = await vite.ssrLoadModule('/write-retry.js');
+  databaseHealth = await vite.ssrLoadModule('/data/database-health.ts');
   ({ SyncManager } = await vite.ssrLoadModule('/sync/sync-manager.ts'));
-  ({ validateClient } = await vite.ssrLoadModule('/validation.js'));
+  ({ validateClient, validateImportRow } = await vite.ssrLoadModule('/validation.js'));
 });
 
 after(async () => {
@@ -74,6 +78,13 @@ test('валідація картки ФОП не пропускає крити�
   assert.match(duplicate.warnings[0], /вже є в списку/);
 });
 
+test('імпорт не додає рядок із критично некоректними грошима або поштою', () => {
+  const invalid = validateImportRow({ email: 'wrong-email', serviceCost: '-50' }, 12);
+  assert.equal(invalid.errors.length, 2);
+  assert.equal(invalid.warnings.length, 0);
+  assert.deepEqual(validateImportRow({ email: 'ok@example.com', serviceCost: '1 000,50' }, 13), { errors: [], warnings: [] });
+});
+
 test('ставки та ліміти груп ФОП обмежені дозволеними значеннями', () => {
   assert.deepEqual(clients.rateOptionsForGroup('1').map((item) => item.value), ['0.1']);
   assert.deepEqual(clients.rateOptionsForGroup('2').map((item) => item.value), ['0.2', '0.15', '0.1']);
@@ -101,6 +112,12 @@ test('лише тимчасове блокування SQLite запускає �
   assert.equal(writeRetry.localSaveRetryDelay(2), 1000);
   assert.equal(writeRetry.localSaveRetryDelay(3), 2000);
   assert.equal(writeRetry.MAX_TRANSIENT_SAVE_RETRIES, 3);
+});
+
+test('результат SQLite quick_check безпечно пояснюється в діагностиці', () => {
+  assert.deepEqual(databaseHealth.interpretSqliteCheck([{ quick_check: 'ok' }]), { ok: true, detail: 'Цілісність локальної бази підтверджено.' });
+  assert.deepEqual(databaseHealth.interpretSqliteCheck([{ quick_check: '*** in database main ***' }, { quick_check: 'Page 4 is never used' }]), { ok: false, detail: '*** in database main *** · Page 4 is never used' });
+  assert.equal(databaseHealth.interpretSqliteCheck([]).ok, false);
 });
 
 test('старі податкові записи 2026 не губляться після переходу на ключі з роком', () => {
@@ -154,6 +171,18 @@ test('перевірка резервної копії відхиляє дубл
   assert.throws(() => validateBackupDatabase({ clients: [{ id: 'same' }, { id: 'same' }], settings: {} }));
   assert.throws(() => validateBackupDatabase({ clients: [], settings: [], calendarEvents: [] }));
   assert.doesNotThrow(() => validateBackupDatabase({ clients: [{ id: 'valid' }], settings: {}, auditEvents: [] }));
+  assert.throws(() => validateBackupDatabase({ clients: [{ id: 'valid' }], settings: {}, calendarEvents: [{ id: 'event', clientId: 'missing' }] }), /Некоректний зв’язок/);
+});
+
+test('перевірка зв’язків не втрачає історичні виплати звільнених працівників', () => {
+  const issues = collectDatabaseRelationshipIssues({
+    clients: [{ id: 'fop-1' }],
+    monthlyPayments: { 'fop-1': {} },
+    incomeRecords: { missing: {} },
+    payrollRecords: [{ id: 'payroll-1', clientId: 'fop-1', employeeId: 'former-worker' }],
+    calendarEvents: [{ id: 'event-1', clientId: 'missing' }],
+  });
+  assert.deepEqual(issues, ['Доходи: не знайдено ФОП missing.', 'Календар: не знайдено ФОП missing.']);
 });
 
 function syncRecord(id = 'record-1') {
@@ -183,6 +212,17 @@ function waitForIdle(manager) {
   return new Promise((resolve) => {
     const stop = manager.onState((state) => {
       if (state === 'idle') { stop(); resolve(); }
+    });
+  });
+}
+
+function waitForIdleCount(manager, expectedCount) {
+  return new Promise((resolve) => {
+    let count = 0;
+    const stop = manager.onState((state) => {
+      if (state !== 'idle') return;
+      count += 1;
+      if (count === expectedCount) { stop(); resolve(); }
     });
   });
 }
@@ -239,4 +279,43 @@ test('відновлення копії очікує завершення акт
   await pause;
   assert.equal(paused, true);
   manager.stop();
+});
+
+test('зміна під час синхронізації одразу запускає наступний безпечний цикл', async () => {
+  const events = [];
+  const { repository, remote } = syncFixture(events);
+  let releasePush;
+  let pushStarted;
+  const pushStartedPromise = new Promise((resolve) => { pushStarted = resolve; });
+  remote.upsert = () => new Promise((resolve) => { releasePush = () => { events.push('push'); resolve(); }; pushStarted(); });
+  const manager = new SyncManager(repository, remote, async () => ({ role: 'accountant' }));
+  const firstSyncing = new Promise((resolve) => {
+    const stop = manager.onState((state) => { if (state === 'syncing') { stop(); resolve(); } });
+  });
+  const twoCycles = waitForIdleCount(manager, 2);
+  manager.requestSync('first-save');
+  await firstSyncing;
+  manager.requestSync('save-during-sync');
+  await pushStartedPromise;
+  releasePush();
+  await twoCycles;
+  manager.stop();
+  assert.deepEqual(events, ['health', 'push', 'marked', 'pull', 'health', 'pull']);
+});
+
+test('зупинений менеджер не планує синхронізацію після завершення поточного циклу', async () => {
+  const events = [];
+  const { repository, remote } = syncFixture(events);
+  let releaseHealthcheck;
+  remote.healthcheck = () => new Promise((resolve) => { releaseHealthcheck = resolve; events.push('health'); });
+  const manager = new SyncManager(repository, remote, async () => ({ role: 'accountant' }));
+  const syncing = new Promise((resolve) => {
+    const stop = manager.onState((state) => { if (state === 'syncing') { stop(); resolve(); } });
+  });
+  manager.requestSync('test');
+  await syncing;
+  manager.stop();
+  releaseHealthcheck();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(events, ['health', 'push', 'marked', 'pull']);
 });

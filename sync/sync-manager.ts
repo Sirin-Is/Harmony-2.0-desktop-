@@ -20,7 +20,9 @@ export class SyncManager {
   private timer: number | null = null;
   private retryMs = INITIAL_BACKOFF_MS;
   private restoreSyncRequested = false;
+  private resyncRequested = false;
   private paused = false;
+  private stopped = false;
   private idleWaiters: Array<() => void> = [];
   private listeners = new Set<StateListener>();
 
@@ -36,12 +38,14 @@ export class SyncManager {
   }
 
   start(): void {
+    this.stopped = false;
     window.addEventListener('online', this.onOnline);
     window.addEventListener('offline', this.onOffline);
     this.requestSync('startup');
   }
 
   stop(): void {
+    this.stopped = true;
     window.removeEventListener('online', this.onOnline);
     window.removeEventListener('offline', this.onOffline);
     if (this.timer !== null) window.clearTimeout(this.timer);
@@ -49,7 +53,12 @@ export class SyncManager {
   }
 
   requestSync(_reason = 'manual'): void {
+    if (this.stopped) return;
     if (!navigator.onLine) return this.emit('offline', 'Немає з’єднання');
+    // A second run must not overlap the current SQLite/network transaction.
+    // Remember it instead: once the in-flight snapshot is done, immediately
+    // replicate anything saved while it was running.
+    if (this.running) { this.resyncRequested = true; return; }
     if (this.timer !== null) window.clearTimeout(this.timer);
     this.timer = window.setTimeout(() => this.sync().catch(() => {}), 0);
   }
@@ -85,14 +94,16 @@ export class SyncManager {
   }
 
   private schedule(delay: number): void {
+    if (this.stopped || this.paused) return;
     if (this.timer !== null) window.clearTimeout(this.timer);
     this.timer = window.setTimeout(() => this.sync().catch(() => {}), delay);
   }
 
   private async sync(): Promise<void> {
-    if (this.running || this.paused || !navigator.onLine) return;
+    if (this.stopped || this.running || this.paused || !navigator.onLine) return;
     this.running = true;
     this.emit('syncing');
+    let nextDelay = PERIODIC_SYNC_MS;
     try {
       await this.remote.healthcheck();
       const pullBeforePush = this.restoreSyncRequested;
@@ -107,17 +118,19 @@ export class SyncManager {
       }
       this.retryMs = INITIAL_BACKOFF_MS;
       this.emit('idle');
-      this.schedule(PERIODIC_SYNC_MS);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await this.repository.logSync('sync', 'system', 'system', 'error', message);
       this.emit('error', message);
-      this.schedule(this.retryMs);
+      nextDelay = this.retryMs;
       this.retryMs = Math.min(this.retryMs * 2, MAX_BACKOFF_MS);
     } finally {
       this.running = false;
       const waiters = this.idleWaiters.splice(0);
       waiters.forEach((resolve) => resolve());
+      const runAgainNow = this.resyncRequested;
+      this.resyncRequested = false;
+      this.schedule(runAgainNow ? 0 : nextDelay);
     }
   }
 
