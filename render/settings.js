@@ -80,6 +80,10 @@ export function renderSettings() {
   const settings = getSettings();
   const workingYear = settings.workingYear;
   const appearance = settings.appearance || { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 };
+  const localProtection = uiState.localStorageProtection;
+  const localProtectionPanel = `<div class="panel settings-panel"><h2>Захист локальних даних</h2>${localProtection?.enabled
+    ? '<p class="note">Увімкнено Windows EFS. Локальна SQLite-база та її службові файли зашифровані для поточного профілю Windows; додатковий PIN не потрібен.</p>'
+    : `<p class="note">Захист Windows EFS не активний${localProtection?.detail ? `: ${escapeHtml(localProtection.detail)}` : '.'} Дані залишаються доступними програмі, але для шифрування диска використайте BitLocker або запустіть Harmony у профілі Windows, де EFS доступний.</p>`}</div>`;
   const colors = ['#ffffff', '#dbeafe', '#dcfce7', '#fef3c7', '#ffe4e6', '#f3e8ff', '#cffafe', '#e0f2fe', '#ecfccb', '#ffedd5', '#e5e7eb', '#fce7f3'];
   const appearancePanel = `<div class="panel settings-panel appearance-panel"><h2>Зовнішній вигляд</h2>
     <label>Колір полів<span class="appearance-swatches">${colors.map((color) => `<input type="radio" name="fieldColor" data-appearance="fieldColor" value="${color}" ${appearance.fieldColor === color ? 'checked' : ''} style="--swatch:${color}" aria-label="${color}">`).join('')}</span></label>
@@ -112,6 +116,7 @@ export function renderSettings() {
       <p class="note">Переглядайте та відновлюйте ФОП, що завершили 30-денний період очікування після запиту на видалення.</p>
       <button type="button" class="secondary" data-open-deleted>Відкрити «Видалені»</button>
     </div>
+    ${localProtectionPanel}
     ${uiState.currentUser?.role === 'administrator' ? `<div class="panel settings-panel">
       <h2>Резервна копія</h2>
       <p class="note">Файл містить усі дані Harmony, включно з журналом подій. Відновлення замінює поточні локальні дані та буде синхронізоване з робочим простором.</p>

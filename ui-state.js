@@ -31,6 +31,7 @@ export const uiState = {
   syncConflicts: [],
   currentUser: null,
   managedUsers: [],
+  localStorageProtection: null,
   auditSearch: '',
   auditType: '',
   auditStatus: '',

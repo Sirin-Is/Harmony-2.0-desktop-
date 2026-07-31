@@ -56,6 +56,44 @@ mod credential_store {
     }
 }
 
+#[cfg(target_os = "windows")]
+mod local_data_protection {
+    use std::{fs, os::windows::ffi::OsStrExt};
+    use tauri::{AppHandle, Manager};
+    use windows::{
+        core::PCWSTR,
+        Win32::Storage::FileSystem::EncryptFileW,
+    };
+
+    #[derive(serde::Serialize)]
+    pub struct ProtectionStatus {
+        pub enabled: bool,
+        pub detail: String,
+    }
+
+    fn wide(value: &std::path::Path) -> Vec<u16> {
+        value.as_os_str().encode_wide().chain(Some(0)).collect()
+    }
+
+    /// Encrypt the directory used by tauri-plugin-sql (AppConfig) before the
+    /// renderer opens SQLite. EFS is transparent to SQLite and makes database,
+    /// WAL and shared-memory files readable only in this Windows profile.
+    pub fn protect(app: &AppHandle) -> ProtectionStatus {
+        let path = match app.path().app_config_dir() {
+            Ok(path) => path,
+            Err(error) => return ProtectionStatus { enabled: false, detail: error.to_string() },
+        };
+        if let Err(error) = fs::create_dir_all(&path) {
+            return ProtectionStatus { enabled: false, detail: error.to_string() };
+        }
+        let path_wide = wide(&path);
+        match unsafe { EncryptFileW(PCWSTR(path_wide.as_ptr())) } {
+            Ok(()) => ProtectionStatus { enabled: true, detail: "Windows EFS".into() },
+            Err(error) => ProtectionStatus { enabled: false, detail: error.message().to_string() },
+        }
+    }
+}
+
 #[tauri::command]
 fn read_auth_session() -> Result<Option<String>, String> { credential_store::read() }
 
@@ -65,11 +103,25 @@ fn write_auth_session(session: String) -> Result<(), String> { credential_store:
 #[tauri::command]
 fn clear_auth_session() -> Result<(), String> { credential_store::clear() }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn local_storage_protection_status(app: tauri::AppHandle) -> local_data_protection::ProtectionStatus {
+    local_data_protection::protect(&app)
+}
+
 fn main() {
     tauri::Builder::default()
+        .setup(|app| {
+            #[cfg(target_os = "windows")]
+            {
+                let status = local_data_protection::protect(app.handle());
+                if !status.enabled { eprintln!("Local data protection is unavailable: {}", status.detail); }
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![read_auth_session, write_auth_session, clear_auth_session])
+        .invoke_handler(tauri::generate_handler![read_auth_session, write_auth_session, clear_auth_session, local_storage_protection_status])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

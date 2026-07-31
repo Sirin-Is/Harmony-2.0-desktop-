@@ -44,6 +44,7 @@ import { getCurrentHarmonyUser, listAuthenticationUsers, manageHarmonyUsers } fr
 import { getOpenSyncConflicts, requestSync, resolveSyncConflict } from './storage.js';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
+import { getLocalStorageProtection } from './local-storage-protection.ts';
 
 const TITLES = {
   overview: ['Огляд', 'Зведення зауважень по розділах'],
@@ -794,6 +795,8 @@ async function boot() {
   showBootOverlay(true);
   try {
     await initDatabase();
+    try { uiState.localStorageProtection = await getLocalStorageProtection(); }
+    catch (error) { uiState.localStorageProtection = { enabled: false, detail: error.message || String(error) }; }
     try { await loadActivityReference(); } catch (error) { console.warn('Не вдалося завантажити довідник видів діяльності:', error); }
     wireGlobalControls();
     const email = await signedInEmail();

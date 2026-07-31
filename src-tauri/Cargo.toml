@@ -13,7 +13,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-updater = "2"
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Credentials"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Credentials", "Win32_Storage_FileSystem"] }
 
 [[bin]]
 name = "harmony"
