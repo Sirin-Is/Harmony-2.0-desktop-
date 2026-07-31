@@ -709,6 +709,8 @@ function wireGlobalControls() {
     if (!$('#modalForm').reportValidity()) return;
     if (handleModalSubmit()) { closeModal(); render(); }
   });
+  $('#modalClose').addEventListener('click', closeModal);
+  $('#modalCancel').addEventListener('click', closeModal);
   $('#modal').addEventListener('click', (event) => { if (event.target === $('#modal')) closeModal(); });
 
   $('#exportBtn').addEventListener('click', () => {

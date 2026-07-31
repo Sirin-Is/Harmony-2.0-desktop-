@@ -60,13 +60,13 @@
     <form id="modalForm">
       <div class="modal-head">
         <h2 id="modalTitle"></h2>
-        <button type="button" class="close" onclick="this.closest('dialog').close()">×</button>
+        <button type="button" class="close" id="modalClose" aria-label="Закрити">×</button>
       </div>
       <div id="modalErrors" class="modal-errors" hidden></div>
       <div class="form-grid" id="modalBody"></div>
       <div id="modalDanger" class="modal-danger"></div>
       <footer>
-        <button type="button" class="secondary" onclick="this.closest('dialog').close()">Скасувати</button>
+        <button type="button" class="secondary" id="modalCancel">Скасувати</button>
         <button type="submit" class="primary">Зберегти</button>
       </footer>
     </form>

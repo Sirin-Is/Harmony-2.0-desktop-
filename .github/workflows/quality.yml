@@ -26,3 +26,11 @@ jobs:
         run: npx tsc --noEmit
       - name: Build Vite bundle
         run: npm run build
+
+  desktop:
+    name: Check Windows desktop runtime
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Rust and Tauri configuration
+        run: cargo check --manifest-path src-tauri/Cargo.toml
