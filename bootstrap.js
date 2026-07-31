@@ -45,7 +45,7 @@ import { getOpenSyncConflicts, requestSync, requestRestoreSync, resolveSyncConfl
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { getLocalStorageProtection } from './local-storage-protection.ts';
-import { createEncryptedBackup, decryptBackup, isEncryptedBackup } from './backup-crypto.js';
+import { createEncryptedBackup, decryptBackup, isEncryptedBackup, validateBackupDatabase } from './backup-crypto.js';
 
 const TITLES = {
   overview: ['Огляд', 'Зведення зауважень по розділах'],
@@ -569,6 +569,7 @@ function bindCurrentView() {
         source = await decryptBackup(parsed, password.password);
       }
       const backup = source?.format === 'harmony-backup' ? source.database : source;
+      validateBackupDatabase(backup);
       const createdAt = source?.format === 'harmony-backup' && source.createdAt
         ? new Date(source.createdAt).toLocaleString('uk-UA') : 'дата створення не вказана';
       const clientCount = Array.isArray(backup?.clients) ? backup.clients.length : 0;

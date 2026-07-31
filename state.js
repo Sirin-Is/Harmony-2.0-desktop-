@@ -15,6 +15,7 @@ import * as clientModel from './client-model';
 import { getTaxRecord, effectiveDeadline as effectiveTaxDeadline, getDefaultDeadline as getDefaultTaxDeadline } from './tax-model.ts';
 import { getReportRecord, effectiveReportDeadline } from './report-model.ts';
 import { toNumber, generateId } from './utils';
+import { validateBackupDatabase } from './backup-crypto.js';
 
 export let db = null;
 let lastSnapshot = null;
@@ -668,9 +669,7 @@ export function setAppearanceSetting(key, value) {
 /** Replace the entire in-memory database (used by "restore from backup file"). */
 export async function replaceDatabase(newDb) {
   if (currentAccessRole !== 'administrator') throw new Error('Відновлення резервної копії доступне лише адміністратору.');
-  if (!newDb || typeof newDb !== 'object' || !Array.isArray(newDb.clients) || !newDb.settings || typeof newDb.settings !== 'object') {
-    throw new Error('Файл не схожий на повну резервну копію Harmony.');
-  }
+  validateBackupDatabase(newDb);
   // Persist first, then reload through the repository normalizer. This keeps
   // old, valid backups compatible when newer optional collections are added.
   await storage.saveRestoredDatabase(newDb);

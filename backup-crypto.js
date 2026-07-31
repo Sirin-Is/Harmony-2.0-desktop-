@@ -8,6 +8,32 @@ const SALT_LENGTH = 16;
 const IV_LENGTH = 12;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const ARRAY_COLLECTIONS = ['clients', 'customColumns', 'calendarEvents', 'hrOrders', 'hrMonthlyDocuments', 'payrollRecords', 'auditOperations', 'auditEvents'];
+const OBJECT_COLLECTIONS = ['monthlyPayments', 'taxRecords', 'incomeRecords', 'reportRecords', 'settings'];
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Reject malformed restore inputs before they can replace local data.
+ * Optional collections remain optional for compatibility with older copies. */
+export function validateBackupDatabase(database) {
+  if (!isPlainObject(database) || !Array.isArray(database.clients)) throw new Error('Файл не схожий на повну резервну копію Harmony.');
+  for (const collection of ARRAY_COLLECTIONS) {
+    if (database[collection] === undefined) continue;
+    if (!Array.isArray(database[collection])) throw new Error(`Некоректний розділ резервної копії: ${collection}.`);
+    const ids = new Set();
+    for (const record of database[collection]) {
+      if (!isPlainObject(record) || typeof record.id !== 'string' || !record.id.trim()) throw new Error(`Некоректний запис у розділі: ${collection}.`);
+      if (ids.has(record.id)) throw new Error(`Повторюваний ідентифікатор у розділі: ${collection}.`);
+      ids.add(record.id);
+    }
+  }
+  for (const collection of OBJECT_COLLECTIONS) {
+    if (database[collection] !== undefined && !isPlainObject(database[collection])) throw new Error(`Некоректний розділ резервної копії: ${collection}.`);
+  }
+  return database;
+}
 
 function bytesToBase64(bytes) {
   let binary = '';
@@ -54,7 +80,8 @@ export async function decryptBackup(envelope, password) {
     const key = await deriveKey(password, base64ToBytes(envelope.kdf.salt), iterations);
     const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: base64ToBytes(envelope.cipher.iv) }, key, base64ToBytes(envelope.ciphertext));
     const payload = JSON.parse(decoder.decode(plaintext));
-    if (payload?.format !== FORMAT || !payload?.database || !Array.isArray(payload.database.clients)) throw new Error('invalid');
+    if (payload?.format !== FORMAT) throw new Error('invalid');
+    validateBackupDatabase(payload.database);
     return payload;
   } catch {
     throw new Error('Невірний пароль або пошкоджений файл резервної копії.');
