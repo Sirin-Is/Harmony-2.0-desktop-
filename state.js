@@ -22,19 +22,32 @@ const undoStack = [];
 const snapshot = (value) => JSON.stringify(value);
 let currentAuditActor = 'Локальний користувач';
 let currentAccessRole = 'observer';
+const ROLLBACK_RETENTION_DAYS = 7;
 
 /** The signed-in email is supplied by bootstrap; offline work remains attributable locally. */
 export function setAuditActor(actor = '') { currentAuditActor = String(actor || '').trim() || 'Локальний користувач'; }
 export function setAccessRole(role = 'observer') { currentAccessRole = ['administrator', 'accountant', 'observer'].includes(role) ? role : 'observer'; }
 export function canEditData() { return currentAccessRole === 'administrator' || currentAccessRole === 'accountant'; }
+export function canRollbackChanges() { return currentAccessRole === 'administrator'; }
+export function rollbackRetentionStart() { return new Date(Date.now() - ROLLBACK_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString(); }
+
+function pruneExpiredRollbackSnapshots(database) {
+  const cutoff = rollbackRetentionStart();
+  let changed = false;
+  (database.auditOperations || []).forEach((operation) => {
+    if (operation.beforeSnapshot && String(operation.occurredAt || '') < cutoff) { delete operation.beforeSnapshot; changed = true; }
+  });
+  return changed;
+}
 
 /** Called once by bootstrap.js before the first render. */
 export async function initDatabase() {
   db = await storage.loadDatabase();
   const normalizedNestedIds = normalizeNestedRecordIds(db);
   const suppressedAuditNoise = suppressTechnicalEmployeeAuditNoise(db.auditEvents || []);
+  const prunedRollbackSnapshots = pruneExpiredRollbackSnapshots(db);
   lastSnapshot = snapshot(db);
-  if (normalizedNestedIds || suppressedAuditNoise) storage.scheduleSave(db);
+  if (normalizedNestedIds || suppressedAuditNoise || prunedRollbackSnapshots) storage.scheduleSave(db);
   if (clientModel.advanceScheduledDeletions(db)) save();
   return db;
 }
@@ -68,6 +81,7 @@ function save(action = 'Зміна даних', type = 'Зміна') {
     const events = buildAuditEvents(beforeBusiness, afterBusiness, { operationId: id, occurredAt, actor: operation.actor, type, description: action });
     db.auditEvents.push(...events);
   }
+  pruneExpiredRollbackSnapshots(db);
   const next = snapshot(db);
   if (lastSnapshot && next !== lastSnapshot) { undoStack.push(lastSnapshot); if (undoStack.length > 20) undoStack.shift(); }
   lastSnapshot = next;
@@ -202,8 +216,9 @@ export const getAuditOperations = () => db.auditOperations || [];
 
 /** Restores all business data to the state immediately before the first active operation after cutoff. */
 export function rollbackChangesAfter(cutoff) {
-  if (!canEditData()) return 0;
-  const operations = getAuditOperations().filter((item) => item.status === 'active' && item.occurredAt > cutoff && item.beforeSnapshot).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  if (!canRollbackChanges()) return 0;
+  const effectiveCutoff = String(cutoff || '') > rollbackRetentionStart() ? String(cutoff) : rollbackRetentionStart();
+  const operations = getAuditOperations().filter((item) => item.status === 'active' && item.occurredAt > effectiveCutoff && item.beforeSnapshot).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
   if (!operations.length) return 0;
   const target = operations[0].beforeSnapshot;
   const auditOperations = db.auditOperations; const auditEvents = db.auditEvents;

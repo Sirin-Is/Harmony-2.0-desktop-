@@ -13,7 +13,7 @@ import {
   setMonthlyPaymentField, setTaxField, setReportField, setIncomeValue,
   setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, getSettings,
   deleteCustomColumn, getCustomColumns,
-  copyTaxPeriodForward, getVisibleClients, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, rollbackChangesAfter, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField,
+  copyTaxPeriodForward, getVisibleClients, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, canRollbackChanges, rollbackChangesAfter, rollbackRetentionStart, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField,
 } from './state.js';
 import { TAX_TYPES, previousPeriodKey, taxPeriodsFor } from './tax-model.ts';
 import { setupTopScrollbars, bindTopScrollbarResize } from './render/layout.js';
@@ -45,6 +45,7 @@ import { getOpenSyncConflicts, requestSync, requestRestoreSync, resolveSyncConfl
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { getLocalStorageProtection } from './local-storage-protection.ts';
+import { createEncryptedBackup, decryptBackup, isEncryptedBackup } from './backup-crypto.js';
 
 const TITLES = {
   overview: ['Огляд', 'Зведення зауважень по розділах'],
@@ -85,23 +86,34 @@ function showBootOverlay(visible) {
   if (el) el.style.display = visible ? 'flex' : 'none';
 }
 
-function downloadBackup() {
-  const backup = {
-    format: 'harmony-backup',
-    version: 1,
-    createdAt: new Date().toISOString(),
-    clientCount: Array.isArray(db?.clients) ? db.clients.length : 0,
-    database: db,
-  };
-  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+function localDateTimeValue(value) {
+  const date = new Date(value);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+async function downloadBackup() {
+  const password = await openAppDialog({
+    title: 'Зашифрувати резервну копію',
+    message: 'Створіть окремий пароль щонайменше з 12 символів. Harmony не зберігає його й не зможе відновити файл без цього пароля.',
+    fields: [
+      { key: 'password', label: 'Пароль резервної копії', type: 'password', required: true },
+      { key: 'confirmation', label: 'Повторіть пароль', type: 'password', required: true },
+    ],
+    confirmText: 'Створити копію',
+  });
+  if (!password) return;
+  if (password.password.length < 12) { showToast('Пароль резервної копії має містити щонайменше 12 символів.', 'error'); return; }
+  if (password.password !== password.confirmation) { showToast('Паролі не збігаються.', 'error'); return; }
+  const backup = await createEncryptedBackup(db, password.password);
+  const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = `fop-oblik-${todayIso()}.json`;
+  link.download = `harmony-backup-${todayIso()}.json`;
   link.click();
   // Some desktop webviews start the download on the next event-loop turn.
   // Revoke only afterwards so a large backup is never saved as an empty file.
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-  showToast('Резервну копію завантажено.', 'success');
+  showToast('Зашифровану резервну копію завантажено. Пароль не зберігається в Harmony.', 'success', 7000);
 }
 
 export function render() {
@@ -370,12 +382,14 @@ function bindCurrentView() {
   document.querySelector('#auditActor')?.addEventListener('change', (event) => { uiState.auditActor = event.target.value; render(); });
   document.querySelector('#auditDate')?.addEventListener('change', (event) => { uiState.auditDate = event.target.value; render(); });
   document.querySelector('[data-audit-rollback]')?.addEventListener('click', async () => {
+    if (!canRollbackChanges()) { showToast('Відкат змін доступний лише адміністратору.', 'error'); return; }
     const now = new Date();
-    const localValue = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const localValue = localDateTimeValue(now);
+    const minimumValue = localDateTimeValue(rollbackRetentionStart());
     const result = await openAppDialog({
       title: 'Відкат змін',
-      message: 'Буде відновлено стан даних перед першою зміною після вибраного моменту. Записи журналу не зникнуть: їх буде позначено скасованими.',
-      fields: [{ key: 'cutoff', label: 'Скасувати зміни після дати й часу', type: 'datetime-local', value: localValue, required: true }],
+      message: 'Доступний лише відкат за останні 7 днів. Буде відновлено стан перед першою зміною після вибраного моменту. Записи журналу не зникнуть: їх буде позначено скасованими.',
+      fields: [{ key: 'cutoff', label: 'Скасувати зміни після дати й часу', type: 'datetime-local', value: localValue, min: minimumValue, max: localValue, required: true }],
       confirmText: 'Виконати відкат',
       danger: true,
     });
@@ -533,7 +547,9 @@ function bindCurrentView() {
     uiState.deletedSectionUnlocked = true;
     setView('deleted');
   });
-  $('[data-download-backup]')?.addEventListener('click', downloadBackup);
+  $('[data-download-backup]')?.addEventListener('click', () => {
+    void downloadBackup().catch((error) => showToast(`Не вдалося створити резервну копію: ${error.message || error}`, 'error', 9000));
+  });
   $('[data-restore-backup]')?.addEventListener('click', () => $('#backupRestoreFile')?.click());
   $('#backupRestoreFile')?.addEventListener('change', async (event) => {
     const file = event.target.files?.[0];
@@ -541,13 +557,25 @@ function bindCurrentView() {
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
-      const backup = parsed?.format === 'harmony-backup' ? parsed.database : parsed;
-      const createdAt = parsed?.format === 'harmony-backup' && parsed.createdAt
-        ? new Date(parsed.createdAt).toLocaleString('uk-UA') : 'дата створення не вказана';
+      let source = parsed;
+      if (isEncryptedBackup(parsed)) {
+        const password = await openAppDialog({
+          title: 'Відкрити зашифровану копію',
+          message: 'Введіть пароль, який було задано під час створення цієї резервної копії.',
+          fields: [{ key: 'password', label: 'Пароль резервної копії', type: 'password', required: true }],
+          confirmText: 'Відкрити',
+        });
+        if (!password) return;
+        source = await decryptBackup(parsed, password.password);
+      }
+      const backup = source?.format === 'harmony-backup' ? source.database : source;
+      const createdAt = source?.format === 'harmony-backup' && source.createdAt
+        ? new Date(source.createdAt).toLocaleString('uk-UA') : 'дата створення не вказана';
       const clientCount = Array.isArray(backup?.clients) ? backup.clients.length : 0;
+      const legacyWarning = isEncryptedBackup(parsed) ? '' : ' Файл не зашифрований: після відновлення створіть нову захищену копію.';
       const result = await openAppDialog({
         title: 'Відновити резервну копію',
-        message: `Копію створено: ${createdAt}. ФОП у копії: ${clientCount}. Поточні локальні дані буде замінено вмістом файлу. Розбіжності з хмарою буде винесено в окремі конфлікти. Введіть ВІДНОВИТИ для підтвердження.`,
+        message: `Копію створено: ${createdAt}. ФОП у копії: ${clientCount}. Поточні локальні дані буде замінено вмістом файлу. Розбіжності з хмарою буде винесено в окремі конфлікти.${legacyWarning} Введіть ВІДНОВИТИ для підтвердження.`,
         fields: [{ key: 'confirmation', label: 'Підтвердження', required: true }],
         confirmText: 'Відновити дані',
         danger: true,
@@ -761,7 +789,9 @@ function wireGlobalControls() {
   $('#modalCancel').addEventListener('click', closeModal);
   $('#modal').addEventListener('click', (event) => { if (event.target === $('#modal')) closeModal(); });
 
-  $('#exportBtn').addEventListener('click', downloadBackup);
+  $('#exportBtn').addEventListener('click', () => {
+    void downloadBackup().catch((error) => showToast(`Не вдалося створити резервну копію: ${error.message || error}`, 'error', 9000));
+  });
 
   document.addEventListener('harmony:changed', () => render());
   document.addEventListener('harmony:access-denied', () => { showToast('У вас є доступ лише до перегляду.', 'warn'); render(); });

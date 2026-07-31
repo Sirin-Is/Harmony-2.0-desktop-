@@ -124,8 +124,8 @@ export function renderSettings() {
     ${uiState.currentUser?.role === 'administrator' ? `<div class="panel settings-panel">
       <h2>Резервна копія</h2>
       <p class="note">Файл містить усі дані Harmony, включно з журналом подій. Відновлення замінює поточні локальні дані та буде синхронізоване з робочим простором.</p>
-      <p class="note">Локальні знімки для відкату: ${rollbackSnapshotSize}. Вони не передаються в Supabase, але входять до резервної копії.</p>
-      <p class="note">Увага: JSON-файл резервної копії не має окремого пароля. Зберігайте його лише у захищеному сховищі або на зашифрованому диску.</p>
+      <p class="note">Локальні знімки для відкату за останні 7 днів: ${rollbackSnapshotSize}. Вони не передаються в Supabase, але входять до резервної копії.</p>
+      <p class="note">Нові резервні копії шифруються окремим паролем. Harmony не зберігає цей пароль, тому відновити файл без нього неможливо.</p>
       <div class="toolbar-actions"><button type="button" class="secondary" data-download-backup>Завантажити резервну копію</button><button type="button" class="danger" data-restore-backup>Відновити з резервної копії</button><input type="file" id="backupRestoreFile" accept="application/json,.json" hidden></div>
     </div>` : ''}`;
 }
