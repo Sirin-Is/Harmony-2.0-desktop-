@@ -219,8 +219,8 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
           `SELECT payload, updated_at, sync_status, is_deleted FROM ${record.entityType} WHERE id = ?`, [record.id],
         );
         const localPending = local[0] && ['created', 'updated', 'deleted', 'conflict'].includes(local[0].sync_status);
-        const payloadDiffers = local[0] && local[0].payload !== record.payload;
-        if (localPending && payloadDiffers) {
+        const contentDiffers = local[0] && (local[0].payload !== record.payload || Boolean(local[0].is_deleted) !== record.isDeleted);
+        if (localPending && contentDiffers) {
           const conflict: SyncConflict = {
             id: `${record.entityType}|${record.id}|${record.updatedAt}`,
             entityType: record.entityType, entityId: record.id,
@@ -273,6 +273,13 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
         `INSERT INTO sync_meta (key, value, updated_at) VALUES ('remote_cursor', ?, ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, [JSON.stringify(cursor), now()],
       );
+    });
+  }
+
+  async clearSyncCursor(): Promise<void> {
+    return this.serializeWrite(async () => {
+      const database = await this.db();
+      await database.execute("DELETE FROM sync_meta WHERE key = 'remote_cursor'");
     });
   }
 

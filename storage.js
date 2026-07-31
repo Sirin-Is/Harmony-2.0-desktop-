@@ -106,6 +106,23 @@ export async function saveNow(db) {
   await flushSave();
 }
 
+/** Save a restored snapshot without starting the ordinary push-first sync.
+ * The caller must request restore sync, which compares cloud data first. */
+export async function saveRestoredDatabase(db) {
+  await syncManager.pauseForRestore();
+  clearTimeout(saveTimer);
+  pendingDb = null;
+  setLocalStatus('saving');
+  try {
+    await repository.save(db);
+    setLocalStatus('saved');
+  } catch (error) {
+    setLocalStatus('error', error?.message || error);
+    syncManager.resume();
+    throw error;
+  }
+}
+
 export function clearDatabase() {
   throw new Error('Очищення локальної БД має виконуватись окремою контрольованою міграцією.');
 }
@@ -113,6 +130,10 @@ export function clearDatabase() {
 /** Trigger a safe best-effort synchronization without blocking local UI. */
 export function requestSync() {
   syncManager.requestSync('manual');
+}
+
+export function requestRestoreSync() {
+  syncManager.requestRestoreSync();
 }
 
 export function getOpenSyncConflicts() {

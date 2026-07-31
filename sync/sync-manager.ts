@@ -18,6 +18,9 @@ export class SyncManager {
   private running = false;
   private timer: number | null = null;
   private retryMs = INITIAL_BACKOFF_MS;
+  private restoreSyncRequested = false;
+  private paused = false;
+  private idleWaiters: Array<() => void> = [];
   private listeners = new Set<StateListener>();
 
   constructor(private readonly repository: SyncRepository, private readonly remote = new SupabaseGateway()) {}
@@ -46,6 +49,29 @@ export class SyncManager {
     this.timer = window.setTimeout(() => this.sync().catch(() => {}), 0);
   }
 
+  /** Restored data must be compared with the complete remote workspace before
+   * any local record is permitted to upload. */
+  requestRestoreSync(): void {
+    this.paused = false;
+    this.restoreSyncRequested = true;
+    this.requestSync('backup-restore');
+  }
+
+  /** Stop future background work and wait until an in-flight sync is done.
+   * Used before replacing the complete local snapshot from a backup. */
+  async pauseForRestore(): Promise<void> {
+    this.paused = true;
+    if (this.timer !== null) window.clearTimeout(this.timer);
+    this.timer = null;
+    if (!this.running) return;
+    await new Promise<void>((resolve) => this.idleWaiters.push(resolve));
+  }
+
+  resume(): void {
+    this.paused = false;
+    this.requestSync('resume');
+  }
+
   private onOnline = () => this.requestSync('online');
   private onOffline = () => this.emit('offline', 'Немає з’єднання');
 
@@ -59,13 +85,21 @@ export class SyncManager {
   }
 
   private async sync(): Promise<void> {
-    if (this.running || !navigator.onLine) return;
+    if (this.running || this.paused || !navigator.onLine) return;
     this.running = true;
     this.emit('syncing');
     try {
       await this.remote.healthcheck();
-      await this.push();
-      await this.pull();
+      const pullBeforePush = this.restoreSyncRequested;
+      this.restoreSyncRequested = false;
+      if (pullBeforePush) {
+        await this.repository.clearSyncCursor();
+        await this.pull();
+        await this.push();
+      } else {
+        await this.push();
+        await this.pull();
+      }
       this.retryMs = INITIAL_BACKOFF_MS;
       this.emit('idle');
       this.schedule(PERIODIC_SYNC_MS);
@@ -77,6 +111,8 @@ export class SyncManager {
       this.retryMs = Math.min(this.retryMs * 2, MAX_BACKOFF_MS);
     } finally {
       this.running = false;
+      const waiters = this.idleWaiters.splice(0);
+      waiters.forEach((resolve) => resolve());
     }
   }
 

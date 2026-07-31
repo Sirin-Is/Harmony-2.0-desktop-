@@ -658,7 +658,7 @@ export async function replaceDatabase(newDb) {
   }
   // Persist first, then reload through the repository normalizer. This keeps
   // old, valid backups compatible when newer optional collections are added.
-  await storage.saveNow(newDb);
+  await storage.saveRestoredDatabase(newDb);
   db = await storage.reloadDatabase();
   lastSnapshot = snapshot(db); undoStack.length = 0;
   return db;

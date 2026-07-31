@@ -41,7 +41,7 @@ import { enhanceDateInputs } from './date-input.js';
 import { validateKved, openKvedResults } from './kved-validation.js';
 import { signIn, signOut, signedInEmail } from './auth/session';
 import { getCurrentHarmonyUser, listAuthenticationUsers, manageHarmonyUsers } from './auth/users';
-import { getOpenSyncConflicts, requestSync, resolveSyncConflict } from './storage.js';
+import { getOpenSyncConflicts, requestSync, requestRestoreSync, resolveSyncConflict } from './storage.js';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { getLocalStorageProtection } from './local-storage-protection.ts';
@@ -86,7 +86,14 @@ function showBootOverlay(visible) {
 }
 
 function downloadBackup() {
-  const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+  const backup = {
+    format: 'harmony-backup',
+    version: 1,
+    createdAt: new Date().toISOString(),
+    clientCount: Array.isArray(db?.clients) ? db.clients.length : 0,
+    database: db,
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = `fop-oblik-${todayIso()}.json`;
@@ -533,19 +540,23 @@ function bindCurrentView() {
     event.target.value = '';
     if (!file) return;
     try {
-      const backup = JSON.parse(await file.text());
+      const parsed = JSON.parse(await file.text());
+      const backup = parsed?.format === 'harmony-backup' ? parsed.database : parsed;
+      const createdAt = parsed?.format === 'harmony-backup' && parsed.createdAt
+        ? new Date(parsed.createdAt).toLocaleString('uk-UA') : 'дата створення не вказана';
+      const clientCount = Array.isArray(backup?.clients) ? backup.clients.length : 0;
       const result = await openAppDialog({
         title: 'Відновити резервну копію',
-        message: 'Поточні локальні дані буде замінено вмістом файлу. Відновлені дані буде синхронізовано з робочим простором. Введіть ВІДНОВИТИ для підтвердження.',
+        message: `Копію створено: ${createdAt}. ФОП у копії: ${clientCount}. Поточні локальні дані буде замінено вмістом файлу. Розбіжності з хмарою буде винесено в окремі конфлікти. Введіть ВІДНОВИТИ для підтвердження.`,
         fields: [{ key: 'confirmation', label: 'Підтвердження', required: true }],
         confirmText: 'Відновити дані',
         danger: true,
       });
       if (!result || result.confirmation !== 'ВІДНОВИТИ') return;
       await replaceDatabase(backup);
-      requestSync();
+      requestRestoreSync();
       render();
-      showToast('Резервну копію відновлено. Запущено синхронізацію.', 'success', 7000);
+      showToast('Резервну копію відновлено. Спочатку буде перевірено розбіжності з хмарою.', 'success', 7000);
     } catch (error) {
       showToast(`Не вдалося відновити резервну копію: ${error.message || error}`, 'error', 9000);
     }

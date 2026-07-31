@@ -37,5 +37,6 @@ export interface SyncRepository {
   applyRemoteRecords(records: SyncRecord[]): Promise<SyncConflict[]>;
   getSyncCursor(): Promise<SyncCursor | null>;
   setSyncCursor(cursor: SyncCursor): Promise<void>;
+  clearSyncCursor(): Promise<void>;
   logSync(operation: string, entityType: string, entityId: string, status: 'success' | 'error' | 'skipped', message?: string): Promise<void>;
 }
