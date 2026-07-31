@@ -9,6 +9,7 @@ let tax;
 let reports;
 let clients;
 let income;
+let writeRetry;
 let SyncManager;
 let validateClient;
 
@@ -25,6 +26,7 @@ before(async () => {
   reports = await vite.ssrLoadModule('/report-model.ts');
   clients = await vite.ssrLoadModule('/client-model.ts');
   income = await vite.ssrLoadModule('/income-model.js');
+  writeRetry = await vite.ssrLoadModule('/write-retry.js');
   ({ SyncManager } = await vite.ssrLoadModule('/sync/sync-manager.ts'));
   ({ validateClient } = await vite.ssrLoadModule('/validation.js'));
 });
@@ -89,6 +91,16 @@ test('попередження ліміту ігнорує порожні міс
 test('суми з пробілами й комою обробляються як числа', () => {
   assert.equal(income.isIncomeLimitWarning(1000, ['800,50']), true);
   assert.equal(income.isIncomeLimitWarning(6000, ['1 000,50', '1 000.50']), false);
+});
+
+test('лише тимчасове блокування SQLite запускає обмежений повтор запису', () => {
+  assert.equal(writeRetry.isTransientLocalWriteError(new Error('database is locked')), true);
+  assert.equal(writeRetry.isTransientLocalWriteError(new Error('SQLITE_BUSY: database file is locked')), true);
+  assert.equal(writeRetry.isTransientLocalWriteError(new Error('disk I/O error')), false);
+  assert.equal(writeRetry.localSaveRetryDelay(1), 500);
+  assert.equal(writeRetry.localSaveRetryDelay(2), 1000);
+  assert.equal(writeRetry.localSaveRetryDelay(3), 2000);
+  assert.equal(writeRetry.MAX_TRANSIENT_SAVE_RETRIES, 3);
 });
 
 test('старі податкові записи 2026 не губляться після переходу на ключі з роком', () => {
