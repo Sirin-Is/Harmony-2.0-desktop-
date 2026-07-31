@@ -6,6 +6,7 @@
 import { escapeHtml } from '../utils';
 import { getTaxField, getClientsByTaxTab, getEffectiveTaxDeadline, getSettings } from '../state.js';
 import { TAX_TYPES, TAX_GROUPS, taxPeriodsFor, exemptionOptions, statusPillHtml, daysUntilLabel, previousPeriodKey } from '../tax-model.ts';
+import { shortClientName } from '../client-model.js';
 import { table, empty } from './layout.js';
 import { uiState } from '../ui-state.js';
 
@@ -17,7 +18,7 @@ function exemptionSelect(item, taxType, record) {
 }
 
 function taxRow(item, taxType, index, record, deadline, isDefaultDeadline) {
-  const nameCell = index === 0 ? `<td rowspan="3" class="fop-name-cell">${escapeHtml(item.name)}</td>` : '';
+  const nameCell = index === 0 ? `<td rowspan="3" class="fop-name-cell">${escapeHtml(shortClientName(item.name))}</td>` : '';
   return `<tr class="${record.exemption ? 'exempt-row' : ''}" data-row-id="${item.id}">
     ${nameCell}
     <td>${taxType.label}</td>
@@ -34,7 +35,10 @@ function taxRow(item, taxType, index, record, deadline, isDefaultDeadline) {
 export function renderTaxes() {
   if (!TAX_GROUPS.some((g) => g.key === uiState.taxGroup)) uiState.taxGroup = '12';
   const periods = taxPeriodsFor(uiState.taxGroup === '3' ? '3' : '1', getSettings().workingYear);
-  if (!uiState.taxPeriod || !periods.some((p) => p.key === uiState.taxPeriod)) uiState.taxPeriod = periods[0].key;
+  if (!uiState.taxPeriod || !periods.some((p) => p.key === uiState.taxPeriod)) {
+    const now = new Date(); const current = now.getFullYear() === getSettings().workingYear ? now.getMonth() : 0;
+    uiState.taxPeriod = uiState.taxGroup === '3' ? periods[Math.floor(current / 3)].key : periods[current].key;
+  }
 
   const clients = getClientsByTaxTab(uiState.taxGroup);
   const rows = [];
@@ -55,7 +59,7 @@ export function renderTaxes() {
     `<button class="tab ${p.key === uiState.taxPeriod ? 'active' : ''}" data-tax-period="${p.key}">${p.label}</button>`,
   ).join('');
   const body = clients.length
-    ? table(rows, ['ПІБ', 'Податок', 'Набрано в банку', 'Дата сплати', 'Днів до дедлайну', 'Дедлайн', 'Статус', 'Причина звільнення', 'Примітка'])
+    ? table(rows, ['ПІБ', 'Податок', 'Набрано в банку', 'Дата сплати', 'Днів до дедлайну', 'Дедлайн', 'Статус', 'Причина звільнення', 'Примітка'], 'tax-table')
     : empty('У цій групі ще немає активних ФОП.');
 
   const hasPreviousPeriod = Boolean(previousPeriodKey(periods, uiState.taxPeriod));

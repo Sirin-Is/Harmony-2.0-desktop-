@@ -13,6 +13,10 @@ const AUDITED_TABLES = [
   'tax_records',
   'income_records',
   'report_records',
+  'calendar_events',
+  'hr_orders',
+  'hr_monthly_documents',
+  'payroll_records',
   'settings',
 ];
 
@@ -64,4 +68,53 @@ export const migrations: SqlMigration[] = [
       updated_at TEXT NOT NULL
     )`],
   },
+  {
+    version: 3,
+    name: 'calendar_events',
+    statements: [`CREATE TABLE IF NOT EXISTS calendar_events (
+      id TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL, synced_at TEXT, is_deleted INTEGER NOT NULL DEFAULT 0,
+      sync_status TEXT NOT NULL DEFAULT 'created'
+    )`, `CREATE INDEX IF NOT EXISTS idx_calendar_events_sync ON calendar_events(sync_status, updated_at)`],
+  },
+  {
+    version: 4,
+    name: 'hr_orders',
+    statements: [`CREATE TABLE IF NOT EXISTS hr_orders (
+      id TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL, synced_at TEXT, is_deleted INTEGER NOT NULL DEFAULT 0,
+      sync_status TEXT NOT NULL DEFAULT 'created'
+    )`, `CREATE INDEX IF NOT EXISTS idx_hr_orders_sync ON hr_orders(sync_status, updated_at)`],
+  },
+  {
+    version: 5,
+    name: 'hr_monthly_documents',
+    statements: [`CREATE TABLE IF NOT EXISTS hr_monthly_documents (
+      id TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL, synced_at TEXT, is_deleted INTEGER NOT NULL DEFAULT 0,
+      sync_status TEXT NOT NULL DEFAULT 'created'
+    )`, `CREATE INDEX IF NOT EXISTS idx_hr_monthly_documents_sync ON hr_monthly_documents(sync_status, updated_at)`],
+  },
+  { version: 6, name: 'payroll_records', statements: [`CREATE TABLE IF NOT EXISTS payroll_records (id TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, synced_at TEXT, is_deleted INTEGER NOT NULL DEFAULT 0, sync_status TEXT NOT NULL DEFAULT 'created')`, `CREATE INDEX IF NOT EXISTS idx_payroll_records_sync ON payroll_records(sync_status, updated_at)`] },
+  { version: 7, name: 'audit_log', statements: [`CREATE TABLE IF NOT EXISTS audit_operations (id TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, synced_at TEXT, is_deleted INTEGER NOT NULL DEFAULT 0, sync_status TEXT NOT NULL DEFAULT 'created')`, `CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, synced_at TEXT, is_deleted INTEGER NOT NULL DEFAULT 0, sync_status TEXT NOT NULL DEFAULT 'created')`, `CREATE INDEX IF NOT EXISTS idx_audit_operations_sync ON audit_operations(sync_status, updated_at)`, `CREATE INDEX IF NOT EXISTS idx_audit_events_sync ON audit_events(sync_status, updated_at)`] },
+  {
+    version: 8,
+    name: 'sync_conflict_archive',
+    statements: [`CREATE TABLE IF NOT EXISTS sync_conflicts (
+      id TEXT PRIMARY KEY NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      local_payload TEXT NOT NULL,
+      remote_payload TEXT NOT NULL,
+      local_updated_at TEXT NOT NULL,
+      remote_updated_at TEXT NOT NULL,
+      detected_at TEXT NOT NULL,
+      resolved_at TEXT,
+      resolution TEXT
+    )`, `CREATE INDEX IF NOT EXISTS idx_sync_conflicts_open ON sync_conflicts(resolved_at, detected_at DESC)`],
+  },
+  { version: 9, name: 'sync_conflict_deletion_state', statements: [
+    `ALTER TABLE sync_conflicts ADD COLUMN local_is_deleted INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE sync_conflicts ADD COLUMN remote_is_deleted INTEGER NOT NULL DEFAULT 0`,
+  ] },
 ];

@@ -115,4 +115,14 @@ export function requestSync() {
   syncManager.requestSync('manual');
 }
 
+export function getOpenSyncConflicts() {
+  return repository.getOpenSyncConflicts();
+}
+
+export async function resolveSyncConflict(id, resolution) {
+  const resolved = await repository.resolveSyncConflict(id, resolution);
+  if (resolved) syncManager.requestSync('conflict-resolution');
+  return resolved;
+}
+
 window.addEventListener('beforeunload', () => { if (pendingDb !== null) flushSave().catch(() => {}); });

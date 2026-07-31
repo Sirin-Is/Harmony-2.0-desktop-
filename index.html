@@ -18,7 +18,7 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="brand-icon">H</div>
-      <div class="brand-text">Harmony<small>CRM для бухгалтера ФОП</small></div>
+      <div class="brand-text">Harmony<small id="userIdentity">CRM для бухгалтера ФОП</small></div>
     </div>
     <nav id="nav">
       <button data-view="overview" class="active">Огляд</button>
@@ -27,9 +27,14 @@
       <button data-view="taxes">Податки</button>
       <button data-view="incomes">Доходи</button>
       <button data-view="reports">Звітність</button>
+      <button data-view="calendar">Календар</button>
+      <button data-view="activities">Види діяльності</button>
+      <button data-view="hr">Кадри</button>
+      <button data-view="design-test">Тест дизайну</button>
       <button data-view="inactive">Неактивні</button>
       <button data-view="deleted" id="deletedNav" hidden>Видалені</button>
       <button data-view="settings">Налаштування</button>
+      <button data-view="audit">Журнал подій</button>
     </nav>
     <div class="side-note">
       <div id="syncStatus" class="sync-status"></div>
@@ -45,7 +50,7 @@
         <h1 id="title">Огляд</h1>
       </div>
       <div class="header-actions">
-        <button class="primary" id="quickAdd" style="display:none">+ Додати ФОП</button>
+        <button class="primary quick-note" id="quickNote">+ Задача</button>
       </div>
     </header>
     <div id="content"></div>

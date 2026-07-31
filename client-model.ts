@@ -33,19 +33,19 @@ export function rateOptionsForGroup(group: string | undefined): RateOption[] {
 export function rateText(item: Client): string {
   const rate = Number(item.rate) || 0;
   if (String(item.group) === '3' && String(item.rate) === '0.03') return '3% + ПДВ';
-  return rate ? `${rate * 100}%` : '—';
+  return rate ? `${rate * 100}%` : '-';
 }
 
 /** Split a free-form phone field (newline/comma/semicolon separated) into escaped `<br>`-joined lines. */
 export function phoneLines(value?: string): string {
   const parts = String(value || '').split(/[\n,;]+/).map((part) => part.trim()).filter(Boolean);
-  return parts.length ? parts.map(escapeHtml).join('<br>') : '—';
+  return parts.length ? parts.map(escapeHtml).join('<br>') : '-';
 }
 
 /** Render a client's "Зв'язок" field as a clickable link only for recognizably safe schemes. */
 export function contactLinkHtml(item: Client): string {
   const raw = (item.contactLink || '').trim();
-  if (!raw) return '—';
+  if (!raw) return '-';
   const safeHref = /^https?:\/\//i.test(raw) ? raw : (/^t\.me\//i.test(raw) ? `https://${raw}` : null);
   return safeHref
     ? `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(raw)}</a>`
@@ -55,7 +55,7 @@ export function contactLinkHtml(item: Client): string {
 /** Render the KEP-expiry countdown as a colored pill (or em dash if no date set). */
 export function kepStatusLabel(dateStr?: string): string {
   const diff = daysUntil(dateStr);
-  if (diff === null) return '—';
+  if (diff === null) return '-';
   if (diff < 0) return `<span class="pill late">Прострочено ${Math.abs(diff)} дн.</span>`;
   if (diff === 0) return `<span class="pill warn">Сьогодні</span>`;
   if (diff <= 30) return `<span class="pill warn">${diff} дн.</span>`;

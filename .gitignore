@@ -2,6 +2,7 @@
 node_modules/
 dist/
 .npm-cache/
+supabase/.temp/
 
 # Rust/Tauri build artifacts
 src-tauri/target/

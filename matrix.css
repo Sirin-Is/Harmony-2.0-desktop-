@@ -1,7 +1,7 @@
 /* Payments matrix (Оплати): sticky ПІБ/Борг columns, quarterly month grid, editable cells. */
 .payments-matrix th { text-align: center; padding: 6px 6px; }
-.payments-matrix .fop-name { position: sticky; left: 0; background: #fff; width: 170px; min-width: 170px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; z-index: 2; }
-.payments-matrix .debt { position: sticky; left: 170px; background: #fff; width: 115px; min-width: 115px; max-width: 115px; font-weight: 700; z-index: 2; box-shadow: 4px 0 6px -4px rgba(23, 32, 51, .18); }
+.payments-matrix .fop-name { position: sticky; left: 0; background: #fff; width: 170px; min-width: 0; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; z-index: 2; }
+.payments-matrix .debt { position: sticky; left: 170px; background: #fff; width: 115px; min-width: 0; max-width: 115px; font-weight: 700; z-index: 2; box-shadow: 4px 0 6px -4px rgba(23, 32, 51, .18); }
 .payments-matrix thead .fop-name, .payments-matrix thead .debt { z-index: 3; }
 .payments-matrix .month-head { border-left: 1px solid var(--line); }
 .month-value { width: 68px; border: 1px solid #d7dde5; border-radius: 5px; padding: 5px; text-align: right; font: 12px inherit; }
@@ -13,6 +13,6 @@
 .custom-cell:focus { outline: 2px solid #83d5bd; border-color: #176b58; background: #fff; }
 
 /* Incomes matrix (Доходи): same sticky-column trick as Оплати. */
-.incomes-matrix .fop-name { position: sticky; left: 0; background: #fff; width: 160px; min-width: 160px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; z-index: 2; }
-.incomes-matrix .income-limit-cell { position: sticky; left: 160px; background: #fff; width: 118px; min-width: 118px; max-width: 118px; z-index: 2; box-shadow: 4px 0 6px -4px rgba(23, 32, 51, .18); }
+.incomes-matrix .fop-name { position: sticky; left: 0; background: #fff; width: 160px; min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; z-index: 2; }
+.incomes-matrix .income-limit-cell { position: sticky; left: 160px; background: #fff; width: 118px; min-width: 0; max-width: 118px; z-index: 2; box-shadow: 4px 0 6px -4px rgba(23, 32, 51, .18); }
 .incomes-matrix thead .fop-name, .incomes-matrix thead .income-limit-cell { z-index: 3; }

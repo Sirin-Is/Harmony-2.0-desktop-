@@ -44,6 +44,28 @@ export function quarterKeyForPeriod(periodKey: string): string {
   return ['q1', 'q1', 'q1', 'half', 'half', 'half', '9m', '9m', '9m', 'year', 'year', 'year'][month];
 }
 
+const iso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const fromIso = (value: string) => new Date(`${value}T00:00:00`);
+/** Internal control date: if the statutory day is on a weekend, work on the preceding Friday. */
+export function controlDeadline(statutoryDate: string): string {
+  const date = fromIso(statutoryDate); const day = date.getDay();
+  if (day === 6) date.setDate(date.getDate() - 1);
+  if (day === 0) date.setDate(date.getDate() - 2);
+  return iso(date);
+}
+export function quarterEnd(periodKey: string): Date {
+  const year = Number(periodKey.slice(0, 4)); const key = quarterKeyForPeriod(periodKey);
+  const month = key === 'q1' ? 2 : key === 'half' ? 5 : key === '9m' ? 8 : 11;
+  return new Date(year, month + 1, 0);
+}
+
+/** Deterministic internal deadline for the tax-control workflow. */
+export function calculatedTaxDeadline(realGroup: string, taxType: string, periodKey: string): string {
+  if (taxType === 'esv') { const end = quarterEnd(realGroup === '3' ? periodKey : `${periodKey.slice(0, 4)}-${quarterKeyForPeriod(periodKey)}`); end.setDate(end.getDate() + 20); return controlDeadline(iso(end)); }
+  if (realGroup === '3') { const end = quarterEnd(periodKey); end.setDate(end.getDate() + 50); return controlDeadline(iso(end)); }
+  return controlDeadline(`${periodKey}-20`);
+}
+
 /** "не було доходів" only makes sense for group 3 (income-based tax); other reasons apply to any group. */
 export function exemptionOptions(group: string): string[] {
   const options = ['', 'працевлаштування', 'пенсія', 'ТМБД'];
@@ -76,16 +98,7 @@ export function getTaxRecord(db: Database, clientId: string, realGroup: string, 
 
 /** The deadline configured in "Налаштування" for this real group/tax/period, before any per-record override. */
 export function getDefaultDeadline(db: Database, realGroup: string, taxType: string, periodKey: string): string {
-  if (taxType === 'esv') {
-    const quarterKey = realGroup === '3' ? periodKey : quarterKeyForPeriod(periodKey);
-    const legacy = periodKey.startsWith(`${DEFAULT_WORKING_YEAR}-`) ? db.settings.quarterlyDeadlines.esv[quarterKey] : '';
-    return db.settings.quarterlyDeadlines.esv[periodKey] || legacy || '';
-  }
-  if (realGroup === '3') {
-    const legacy = periodKey.startsWith(`${DEFAULT_WORKING_YEAR}-`) ? db.settings.quarterlyDeadlines.group3[quarterKeyForPeriod(periodKey)] : '';
-    return db.settings.quarterlyDeadlines.group3[periodKey] || legacy || '';
-  }
-  return db.settings.monthlyDeadlines[periodKey] || '';
+  return calculatedTaxDeadline(realGroup, taxType, periodKey);
 }
 
 /** A record's own explicit deadline wins; otherwise fall back to the Settings-wide default. */
@@ -111,9 +124,9 @@ export function taxStatus(record: TaxRecord, deadline?: string): TaxStatus | nul
 }
 
 export function statusPillHtml(record: TaxRecord, deadline?: string): string {
-  if (record.exemption) return '—';
+  if (record.exemption) return '-';
   const status = taxStatus(record, deadline);
-  return status ? `<span class="pill ${status.cls}">${status.text}</span>` : '—';
+  return status ? `<span class="pill ${status.cls}">${status.text}</span>` : '-';
 }
 
 /**
@@ -123,10 +136,10 @@ export function statusPillHtml(record: TaxRecord, deadline?: string): string {
  * was this paid".
  */
 export function daysUntilLabel(deadline: string | undefined, record: TaxRecord): string {
-  if (!deadline) return '—';
+  if (!deadline) return '-';
   const paidDate = record?.paidDate;
   const diff = paidDate ? daysBetween(paidDate, deadline) : daysUntil(deadline);
-  if (diff === null) return '—';
+  if (diff === null) return '-';
   if (diff < 0) return `<span class="pill late">${diff} дн.</span>`;
   if (!paidDate && diff <= 7) return `<span class="pill warn">${diff} дн.</span>`;
   return `<span class="pill ok">${diff} дн.</span>`;

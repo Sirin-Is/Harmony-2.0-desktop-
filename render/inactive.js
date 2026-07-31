@@ -10,10 +10,10 @@ import { table } from './layout.js';
 export function renderInactive() {
   const rows = getArchivedClients().map((item) => `<tr>
     <td><strong>${escapeHtml(item.name)}</strong></td>
-    <td>${escapeHtml(item.group || '—')}</td>
+    <td>${escapeHtml(item.group || '-')}</td>
     <td>${rateText(item)}</td>
-    <td>${escapeHtml(item.inactiveReason || '—')}</td>
-    <td>${item.deletionEligibleAt ? `До ${escapeHtml(item.deletionEligibleAt)}` : '—'}</td>
+    <td>${escapeHtml(item.inactiveReason || '-')}</td>
+    <td>${item.deletionEligibleAt ? `До ${escapeHtml(item.deletionEligibleAt)}` : '-'}</td>
     <td class="right row-actions">
       <button class="secondary" data-restore-client="${item.id}">Активувати</button>
       ${item.deletionEligibleAt ? '' : `<button class="icon" data-request-delete-client="${item.id}" title="Подати запит на видалення">🗑</button>`}

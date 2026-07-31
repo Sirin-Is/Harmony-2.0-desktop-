@@ -8,10 +8,11 @@ import { getReportField, getClientsByTaxTab, getEffectiveReportDeadline, getSett
 import { REPORT_GROUPS, reportPeriodsFor, reportStatusPillHtml, reportDaysUntilLabel } from '../report-model.ts';
 import { table, empty } from './layout.js';
 import { uiState } from '../ui-state.js';
+import { shortClientName } from '../client-model.js';
 
 function reportRow(item, realGroup, record, deadline, isDefaultDeadline) {
   return `<tr data-row-id="${item.id}">
-    <td class="fop-name-cell">${escapeHtml(item.name)}</td>
+    <td class="fop-name-cell">${escapeHtml(shortClientName(item.name))}</td>
     <td><input type="date" class="report-field" data-client="${item.id}" data-real-group="${realGroup}" data-field="submittedDate" value="${escapeHtml(record.submittedDate || '')}"></td>
     <td class="report-days">${reportDaysUntilLabel(deadline, record)}</td>
     <td><input type="date" class="report-field ${isDefaultDeadline ? 'tax-field-default' : ''}" data-client="${item.id}" data-real-group="${realGroup}" data-field="deadline" value="${escapeHtml(deadline)}" title="${isDefaultDeadline ? 'Значення з «Налаштувань». Змініть, щоб задати виняток лише для цього ФОП.' : ''}"></td>
@@ -23,7 +24,10 @@ function reportRow(item, realGroup, record, deadline, isDefaultDeadline) {
 export function renderReports() {
   if (!REPORT_GROUPS.some((g) => g.key === uiState.reportGroup)) uiState.reportGroup = '12';
   const periods = reportPeriodsFor(uiState.reportGroup, getSettings().workingYear);
-  if (!uiState.reportPeriod || !periods.some((p) => p.key === uiState.reportPeriod)) uiState.reportPeriod = periods[0].key;
+  if (!uiState.reportPeriod || !periods.some((p) => p.key === uiState.reportPeriod)) {
+    const now = new Date(); const current = now.getFullYear() === getSettings().workingYear ? now.getMonth() : 0;
+    uiState.reportPeriod = uiState.reportGroup === '3' ? periods[Math.floor(current / 3)].key : periods[0].key;
+  }
 
   const clients = getClientsByTaxTab(uiState.reportGroup);
   const rows = clients.map((item) => {

@@ -1,5 +1,6 @@
 import type { SyncRecord, SyncRepository } from '../data/sync-types';
 import { SupabaseGateway } from './supabase-gateway';
+import { getCurrentHarmonyUser } from '../auth/users';
 
 type SyncState = 'idle' | 'syncing' | 'offline' | 'error';
 type StateListener = (state: SyncState, detail?: string) => void;
@@ -80,6 +81,8 @@ export class SyncManager {
   }
 
   private async push(): Promise<void> {
+    const profile = await getCurrentHarmonyUser();
+    if (profile?.role === 'observer') return;
     while (true) {
       const batch = await this.repository.getPendingSyncRecords(BATCH_SIZE);
       if (!batch.length) return;
@@ -91,17 +94,21 @@ export class SyncManager {
     }
   }
 
-  private async pull(): Promise<void> {
+  private async pull(): Promise<number> {
     let cursor = await this.repository.getSyncCursor();
+    let conflicts = 0;
     while (true) {
       const batch = await this.remote.pullAfter(cursor, BATCH_SIZE);
-      if (!batch.length) return;
-      await this.repository.applyRemoteRecords(batch);
+      if (!batch.length) return conflicts;
+      const detected = await this.repository.applyRemoteRecords(batch);
+      conflicts += detected.length;
       window.dispatchEvent(new CustomEvent('harmony:remote-sync', { detail: { count: batch.length } }));
+      if (detected.length) window.dispatchEvent(new CustomEvent('harmony:sync-conflict', { detail: { conflicts: detected } }));
       await this.logBatch('pull', batch);
-      cursor = batch[batch.length - 1].updatedAt;
+      const last = batch[batch.length - 1];
+      cursor = { updatedAt: last.updatedAt, entityType: last.entityType, id: last.id };
       await this.repository.setSyncCursor(cursor);
-      if (batch.length < BATCH_SIZE) return;
+      if (batch.length < BATCH_SIZE) return conflicts;
     }
   }
 

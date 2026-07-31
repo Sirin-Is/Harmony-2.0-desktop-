@@ -5,6 +5,8 @@
 import { escapeHtml, moneyFormat, MONTH_NAMES_UA, monthPeriodKey } from '../utils';
 import { getVisibleClients, getClientMonthlyTotals, getMonthlyCellValue, getSettings } from '../state.js';
 import { empty } from './layout.js';
+import { uiState } from '../ui-state.js';
+import { shortClientName } from '../client-model.js';
 
 const monthsFor = (workingYear) => Array.from({ length: 12 }, (_, index) => ({
   key: monthPeriodKey(workingYear, index + 1),
@@ -21,13 +23,15 @@ function amountInput(item, monthKey, type) {
 
 export function renderPayments() {
   const workingYear = getSettings().workingYear;
-  const months = monthsFor(workingYear);
+  const allMonths = monthsFor(workingYear);
+  if (![1, 2, 3, 4].includes(uiState.paymentsQuarter)) uiState.paymentsQuarter = new Date().getFullYear() === workingYear ? Math.floor(new Date().getMonth() / 3) + 1 : 1;
+  const months = allMonths.slice((uiState.paymentsQuarter - 1) * 3, uiState.paymentsQuarter * 3);
   const clients = getVisibleClients();
   const rows = clients.map((item) => {
     const totals = getClientMonthlyTotals(item.id);
     const monthCells = months.map((month) => `${amountInput(item, month.key, 'charged')}${amountInput(item, month.key, 'paid')}`).join('');
     return `<tr>
-      <td class="fop-name"><strong>${escapeHtml(item.name)}</strong></td>
+      <td class="fop-name"><strong>${escapeHtml(shortClientName(item.name))}</strong></td>
       <td class="right amount debt">${moneyFormat.format(totals.charged - totals.paid)}</td>
       ${monthCells}
     </tr>`;
@@ -37,7 +41,7 @@ export function renderPayments() {
   const body = rows.length
     ? rows.join('')
     : `<tr><td colspan="${2 + months.length * 2}">${empty('Додайте ФОП на сторінці «Огляд».')}</td></tr>`;
-  return `<div class="toolbar"><p class="note">Для кожного ФОП — нараховано і сплачено по місяцях ${workingYear} року. Вкажіть суму або «-». Зміни зберігаються після виходу з поля.</p></div>
+  return `<div class="toolbar"><p class="note">Для кожного ФОП — нараховано і сплачено по місяцях ${workingYear} року. Вкажіть суму або «-». Зміни зберігаються після виходу з поля.</p></div><div class="subnav">${[1,2,3,4].map((quarter) => `<button class="tab ${quarter === uiState.paymentsQuarter ? 'active' : ''}" data-payments-quarter="${quarter}">${quarter} квартал</button>`).join('')}</div>
     <div class="table-wrap payments-matrix">
       <table class="table">
         <thead>

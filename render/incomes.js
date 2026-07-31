@@ -8,6 +8,7 @@ import { escapeHtml, moneyFormat, MONTH_SHORT_UA, monthPeriodKey } from '../util
 import { getClientsByGroup, incomeSum, getIncomeValue, getSettings } from '../state.js';
 import { groupLimitAmount } from '../client-model';
 import { uiState } from '../ui-state.js';
+import { shortClientName } from '../client-model.js';
 
 function remainingLimitLabel(group, ytdIncome) {
   const limit = groupLimitAmount(group, getSettings().minWage);
@@ -40,7 +41,7 @@ export function renderIncomes() {
     rows = clients.map((item) => {
       const ytd = incomeSum(item.id, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], workingYear);
       const monthCells = Array.from({ length: 12 }, (_, index) => cell(item, index)).join('');
-      return `<tr data-row-id="${item.id}"><td class="fop-name"><strong>${escapeHtml(item.name)}</strong></td><td class="right income-limit-cell">${remainingLimitLabel(item.group, ytd)}</td>${monthCells}</tr>`;
+      return `<tr data-row-id="${item.id}"><td class="fop-name"><strong>${escapeHtml(shortClientName(item.name))}</strong></td><td class="right income-limit-cell">${remainingLimitLabel(item.group, ytd)}</td>${monthCells}</tr>`;
     });
   } else {
     headings = ['ПІБ', 'Залишок ліміту', 'Січ', 'Лют', 'Бер', 'I кв.', 'Кві', 'Тра', 'Чер', 'Півріччя', 'Лип', 'Сер', 'Вер', '9 міс.', 'Жов', 'Лис', 'Гру', 'Рік'];
@@ -50,7 +51,7 @@ export function renderIncomes() {
       const m9 = incomeSum(item.id, [0, 1, 2, 3, 4, 5, 6, 7, 8], workingYear);
       const yearTotal = incomeSum(item.id, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], workingYear);
       const line = `${cell(item, 0)}${cell(item, 1)}${cell(item, 2)}${sumCell(q1)}${cell(item, 3)}${cell(item, 4)}${cell(item, 5)}${sumCell(half)}${cell(item, 6)}${cell(item, 7)}${cell(item, 8)}${sumCell(m9)}${cell(item, 9)}${cell(item, 10)}${cell(item, 11)}${sumCell(yearTotal)}`;
-      return `<tr data-row-id="${item.id}"><td class="fop-name"><strong>${escapeHtml(item.name)}</strong></td><td class="right income-limit-cell">${remainingLimitLabel(item.group, yearTotal)}</td>${line}</tr>`;
+      return `<tr data-row-id="${item.id}"><td class="fop-name"><strong>${escapeHtml(shortClientName(item.name))}</strong></td><td class="right income-limit-cell">${remainingLimitLabel(item.group, yearTotal)}</td>${line}</tr>`;
     });
   }
 

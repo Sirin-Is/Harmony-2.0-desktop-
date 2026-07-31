@@ -3,21 +3,25 @@ import { migrations } from './migrations';
 import type { Database as AppDatabase } from '../types';
 import { normalizeWorkingYear } from '../utils';
 import type { LocalRepository } from './repository';
-import type { SyncRecord, SyncRepository, SyncStatus } from './sync-types';
+import type { SyncConflict, SyncCursor, SyncRecord, SyncRepository, SyncStatus } from './sync-types';
 
 type Row = { id: string; payload: string };
 type SyncRow = { id: string; payload: string; created_at: string; updated_at: string; synced_at: string | null; is_deleted: number; sync_status: SyncStatus };
 
 const DATABASE_URL = 'sqlite:harmony.db';
-const TABLES = ['clients', 'custom_columns', 'monthly_payments', 'tax_records', 'income_records', 'report_records', 'settings'];
+const LOCAL_TABLES = ['clients', 'custom_columns', 'monthly_payments', 'tax_records', 'income_records', 'report_records', 'calendar_events', 'hr_orders', 'hr_monthly_documents', 'payroll_records', 'audit_operations', 'audit_events', 'settings'];
+// Rollback snapshots can contain the full working database. They stay on the
+// device that made the edit; compact audit events remain available to other devices.
+const SYNC_TABLES = LOCAL_TABLES.filter((table) => table !== 'audit_operations');
 
 const emptyDatabase = (): AppDatabase => ({
-  clients: [], customColumns: [], monthlyPayments: {}, taxRecords: {}, incomeRecords: {}, reportRecords: {},
-  settings: { workingYear: 2026, availableWorkingYears: [2026, 2027], minWage: 8647, monthlyDeadlines: {}, quarterlyDeadlines: { group3: {}, esv: {} }, reportDeadlines: { annual: {}, quarterly: { q1: '', half: '', '9m': '', year: '' } } },
+  clients: [], customColumns: [], monthlyPayments: {}, taxRecords: {}, incomeRecords: {}, reportRecords: {}, calendarEvents: [], hrOrders: [], hrMonthlyDocuments: [], payrollRecords: [], auditOperations: [], auditEvents: [],
+  settings: { workingYear: 2026, availableWorkingYears: [2026, 2027], minWage: 8647, monthlyDeadlines: {}, quarterlyDeadlines: { group3: {}, esv: {} }, reportDeadlines: { annual: {}, quarterly: { q1: '', half: '', '9m': '', year: '' } }, appearance: { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 } },
 });
 
 function normalizeDatabase(raw: Partial<AppDatabase> | null | undefined): AppDatabase {
   const base = emptyDatabase();
+  const defaultAppearance = { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 };
   const settings = raw?.settings as Partial<AppDatabase['settings']> | undefined;
   const legacyAnnual = typeof settings?.reportDeadlines?.annual === 'string' ? settings.reportDeadlines.annual : '';
   const workingYear = Math.max(2026, normalizeWorkingYear(settings?.workingYear));
@@ -28,7 +32,7 @@ function normalizeDatabase(raw: Partial<AppDatabase> | null | undefined): AppDat
   return {
     clients: Array.isArray(raw?.clients) ? raw.clients : [],
     customColumns: Array.isArray(raw?.customColumns) ? raw.customColumns : [],
-    monthlyPayments: raw?.monthlyPayments || {}, taxRecords: raw?.taxRecords || {}, incomeRecords: raw?.incomeRecords || {}, reportRecords: raw?.reportRecords || {},
+    monthlyPayments: raw?.monthlyPayments || {}, taxRecords: raw?.taxRecords || {}, incomeRecords: raw?.incomeRecords || {}, reportRecords: raw?.reportRecords || {}, calendarEvents: Array.isArray(raw?.calendarEvents) ? raw.calendarEvents : [], hrOrders: Array.isArray(raw?.hrOrders) ? raw.hrOrders : [], hrMonthlyDocuments: Array.isArray(raw?.hrMonthlyDocuments) ? raw.hrMonthlyDocuments : [], payrollRecords: Array.isArray(raw?.payrollRecords) ? raw.payrollRecords : [], auditOperations: Array.isArray(raw?.auditOperations) ? raw.auditOperations : [], auditEvents: Array.isArray(raw?.auditEvents) ? raw.auditEvents : [],
     settings: {
       workingYear,
       availableWorkingYears,
@@ -38,6 +42,11 @@ function normalizeDatabase(raw: Partial<AppDatabase> | null | undefined): AppDat
       reportDeadlines: {
         annual: typeof settings?.reportDeadlines?.annual === 'object' && settings.reportDeadlines.annual ? settings.reportDeadlines.annual : (legacyAnnual ? { 2026: legacyAnnual } : {}),
         quarterly: settings?.reportDeadlines?.quarterly || base.settings.reportDeadlines.quarterly,
+      },
+      appearance: {
+        fieldColor: settings?.appearance?.fieldColor || defaultAppearance.fieldColor,
+        fieldRadius: settings?.appearance?.fieldRadius ?? defaultAppearance.fieldRadius,
+        fieldOpacity: [0, 20, 40, 60, 80, 100].includes(Number(settings?.appearance?.fieldOpacity)) ? Number(settings?.appearance?.fieldOpacity) : defaultAppearance.fieldOpacity,
       },
     },
   };
@@ -86,8 +95,8 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
 
   async load(): Promise<AppDatabase> {
     const database = await this.db();
-    const [clients, columns, monthly, taxes, income, reports, settings] = await Promise.all(
-      TABLES.map((table) => database.select<Row[]>(`SELECT id, payload FROM ${table} WHERE is_deleted = 0`)),
+    const [clients, columns, monthly, taxes, income, reports, calendarEvents, hrOrders, hrMonthlyDocuments, payrollRecords, auditOperations, auditEvents, settings] = await Promise.all(
+      LOCAL_TABLES.map((table) => database.select<Row[]>(`SELECT id, payload FROM ${table} WHERE is_deleted = 0`)),
     );
     const result = emptyDatabase();
     result.clients = clients.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['clients'];
@@ -99,6 +108,12 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
     for (const row of taxes) { const data = parse<{ key: string; value: unknown }>(row.payload); if (data) result.taxRecords[data.key] = data.value as never; }
     for (const row of income) { const data = parse<{ clientId: string; monthKey: string; value: string }>(row.payload); if (data) (result.incomeRecords[data.clientId] ||= {})[data.monthKey] = data.value; }
     for (const row of reports) { const data = parse<{ key: string; value: unknown }>(row.payload); if (data) result.reportRecords[data.key] = data.value as never; }
+    result.calendarEvents = calendarEvents.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['calendarEvents'];
+    result.hrOrders = hrOrders.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['hrOrders'];
+    result.hrMonthlyDocuments = hrMonthlyDocuments.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['hrMonthlyDocuments'];
+    result.payrollRecords = payrollRecords.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['payrollRecords'];
+    result.auditOperations = auditOperations.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['auditOperations'];
+    result.auditEvents = auditEvents.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['auditEvents'];
     const settingsRecord = settings.map((row) => parse<AppDatabase['settings']>(row.payload)).find(Boolean);
     if (settingsRecord) result.settings = settingsRecord;
     return normalizeDatabase(result);
@@ -121,6 +136,12 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
         await this.replaceRows(database, 'tax_records', Object.entries(normalized.taxRecords).map(([key, value]) => ({ id: key, payload: { key, value } })));
         await this.replaceRows(database, 'income_records', Object.entries(normalized.incomeRecords).flatMap(([clientId, months]) => Object.entries(months).map(([monthKey, value]) => ({ id: `${clientId}|${monthKey}`, payload: { clientId, monthKey, value } }))));
         await this.replaceRows(database, 'report_records', Object.entries(normalized.reportRecords).map(([key, value]) => ({ id: key, payload: { key, value } })));
+        await this.replaceRows(database, 'calendar_events', normalized.calendarEvents.map((item) => ({ id: item.id, payload: item })));
+        await this.replaceRows(database, 'hr_orders', normalized.hrOrders.map((item) => ({ id: item.id, payload: item })));
+        await this.replaceRows(database, 'hr_monthly_documents', normalized.hrMonthlyDocuments.map((item) => ({ id: item.id, payload: item })));
+        await this.replaceRows(database, 'payroll_records', normalized.payrollRecords.map((item) => ({ id: item.id, payload: item })));
+        await this.replaceRows(database, 'audit_operations', normalized.auditOperations.map((item) => ({ id: item.id, payload: item })));
+        await this.replaceRows(database, 'audit_events', normalized.auditEvents.map((item) => ({ id: item.id, payload: item })));
         await this.replaceRows(database, 'settings', [{ id: 'default', payload: normalized.settings }]);
       } catch (error) { throw error; }
     });
@@ -128,13 +149,22 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
 
   private async replaceRows(database: Database, table: string, records: Array<{ id: string; payload: unknown }>): Promise<void> {
     const timestamp = now();
+    const current = await database.select<Pick<SyncRow, 'id' | 'payload' | 'is_deleted'>[]>(
+      `SELECT id, payload, is_deleted FROM ${table}`,
+    );
+    const currentById = new Map(current.map((row) => [row.id, row]));
     for (const record of records) {
+      const payload = JSON.stringify(record.payload);
+      const existing = currentById.get(record.id);
+      // A save receives the whole local snapshot. Do not turn every untouched
+      // row into an update, otherwise one edit re-uploads the whole database.
+      if (existing && !existing.is_deleted && existing.payload === payload) continue;
       await database.execute(
         `INSERT INTO ${table} (id, payload, created_at, updated_at, synced_at, is_deleted, sync_status)
          VALUES (?, ?, ?, ?, NULL, 0, 'created')
          ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at,
            is_deleted = 0, sync_status = CASE WHEN ${table}.sync_status = 'created' THEN 'created' ELSE 'updated' END`,
-        [record.id, JSON.stringify(record.payload), timestamp, timestamp],
+        [record.id, payload, timestamp, timestamp],
       );
     }
     const ids = records.map((record) => record.id);
@@ -145,7 +175,7 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
   async getPendingSyncRecords(limit: number): Promise<SyncRecord[]> {
     return this.serializeWrite(async () => {
       const database = await this.db();
-      const rows = (await Promise.all(TABLES.map((table) => database.select<SyncRow[]>(
+      const rows = (await Promise.all(SYNC_TABLES.map((table) => database.select<SyncRow[]>(
         `SELECT id, payload, created_at, updated_at, synced_at, is_deleted, sync_status FROM ${table}
          WHERE sync_status IN ('created', 'updated', 'deleted') ORDER BY updated_at ASC LIMIT ?`, [limit],
       ).then((items) => items.map((item) => ({ ...item, entityType: table })))))).flat()
@@ -173,17 +203,36 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
     });
   }
 
-  async applyRemoteRecords(records: SyncRecord[]): Promise<void> {
+  async applyRemoteRecords(records: SyncRecord[]): Promise<SyncConflict[]> {
     return this.serializeWrite(async () => {
       const database = await this.db();
+      const conflicts: SyncConflict[] = [];
       try {
       for (const record of records) {
-        if (!TABLES.includes(record.entityType)) continue;
-        const local = await database.select<Pick<SyncRow, 'updated_at' | 'sync_status'>[]>(
-          `SELECT updated_at, sync_status FROM ${record.entityType} WHERE id = ?`, [record.id],
+        if (!SYNC_TABLES.includes(record.entityType)) continue;
+        const local = await database.select<Pick<SyncRow, 'payload' | 'updated_at' | 'sync_status' | 'is_deleted'>[]>(
+          `SELECT payload, updated_at, sync_status, is_deleted FROM ${record.entityType} WHERE id = ?`, [record.id],
         );
-        // Last-write-wins: a newer local edit remains queued for the next push.
-        if (local[0] && local[0].updated_at > record.updatedAt) continue;
+        const localPending = local[0] && ['created', 'updated', 'deleted', 'conflict'].includes(local[0].sync_status);
+        const payloadDiffers = local[0] && local[0].payload !== record.payload;
+        if (localPending && payloadDiffers) {
+          const conflict: SyncConflict = {
+            id: `${record.entityType}|${record.id}|${record.updatedAt}`,
+            entityType: record.entityType, entityId: record.id,
+            localPayload: local[0].payload, remotePayload: record.payload,
+            localIsDeleted: Boolean(local[0].is_deleted), remoteIsDeleted: record.isDeleted,
+            localUpdatedAt: local[0].updated_at, remoteUpdatedAt: record.updatedAt,
+            detectedAt: now(),
+          };
+          await database.execute(
+            `INSERT OR IGNORE INTO sync_conflicts (id, entity_type, entity_id, local_payload, remote_payload, local_is_deleted, remote_is_deleted, local_updated_at, remote_updated_at, detected_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [conflict.id, conflict.entityType, conflict.entityId, conflict.localPayload, conflict.remotePayload, conflict.localIsDeleted ? 1 : 0, conflict.remoteIsDeleted ? 1 : 0, conflict.localUpdatedAt, conflict.remoteUpdatedAt, conflict.detectedAt],
+          );
+          await database.execute(`UPDATE ${record.entityType} SET sync_status = 'conflict' WHERE id = ?`, [record.id]);
+          conflicts.push(conflict);
+          continue;
+        }
         await database.execute(
           `INSERT INTO ${record.entityType} (id, payload, created_at, updated_at, synced_at, is_deleted, sync_status)
            VALUES (?, ?, ?, ?, ?, ?, 'synced')
@@ -194,24 +243,73 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
         );
       }
       } catch (error) { throw error; }
+      return conflicts;
     });
   }
 
-  async getSyncCursor(): Promise<string | null> {
+  async getSyncCursor(): Promise<SyncCursor | null> {
     return this.serializeWrite(async () => {
       const database = await this.db();
       const rows = await database.select<{ value: string }[]>('SELECT value FROM sync_meta WHERE key = ?', ['remote_cursor']);
-      return rows[0]?.value || null;
+      const value = rows[0]?.value;
+      if (!value) return null;
+      try {
+        const cursor = JSON.parse(value) as SyncCursor;
+        if (cursor.updatedAt && typeof cursor.entityType === 'string' && typeof cursor.id === 'string') return cursor;
+      } catch { /* Legacy cursors were stored as a timestamp. */ }
+      return { updatedAt: value, entityType: '', id: '' };
     });
   }
 
-  async setSyncCursor(cursor: string): Promise<void> {
+  async setSyncCursor(cursor: SyncCursor): Promise<void> {
     return this.serializeWrite(async () => {
       const database = await this.db();
       await database.execute(
         `INSERT INTO sync_meta (key, value, updated_at) VALUES ('remote_cursor', ?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, [cursor, now()],
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, [JSON.stringify(cursor), now()],
       );
+    });
+  }
+
+  async getOpenSyncConflicts(): Promise<SyncConflict[]> {
+    return this.serializeWrite(async () => {
+      const database = await this.db();
+      const rows = await database.select<Array<{
+        id: string; entity_type: string; entity_id: string; local_payload: string; remote_payload: string; local_is_deleted: number; remote_is_deleted: number;
+        local_updated_at: string; remote_updated_at: string; detected_at: string;
+      }>>(`SELECT id, entity_type, entity_id, local_payload, remote_payload, local_is_deleted, remote_is_deleted, local_updated_at, remote_updated_at, detected_at
+        FROM sync_conflicts WHERE resolved_at IS NULL ORDER BY detected_at DESC`);
+      return rows.map((row) => ({
+        id: row.id, entityType: row.entity_type, entityId: row.entity_id,
+        localPayload: row.local_payload, remotePayload: row.remote_payload,
+        localIsDeleted: Boolean(row.local_is_deleted), remoteIsDeleted: Boolean(row.remote_is_deleted),
+        localUpdatedAt: row.local_updated_at, remoteUpdatedAt: row.remote_updated_at, detectedAt: row.detected_at,
+      }));
+    });
+  }
+
+  async resolveSyncConflict(id: string, resolution: 'local' | 'remote'): Promise<boolean> {
+    return this.serializeWrite(async () => {
+      const database = await this.db();
+      const rows = await database.select<Array<{
+        entity_type: string; entity_id: string; local_payload: string; remote_payload: string; remote_updated_at: string; remote_is_deleted: number;
+      }>>(`SELECT entity_type, entity_id, local_payload, remote_payload, remote_updated_at, remote_is_deleted
+        FROM sync_conflicts WHERE id = ? AND resolved_at IS NULL`, [id]);
+      const conflict = rows[0];
+      if (!conflict || !SYNC_TABLES.includes(conflict.entity_type)) return false;
+      if (resolution === 'remote') {
+        await database.execute(
+          `UPDATE ${conflict.entity_type} SET payload = ?, updated_at = ?, synced_at = ?, is_deleted = ?, sync_status = 'synced' WHERE id = ?`,
+          [conflict.remote_payload, conflict.remote_updated_at, conflict.remote_updated_at, conflict.remote_is_deleted, conflict.entity_id],
+        );
+      } else {
+        await database.execute(
+          `UPDATE ${conflict.entity_type} SET updated_at = ?, sync_status = 'updated' WHERE id = ?`,
+          [now(), conflict.entity_id],
+        );
+      }
+      await database.execute(`UPDATE sync_conflicts SET resolved_at = ?, resolution = ? WHERE id = ?`, [now(), resolution, id]);
+      return true;
     });
   }
 

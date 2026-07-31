@@ -8,10 +8,10 @@ export function empty(message) {
 }
 
 /** Wrap pre-rendered <tr> strings in a table with sticky headers (see .table th in styles.css). */
-export function table(rows, headings) {
+export function table(rows, headings, className = '') {
   if (!rows.length) return empty('Записів поки немає.');
   const ths = headings.map((heading) => `<th>${heading}</th>`).join('');
-  return `<div class="table-wrap"><table class="table"><thead><tr>${ths}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+  return `<div class="table-wrap"><table class="table ${className}"><thead><tr>${ths}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
 }
 
 /**

@@ -4,16 +4,16 @@
 // місяця). Клік на ПІБ переносить у відповідний розділ і підсвічує рядок.
 
 import { escapeHtml, monthPeriodKey, daysUntil } from '../utils';
-import { getVisibleClients, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline, getMonthlyCellValue, incomeSum, getSettings } from '../state.js';
+import { getVisibleClients, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline, getMonthlyCellValue, incomeSum, getIncomeValue, getHrMonthlyDocuments, getSettings } from '../state.js';
 import { TAX_TYPES, taxPeriodsFor } from '../tax-model';
 import { reportPeriodsFor } from '../report-model';
-import { groupLimitAmount, GROUP_MZP_MULTIPLIERS } from '../client-model';
+import { groupLimitAmount, GROUP_MZP_MULTIPLIERS, shortClientName } from '../client-model';
 
 function kepAlertEntries() {
   return getVisibleClients().filter((item) => {
     const d = daysUntil(item.kepExpiry);
     return d !== null && d < 3;
-  }).map((item) => ({ id: item.id, name: item.name }));
+  }).map((item) => ({ id: item.id, name: shortClientName(item.name) }));
 }
 
 function taxAlertEntries() {
@@ -33,7 +33,7 @@ function taxAlertEntries() {
         if (!worst || days < worst.days) worst = { period: period.key, days };
       });
     });
-    if (worst) entries.push({ id: item.id, name: item.name, group: realGroup === '3' ? '3' : '12', period: worst.period });
+    if (worst) entries.push({ id: item.id, name: shortClientName(item.name), group: realGroup === '3' ? '3' : '12', period: worst.period });
   });
   return entries;
 }
@@ -53,7 +53,7 @@ function reportAlertEntries() {
       if (days === null || days > 5) return;
       if (!worst || days < worst.days) worst = { period: period.key, days };
     });
-    if (worst) entries.push({ id: item.id, name: item.name, group: realGroup === '3' ? '3' : '12', period: worst.period });
+    if (worst) entries.push({ id: item.id, name: shortClientName(item.name), group: realGroup === '3' ? '3' : '12', period: worst.period });
   });
   return entries;
 }
@@ -71,7 +71,7 @@ function serviceDebtAlertEntries() {
       const key = monthPeriodKey(workingYear, m + 1);
       const charged = Number(getMonthlyCellValue(item.id, key, 'charged')) || 0;
       const paid = Number(getMonthlyCellValue(item.id, key, 'paid')) || 0;
-      if (charged - paid > 0) { entries.push({ id: item.id, name: item.name }); return; }
+      if (charged - paid > 0) { entries.push({ id: item.id, name: shortClientName(item.name) }); return; }
     }
   });
   return entries;
@@ -91,9 +91,14 @@ function incomeAlertEntries() {
   const entries = [];
   getVisibleClients().filter((item) => GROUP_MZP_MULTIPLIERS[item.group]).forEach((item) => {
     const ytd = incomeSum(item.id, monthIndexes, workingYear);
-    const avgMonthly = ytd / monthsElapsed;
+    const incomeMonths = monthIndexes.filter((index) => {
+      const value = Number(String(getIncomeValue(item.id, monthPeriodKey(workingYear, index + 1)) || '').replace(/\s+/g, '').replace(',', '.'));
+      return value > 0;
+    });
+    if (!incomeMonths.length) return;
+    const avgMonthly = ytd / incomeMonths.length;
     const remaining = groupLimitAmount(item.group, getSettings().minWage) - ytd;
-    if (remaining < avgMonthly * 3) entries.push({ id: item.id, name: item.name, group: String(item.group) === '3' ? '3' : '12' });
+    if (remaining < avgMonthly * 3) entries.push({ id: item.id, name: shortClientName(item.name), group: String(item.group) === '3' ? '3' : '12' });
   });
   return entries;
 }
@@ -114,14 +119,35 @@ function overviewRow(title, entries, section, note) {
   </div>`;
 }
 
+function reminderRow(title, message) {
+  return `<div class="overview-row"><div class="overview-row-head"><h2>${title}</h2><span class="pill warn">!</span></div><div class="overview-row-body">${message}</div></div>`;
+}
+
+function todayIso() { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; }
+function salaryReminder() {
+  const today = todayIso(); const year = getSettings().workingYear;
+  if (!today.startsWith(`${year}-`)) return false;
+  return Array.from({ length: 12 }, (_, i) => i + 1).some((month) => [7, 21].some((day) => { const date = new Date(year, month - 1, day); if (date.getDay() === 6) date.setDate(date.getDate() - 1); if (date.getDay() === 0) date.setDate(date.getDate() - 2); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` === today; }));
+}
+function hrDocumentsReminder() {
+  const now = new Date(); const year = getSettings().workingYear; if (now.getFullYear() !== year) return '';
+  const period = monthPeriodKey(year, now.getMonth() + 1);
+  const records = new Map(getHrMonthlyDocuments().filter((item) => item.period === period).map((item) => [item.clientId, item]));
+  const pending = getVisibleClients().filter((client) => (client.employees || []).length).some((client) => { const record = records.get(client.id); return !record || record.timesheetStatus !== 'Надіслано' || record.payrollStatus !== 'Надіслано' || record.cashStatementStatus !== 'Надіслано'; });
+  return pending ? new Intl.DateTimeFormat('uk-UA', { month: 'long' }).format(now).toLowerCase() : '';
+}
+
 export function renderOverview() {
   const kepAlerts = kepAlertEntries();
   const incomeAlerts = incomeAlertEntries();
   const taxAlerts = taxAlertEntries();
   const reportAlerts = reportAlertEntries();
   const serviceAlerts = serviceDebtAlertEntries();
+  const hrMonth = hrDocumentsReminder();
   return `<div class="toolbar"><p class="note">Зведення зауважень по всіх розділах. Натисніть на ПІБ, щоб перейти до відповідного розділу й періоду.</p></div>
-    ${overviewRow('Картки клієнтів', kepAlerts, 'dashboard', 'КЕП спливає менш ніж за 3 дні')}
+    ${salaryReminder() ? reminderRow('Виплата ЗП', 'Сьогодні день виплати зарплати') : ''}
+    ${hrMonth ? reminderRow('Кадрові документи', `Відправ клієнтам кадрові документи за ${hrMonth}`) : ''}
+    ${overviewRow('Термін дії КЕП', kepAlerts, 'dashboard', 'КЕП спливає менш ніж за 3 дні')}
     ${overviewRow('Доходи', incomeAlerts, 'incomes', 'Залишок ліміту менший за 3 середньомісячних доходи')}
     ${overviewRow('Податки', taxAlerts, 'taxes', 'До дедлайну ≤ 5 днів, а сплати ще не було')}
     ${overviewRow('Звітність', reportAlerts, 'reports', 'До дедлайну ≤ 5 днів, а звіт ще не подано')}

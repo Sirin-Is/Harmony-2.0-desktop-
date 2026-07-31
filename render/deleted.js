@@ -8,9 +8,9 @@ import { table } from './layout.js';
 export function renderDeleted() {
   const rows = getDeletedClients().map((item) => `<tr>
     <td><strong>${escapeHtml(item.name)}</strong></td>
-    <td>${escapeHtml(item.group || '—')}</td>
+    <td>${escapeHtml(item.group || '-')}</td>
     <td>${rateText(item)}</td>
-    <td>${escapeHtml(item.deletedAt || '—')}</td>
+    <td>${escapeHtml(item.deletedAt || '-')}</td>
     <td class="right row-actions">
       <button class="secondary" data-restore-deleted-client="${item.id}">Відновити</button>
       ${item.isTestRecord ? `<button class="danger" data-purge-test-client="${item.id}">Стерти назавжди</button>` : ''}

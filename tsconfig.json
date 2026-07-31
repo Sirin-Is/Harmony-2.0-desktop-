@@ -16,5 +16,5 @@
     "isolatedModules": true
   },
   "include": ["**/*.ts", "**/*.js"],
-  "exclude": ["node_modules", "src-tauri", "dist"]
+  "exclude": ["node_modules", "src-tauri", "dist", "supabase/functions"]
 }
