@@ -4,6 +4,7 @@ import { getCurrentHarmonyUser } from '../auth/users';
 
 type SyncState = 'idle' | 'syncing' | 'offline' | 'error';
 type StateListener = (state: SyncState, detail?: string) => void;
+type ProfileProvider = () => Promise<{ role?: string } | null>;
 
 const BATCH_SIZE = 100;
 const INITIAL_BACKOFF_MS = 1_000;
@@ -23,7 +24,11 @@ export class SyncManager {
   private idleWaiters: Array<() => void> = [];
   private listeners = new Set<StateListener>();
 
-  constructor(private readonly repository: SyncRepository, private readonly remote = new SupabaseGateway()) {}
+  constructor(
+    private readonly repository: SyncRepository,
+    private readonly remote = new SupabaseGateway(),
+    private readonly profileProvider: ProfileProvider = getCurrentHarmonyUser,
+  ) {}
 
   onState(listener: StateListener): () => void {
     this.listeners.add(listener);
@@ -117,7 +122,7 @@ export class SyncManager {
   }
 
   private async push(): Promise<void> {
-    const profile = await getCurrentHarmonyUser();
+    const profile = await this.profileProvider();
     if (profile?.role === 'observer') return;
     while (true) {
       const batch = await this.repository.getPendingSyncRecords(BATCH_SIZE);

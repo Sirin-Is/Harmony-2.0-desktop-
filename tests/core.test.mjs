@@ -7,14 +7,21 @@ let vite;
 let tax;
 let reports;
 let clients;
+let SyncManager;
 
 before(async () => {
   // Vite's SSR loader executes the same TypeScript modules that the desktop
   // app uses, without starting Tauri or touching SQLite.
   vite = await createServer({ root: process.cwd(), configFile: false, appType: 'custom', logLevel: 'error', server: { middlewareMode: true } });
+  globalThis.window = globalThis.window || globalThis;
+  globalThis.window.addEventListener ||= () => {};
+  globalThis.window.removeEventListener ||= () => {};
+  globalThis.window.dispatchEvent ||= () => true;
+  Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
   tax = await vite.ssrLoadModule('/tax-model.ts');
   reports = await vite.ssrLoadModule('/report-model.ts');
   clients = await vite.ssrLoadModule('/client-model.ts');
+  ({ SyncManager } = await vite.ssrLoadModule('/sync/sync-manager.ts'));
 });
 
 after(async () => {
@@ -37,6 +44,11 @@ test('звітність має окремі квартальні та річн�
   assert.equal(reports.getDefaultReportDeadline({}, '3', '2026-q1'), '2026-05-08'); // 10 травня — неділя
   assert.equal(reports.getDefaultReportDeadline({}, '3', '2026-year'), '2027-02-09');
   assert.equal(reports.getDefaultReportDeadline({}, '2', '2026'), '2027-03-01');
+});
+
+test('лічильник звітності після подання фіксує фактичну різницю до дедлайну', () => {
+  assert.match(reports.reportDaysUntilLabel('2026-05-08', { submittedDate: '2026-05-06' }), /2 дн\./);
+  assert.match(reports.reportDaysUntilLabel('2026-05-08', { submittedDate: '2026-05-10' }), /-2 дн\./);
 });
 
 test('ставки та ліміти груп ФОП обмежені дозволеними значеннями', () => {
@@ -90,4 +102,89 @@ test('перевірка резервної копії відхиляє дубл
   assert.throws(() => validateBackupDatabase({ clients: [{ id: 'same' }, { id: 'same' }], settings: {} }));
   assert.throws(() => validateBackupDatabase({ clients: [], settings: [], calendarEvents: [] }));
   assert.doesNotThrow(() => validateBackupDatabase({ clients: [{ id: 'valid' }], settings: {}, auditEvents: [] }));
+});
+
+function syncRecord(id = 'record-1') {
+  return { entityType: 'clients', id, payload: '{}', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', syncedAt: null, isDeleted: false, syncStatus: 'updated' };
+}
+
+function syncFixture(events) {
+  let pending = [syncRecord()];
+  const repository = {
+    getPendingSyncRecords: async () => pending,
+    markRecordsSynced: async () => { pending = []; events.push('marked'); },
+    applyRemoteRecords: async () => [],
+    getSyncCursor: async () => null,
+    setSyncCursor: async () => {},
+    clearSyncCursor: async () => { events.push('clear-cursor'); },
+    logSync: async () => {},
+  };
+  const remote = {
+    healthcheck: async () => { events.push('health'); },
+    upsert: async () => { events.push('push'); },
+    pullAfter: async () => { events.push('pull'); return []; },
+  };
+  return { repository, remote };
+}
+
+function waitForIdle(manager) {
+  return new Promise((resolve) => {
+    const stop = manager.onState((state) => {
+      if (state === 'idle') { stop(); resolve(); }
+    });
+  });
+}
+
+test('звичайна синхронізація спершу передає локальні зміни, потім отримує хмарні', async () => {
+  const events = [];
+  const { repository, remote } = syncFixture(events);
+  const manager = new SyncManager(repository, remote, async () => ({ role: 'accountant' }));
+  const done = waitForIdle(manager);
+  manager.requestSync('test');
+  await done;
+  manager.stop();
+  assert.deepEqual(events, ['health', 'push', 'marked', 'pull']);
+});
+
+test('відновлення копії спершу отримує хмарні дані й лише тоді передає локальні', async () => {
+  const events = [];
+  const { repository, remote } = syncFixture(events);
+  const manager = new SyncManager(repository, remote, async () => ({ role: 'administrator' }));
+  const done = waitForIdle(manager);
+  manager.requestRestoreSync();
+  await done;
+  manager.stop();
+  assert.deepEqual(events, ['health', 'clear-cursor', 'pull', 'push', 'marked']);
+});
+
+test('спостерігач не передає локальні зміни в хмару', async () => {
+  const events = [];
+  const { repository, remote } = syncFixture(events);
+  const manager = new SyncManager(repository, remote, async () => ({ role: 'observer' }));
+  const done = waitForIdle(manager);
+  manager.requestSync('test');
+  await done;
+  manager.stop();
+  assert.deepEqual(events, ['health', 'pull']);
+});
+
+test('відновлення копії очікує завершення активної синхронізації', async () => {
+  const events = [];
+  const { repository, remote } = syncFixture(events);
+  let releaseHealthcheck;
+  remote.healthcheck = () => new Promise((resolve) => { releaseHealthcheck = resolve; events.push('health'); });
+  const manager = new SyncManager(repository, remote, async () => ({ role: 'administrator' }));
+  const syncing = new Promise((resolve) => {
+    const stop = manager.onState((state) => { if (state === 'syncing') { stop(); resolve(); } });
+  });
+  manager.requestSync('test');
+  await syncing;
+  let paused = false;
+  const pause = manager.pauseForRestore().then(() => { paused = true; });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(paused, false);
+  releaseHealthcheck();
+  await pause;
+  assert.equal(paused, true);
+  manager.stop();
 });

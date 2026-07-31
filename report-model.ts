@@ -1,7 +1,7 @@
 // report-model.ts
 // Business logic for "Звітність". Поведінка ідентична report-model.js.
 
-import { DEFAULT_WORKING_YEAR, daysUntil } from './utils.ts';
+import { DEFAULT_WORKING_YEAR, daysBetween, daysUntil } from './utils.ts';
 import { taxPeriodsFor, controlDeadline, quarterEnd, type Period, type TabGroup } from './tax-model.ts';
 import type { Database, ReportRecord } from './types';
 
@@ -56,7 +56,7 @@ export function reportStatusPillHtml(record: ReportRecord, deadline?: string): s
 /** Same freeze-on-submission semantics as tax-model's daysUntilLabel, reused via the "submittedDate" alias. */
 export function reportDaysUntilLabel(deadline: string | undefined, record: ReportRecord): string {
   if (!deadline) return '-';
-  const days = daysUntil(deadline);
+  const days = record?.submittedDate ? daysBetween(record.submittedDate, deadline) : daysUntil(deadline);
   if (days === null) return '-';
   if (days < 0) return `<span class="pill late">${days} дн.</span>`;
   if (!record.submittedDate && days <= 5) return `<span class="pill warn">${days} дн.</span>`;
