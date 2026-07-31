@@ -2,12 +2,14 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
 import { createEncryptedBackup, decryptBackup, validateBackupDatabase } from '../backup-crypto.js';
+import { shortDate, shortDateToIso } from '../date-input.js';
 
 let vite;
 let tax;
 let reports;
 let clients;
 let SyncManager;
+let validateClient;
 
 before(async () => {
   // Vite's SSR loader executes the same TypeScript modules that the desktop
@@ -22,6 +24,7 @@ before(async () => {
   reports = await vite.ssrLoadModule('/report-model.ts');
   clients = await vite.ssrLoadModule('/client-model.ts');
   ({ SyncManager } = await vite.ssrLoadModule('/sync/sync-manager.ts'));
+  ({ validateClient } = await vite.ssrLoadModule('/validation.js'));
 });
 
 after(async () => {
@@ -51,11 +54,34 @@ test('лічильник звітності після подання фіксу
   assert.match(reports.reportDaysUntilLabel('2026-05-08', { submittedDate: '2026-05-10' }), /-2 дн\./);
 });
 
+test('ручне введення дат приймає коректний формат дд.мм.рр і відхиляє неможливі дати', () => {
+  assert.equal(shortDate('2026-07-31'), '31.07.26');
+  assert.equal(shortDateToIso('29.02.24'), '2024-02-29');
+  assert.equal(shortDateToIso('31.12.26'), '2026-12-31');
+  assert.equal(shortDateToIso('29.02.23'), null);
+  assert.equal(shortDateToIso('31.04.26'), null);
+  assert.equal(shortDateToIso('1.1.26'), null);
+});
+
+test('валідація картки ФОП не пропускає критичні помилки, але попереджає про дублікати', () => {
+  const invalid = validateClient({ name: 'А', email: 'not-email', serviceCost: '-1', kepExpiry: '2026-99-99' }, [], null);
+  assert.equal(invalid.errors.length, 4);
+  const duplicate = validateClient({ name: '  Тестовий ФОП ', email: 'test@example.com', serviceCost: '0' }, [{ id: 'existing', name: 'тестовий фоп' }], null);
+  assert.match(duplicate.warnings[0], /вже є в списку/);
+});
+
 test('ставки та ліміти груп ФОП обмежені дозволеними значеннями', () => {
   assert.deepEqual(clients.rateOptionsForGroup('1').map((item) => item.value), ['0.1']);
   assert.deepEqual(clients.rateOptionsForGroup('2').map((item) => item.value), ['0.2', '0.15', '0.1']);
   assert.deepEqual(clients.rateOptionsForGroup('3').map((item) => item.value), ['0.05', '0.03']);
   assert.equal(clients.groupLimitAmount('3', 8647), 10091049);
+});
+
+test('старі податкові записи 2026 не губляться після переходу на ключі з роком', () => {
+  const database = { taxRecords: { 'fop|3|q1|unified': { deadline: '2026-05-20', note: 'старий запис' } } };
+  const record = tax.getTaxRecord(database, 'fop', '3', '2026-q1', 'unified');
+  assert.deepEqual(record, { deadline: '2026-05-20', note: 'старий запис' });
+  assert.notEqual(record, database.taxRecords['fop|3|q1|unified']);
 });
 
 test('видалення ФОП очищує прив’язані записи, але не інші дані', () => {
