@@ -140,6 +140,11 @@ export function getOpenSyncConflicts() {
   return repository.getOpenSyncConflicts();
 }
 
+/** Recent local replication diagnostics. They never leave this device. */
+export function getRecentSyncLog(limit = 100) {
+  return repository.getRecentSyncLog(limit);
+}
+
 export async function resolveSyncConflict(id, resolution) {
   const resolved = await repository.resolveSyncConflict(id, resolution);
   if (resolved) syncManager.requestSync('conflict-resolution');

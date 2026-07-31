@@ -31,6 +31,16 @@ export interface SyncConflict {
   detectedAt: string;
 }
 
+export interface SyncLogEntry {
+  id: string;
+  operation: string;
+  entityType: string;
+  entityId: string;
+  status: 'success' | 'error' | 'skipped';
+  message: string | null;
+  createdAt: string;
+}
+
 export interface SyncRepository {
   getPendingSyncRecords(limit: number): Promise<SyncRecord[]>;
   markRecordsSynced(records: SyncRecord[], syncedAt: string): Promise<void>;

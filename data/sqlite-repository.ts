@@ -3,10 +3,11 @@ import { migrations } from './migrations';
 import type { Database as AppDatabase } from '../types';
 import { normalizeWorkingYear } from '../utils';
 import type { LocalRepository } from './repository';
-import type { SyncConflict, SyncCursor, SyncRecord, SyncRepository, SyncStatus } from './sync-types';
+import type { SyncConflict, SyncCursor, SyncLogEntry, SyncRecord, SyncRepository, SyncStatus } from './sync-types';
 
 type Row = { id: string; payload: string };
 type SyncRow = { id: string; payload: string; created_at: string; updated_at: string; synced_at: string | null; is_deleted: number; sync_status: SyncStatus };
+type SyncLogRow = { id: string; operation: string; entity_type: string; entity_id: string; status: SyncLogEntry['status']; message: string | null; created_at: string };
 
 const DATABASE_URL = 'sqlite:harmony.db';
 const LOCAL_TABLES = ['clients', 'custom_columns', 'monthly_payments', 'tax_records', 'income_records', 'report_records', 'calendar_events', 'hr_orders', 'hr_monthly_documents', 'payroll_records', 'audit_operations', 'audit_events', 'settings'];
@@ -341,5 +342,12 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
         )`);
       }
     });
+  }
+
+  async getRecentSyncLog(limit = 100): Promise<SyncLogEntry[]> {
+    const database = await this.db();
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 100, 500));
+    const rows = await database.select<SyncLogRow[]>(`SELECT id, operation, entity_type, entity_id, status, message, created_at FROM sync_log ORDER BY created_at DESC LIMIT ${safeLimit}`);
+    return rows.map((row) => ({ id: row.id, operation: row.operation, entityType: row.entity_type, entityId: row.entity_id, status: row.status, message: row.message, createdAt: row.created_at }));
   }
 }

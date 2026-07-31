@@ -41,7 +41,7 @@ import { enhanceDateInputs } from './date-input.js';
 import { validateKved, openKvedResults } from './kved-validation.js';
 import { signIn, signOut, signedInEmail } from './auth/session';
 import { getCurrentHarmonyUser, listAuthenticationUsers, manageHarmonyUsers } from './auth/users';
-import { getOpenSyncConflicts, requestSync, requestRestoreSync, resolveSyncConflict } from './storage.js';
+import { getOpenSyncConflicts, getRecentSyncLog, requestSync, requestRestoreSync, resolveSyncConflict } from './storage.js';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { getLocalStorageProtection } from './local-storage-protection.ts';
@@ -608,8 +608,16 @@ function bindCurrentView() {
       try { uiState.syncConflicts = await getOpenSyncConflicts(); }
       catch (error) { showToast(error.message || String(error), 'error'); }
     }
+    if (uiState.settingsSection === 'diagnostics' && uiState.currentUser?.role === 'administrator') {
+      try { uiState.syncLog = await getRecentSyncLog(); }
+      catch (error) { showToast(error.message || String(error), 'error'); }
+    }
     render();
   }));
+  $('[data-refresh-sync-log]')?.addEventListener('click', async () => {
+    try { uiState.syncLog = await getRecentSyncLog(); render(); }
+    catch (error) { showToast(error.message || String(error), 'error'); }
+  });
   document.querySelectorAll('[data-resolve-sync-conflict]').forEach((button) => button.addEventListener('click', async () => {
     const resolution = button.dataset.resolution;
     if (!['local', 'remote'].includes(resolution)) return;

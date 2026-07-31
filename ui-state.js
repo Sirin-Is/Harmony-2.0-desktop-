@@ -29,6 +29,7 @@ export const uiState = {
   activitiesSearch: '',
   settingsSection: 'general',
   syncConflicts: [],
+  syncLog: [],
   currentUser: null,
   managedUsers: [],
   localStorageProtection: null,

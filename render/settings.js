@@ -75,8 +75,21 @@ function conflictsPanel() {
   return rows || '<div class="panel settings-panel"><h2>Конфлікти синхронізації</h2><p class="note">Відкритих конфліктів немає.</p></div>';
 }
 
+function diagnosticsPanel() {
+  const status = { success: 'Успішно', error: 'Помилка', skipped: 'Пропущено' };
+  const operation = { push: 'Передано в хмару', pull: 'Отримано з хмари', sync: 'Синхронізація' };
+  const dateTime = (value) => value ? new Intl.DateTimeFormat('uk-UA', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value)) : '-';
+  const rows = (uiState.syncLog || []).map((item) => `<tr><td>${dateTime(item.createdAt)}</td><td>${escapeHtml(operation[item.operation] || item.operation || '-')}</td><td>${escapeHtml(item.entityType || '-')}</td><td>${escapeHtml(item.entityId || '-')}</td><td>${escapeHtml(status[item.status] || item.status || '-')}</td><td class="audit-value">${escapeHtml(item.message || '-')}</td></tr>`).join('');
+  return `<div class="panel settings-panel"><div class="toolbar"><div><h2>Діагностика синхронізації</h2><p class="note">Останні 100 локальних операцій. Журнал зберігається лише на цьому пристрої та автоматично обмежується 5 000 записами.</p></div><button type="button" class="secondary" data-refresh-sync-log>Оновити</button></div><div class="table-wrap"><table class="table audit-table"><thead><tr><th>Час</th><th>Операція</th><th>Розділ</th><th>ID запису</th><th>Статус</th><th>Деталі</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="empty">Записів синхронізації ще немає.</td></tr>'}</tbody></table></div></div>`;
+}
+
+function settingsTabs() {
+  const admin = uiState.currentUser?.role === 'administrator';
+  return `<div class="subnav"><button class="tab ${!['appearance', 'users', 'conflicts', 'diagnostics'].includes(uiState.settingsSection) ? 'active' : ''}" data-settings-section="general">Загальні</button><button class="tab ${uiState.settingsSection === 'appearance' ? 'active' : ''}" data-settings-section="appearance">Зовнішній вигляд</button><button class="tab ${uiState.settingsSection === 'conflicts' ? 'active' : ''}" data-settings-section="conflicts">Конфлікти</button>${admin ? `<button class="tab ${uiState.settingsSection === 'diagnostics' ? 'active' : ''}" data-settings-section="diagnostics">Діагностика</button><button class="tab ${uiState.settingsSection === 'users' ? 'active' : ''}" data-settings-section="users">Користувачі</button>` : ''}</div>`;
+}
+
 export function renderSettings() {
-  if (uiState.settingsSection === 'users' && uiState.currentUser?.role === 'administrator') return `<div class="subnav"><button class="tab" data-settings-section="general">Загальні</button><button class="tab" data-settings-section="appearance">Зовнішній вигляд</button><button class="tab" data-settings-section="conflicts">Конфлікти</button><button class="tab active" data-settings-section="users">Користувачі</button></div>${usersPanel()}`;
+  if (uiState.settingsSection === 'users' && uiState.currentUser?.role === 'administrator') return `${settingsTabs()}${usersPanel()}`;
   const settings = getSettings();
   const workingYear = settings.workingYear;
   const appearance = settings.appearance || { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 };
@@ -96,9 +109,10 @@ export function renderSettings() {
     <div class="appearance-preview" id="appearancePreview"><span>Зразок поля</span><input type="text" value="Текстове поле" aria-label="Зразок текстового поля"><select aria-label="Зразок списку"><option>Випадаючий список</option></select></div>
     <div class="toolbar-actions"><button type="button" class="primary" data-save-appearance>Зберегти</button></div>
     <p class="note">До збереження зміни видно лише у зразку. Після збереження вони застосуються до всіх текстових полів, дат і списків.</p></div>`;
-  const tabs = `<div class="subnav"><button class="tab ${!['appearance', 'users', 'conflicts'].includes(uiState.settingsSection) ? 'active' : ''}" data-settings-section="general">Загальні</button><button class="tab ${uiState.settingsSection === 'appearance' ? 'active' : ''}" data-settings-section="appearance">Зовнішній вигляд</button><button class="tab ${uiState.settingsSection === 'conflicts' ? 'active' : ''}" data-settings-section="conflicts">Конфлікти</button>${uiState.currentUser?.role === 'administrator' ? `<button class="tab ${uiState.settingsSection === 'users' ? 'active' : ''}" data-settings-section="users">Користувачі</button>` : ''}</div>`;
+  const tabs = settingsTabs();
   if (uiState.settingsSection === 'appearance') return `${tabs}${appearancePanel}`;
   if (uiState.settingsSection === 'conflicts') return `${tabs}${conflictsPanel()}`;
+  if (uiState.settingsSection === 'diagnostics' && uiState.currentUser?.role === 'administrator') return `${tabs}${diagnosticsPanel()}`;
   return `${tabs}<div class="toolbar"><p class="note">МЗП застосовується до ліміту доходу у формі ФОП і в «Доходах». Дедлайни розраховуються автоматично за правилами ПКУ; у таблицях «Податки» та «Звітність» можна задати виняток лише для конкретного ФОП.</p></div>
     <div class="panel settings-panel">
       <h2>Робочий період</h2>
