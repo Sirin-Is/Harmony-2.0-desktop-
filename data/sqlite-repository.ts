@@ -59,6 +59,7 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
   private connection: Database | null = null;
   // Queue SQL operations so background sync cannot interleave with a local edit.
   private writeTail: Promise<void> = Promise.resolve();
+  private syncLogWrites = 0;
 
   private serializeWrite<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.writeTail.then(operation, operation);
@@ -69,6 +70,10 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
   private async db(): Promise<Database> {
     if (this.connection) return this.connection;
     this.connection = await Database.load(DATABASE_URL);
+    // WAL lets readers proceed while a short write is in progress. Together
+    // with the timeout below this prevents normal sync activity from surfacing
+    // as a "database is locked" error to the user.
+    try { await this.connection.execute('PRAGMA journal_mode = WAL'); } catch (error) { console.warn('SQLite WAL is unavailable:', error); }
     // A second writer may briefly hold SQLite while Sync Engine changes status.
     // Wait rather than failing a user edit with SQLITE_BUSY.
     await this.connection.execute('PRAGMA busy_timeout = 10000');
@@ -320,6 +325,14 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
         'INSERT INTO sync_log (id, operation, entity_type, entity_id, status, message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [`${Date.now()}-${Math.random().toString(16).slice(2)}`, operation, entityType, entityId, status, message || null, now()],
       );
+      // This is diagnostic data only. Keep enough history for support without
+      // allowing routine background replication to grow the local database forever.
+      this.syncLogWrites += 1;
+      if (this.syncLogWrites === 1 || this.syncLogWrites % 100 === 0) {
+        await database.execute(`DELETE FROM sync_log WHERE id IN (
+          SELECT id FROM sync_log ORDER BY created_at DESC LIMIT -1 OFFSET 5000
+        )`);
+      }
     });
   }
 }

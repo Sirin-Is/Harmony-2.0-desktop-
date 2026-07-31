@@ -20,7 +20,14 @@ async function readError(response: Response) {
 }
 
 export async function getCurrentHarmonyUser(): Promise<HarmonyUser | null> {
-  const session = await currentSession();
+  let session;
+  try {
+    session = await currentSession();
+  } catch (error) {
+    const cached = await cachedHarmonyUser();
+    if (cached) return cached;
+    throw error;
+  }
   const id = session?.user?.id;
   if (!id) return null;
   try {
@@ -34,7 +41,8 @@ export async function getCurrentHarmonyUser(): Promise<HarmonyUser | null> {
   } catch (error) {
     // The local data store remains useful during an outage. A cached profile
     // keeps its already granted role; it is refreshed on every online launch.
-    if (!navigator.onLine) return cachedHarmonyUser();
+    const cached = await cachedHarmonyUser();
+    if (cached) return cached;
     throw error;
   }
 }

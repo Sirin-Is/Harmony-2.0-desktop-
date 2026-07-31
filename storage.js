@@ -125,4 +125,14 @@ export async function resolveSyncConflict(id, resolution) {
   return resolved;
 }
 
-window.addEventListener('beforeunload', () => { if (pendingDb !== null) flushSave().catch(() => {}); });
+function flushWhenLeaving() {
+  if (pendingDb !== null) flushSave().catch(() => {});
+}
+
+// A desktop webview can be closed before beforeunload has time to complete an
+// async write. Flush as soon as the app is hidden as an additional safeguard.
+window.addEventListener('beforeunload', flushWhenLeaving);
+window.addEventListener('pagehide', flushWhenLeaving);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushWhenLeaving();
+});

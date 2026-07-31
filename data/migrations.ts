@@ -117,4 +117,5 @@ export const migrations: SqlMigration[] = [
     `ALTER TABLE sync_conflicts ADD COLUMN local_is_deleted INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE sync_conflicts ADD COLUMN remote_is_deleted INTEGER NOT NULL DEFAULT 0`,
   ] },
+  { version: 10, name: 'sync_log_retention_index', statements: [`CREATE INDEX IF NOT EXISTS idx_sync_log_created_at ON sync_log(created_at DESC)`] },
 ];

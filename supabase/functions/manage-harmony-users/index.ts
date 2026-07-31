@@ -6,16 +6,17 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const validLogin = (value: string) => /^[a-z0-9._-]{3,40}$/.test(value);
 
 Deno.serve(async (request) => {
-  if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-  const authorization = request.headers.get('Authorization') || '';
-  const url = Deno.env.get('SUPABASE_URL')!;
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-  const token = authorization.replace(/^Bearer\s+/i, '');
-  const { data: { user: caller } } = await admin.auth.getUser(token);
-  if (!caller) return json({ error: 'Потрібна авторизація.' }, 401);
-  const { data: profile } = await admin.from('harmony_users').select('role,is_active,workspace_id').eq('user_id', caller.id).maybeSingle();
-  if (profile?.role !== 'administrator' || !profile.is_active) return json({ error: 'Доступ дозволено лише адміністратору.' }, 403);
+  try {
+    if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+    const authorization = request.headers.get('Authorization') || '';
+    const url = Deno.env.get('SUPABASE_URL')!;
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    const token = authorization.replace(/^Bearer\s+/i, '');
+    const { data: { user: caller } } = await admin.auth.getUser(token);
+    if (!caller) return json({ error: 'Потрібна авторизація.' }, 401);
+    const { data: profile } = await admin.from('harmony_users').select('role,is_active,workspace_id').eq('user_id', caller.id).maybeSingle();
+    if (profile?.role !== 'administrator' || !profile.is_active) return json({ error: 'Доступ дозволено лише адміністратору.' }, 403);
 
   const payload = await request.json().catch(() => ({}));
   const action = String(payload.action || 'list');
@@ -28,8 +29,13 @@ Deno.serve(async (request) => {
     if (error) return json({ error: error.message }, 400);
     const { data: profiles, error: profilesError } = await admin.from('harmony_users').select('user_id,login,display_name,role,is_active').eq('workspace_id', profile.workspace_id);
     if (profilesError) return json({ error: profilesError.message }, 400);
+    const { data: allProfiles, error: allProfilesError } = await admin.from('harmony_users').select('user_id');
+    if (allProfilesError) return json({ error: allProfilesError.message }, 400);
     const profileById = new Map((profiles || []).map((item) => [item.user_id, item]));
-    return json({ users: (data.users || []).filter((user) => profileById.has(user.id)).map((user) => ({
+    const boundUserIds = new Set((allProfiles || []).map((item) => item.user_id));
+    return json({ users: (data.users || []).filter((user) => (
+      profileById.has(user.id) || (!boundUserIds.has(user.id) && !user.app_metadata?.harmony_workspace_id)
+    )).map((user) => ({
       userId: user.id,
       email: user.email || '',
       createdAt: user.created_at,
@@ -93,4 +99,10 @@ Deno.serve(async (request) => {
     return json({ user: update.data });
   }
   return json({ error: 'Невідома дія.' }, 400);
+  } catch (error) {
+    // Keep operational details in Supabase logs; never expose service-side
+    // exceptions or configuration data to the desktop client.
+    console.error('manage-harmony-users failed:', error);
+    return json({ error: 'Сервер тимчасово не зміг виконати запит. Повторіть спробу.' }, 500);
+  }
 });

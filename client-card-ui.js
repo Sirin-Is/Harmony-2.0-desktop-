@@ -364,7 +364,7 @@ function paint() {
   overlay.querySelector('[data-cc-hide]')?.addEventListener('click', async () => {
     const result = await openAppDialog({ title: 'Деактивація ФОП', message: 'Вкажіть причину та введіть повний ПІБ для підтвердження.', fields: [{ key: 'reason', label: 'Причина деактивації', value: draft.inactiveReason || '', required: true }, { key: 'name', label: `Повний ПІБ: ${draft.name}`, required: true }], confirmText: 'Деактивувати', danger: true });
     if (!result) return;
-    if (result.name !== draft.name) { alert('ПІБ не збігається. Деактивацію скасовано.'); return; }
+    if (result.name !== draft.name) { showToast('ПІБ не збігається. Деактивацію скасовано.', 'error'); return; }
     archiveClient(draft.id, true, result.reason);
     close();
     notifyChanged();
@@ -379,7 +379,7 @@ function paint() {
 function save() {
   readForm();
   if (!draft.name || draft.name.trim().length < 2) {
-    alert('Вкажіть ПІБ / назву ФОП (мінімум 2 символи).');
+    showToast('Вкажіть ПІБ / назву ФОП (мінімум 2 символи).', 'error');
     return;
   }
   upsertClient(draft, isNew ? null : draft.id);
