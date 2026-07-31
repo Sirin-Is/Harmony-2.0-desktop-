@@ -4,10 +4,11 @@
 // місяця). Клік на ПІБ переносить у відповідний розділ і підсвічує рядок.
 
 import { escapeHtml, monthPeriodKey, daysUntil } from '../utils';
-import { getVisibleClients, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline, getMonthlyCellValue, incomeSum, getIncomeValue, getHrMonthlyDocuments, getSettings } from '../state.js';
+import { getVisibleClients, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline, getMonthlyCellValue, getIncomeValue, getHrMonthlyDocuments, getSettings } from '../state.js';
 import { TAX_TYPES, taxPeriodsFor } from '../tax-model';
 import { reportPeriodsFor } from '../report-model';
 import { groupLimitAmount, GROUP_MZP_MULTIPLIERS, shortClientName } from '../client-model';
+import { isIncomeLimitWarning } from '../income-model.js';
 
 function kepAlertEntries() {
   return getVisibleClients().filter((item) => {
@@ -90,15 +91,9 @@ function incomeAlertEntries() {
   const monthIndexes = Array.from({ length: monthsElapsed }, (_, i) => i);
   const entries = [];
   getVisibleClients().filter((item) => GROUP_MZP_MULTIPLIERS[item.group]).forEach((item) => {
-    const ytd = incomeSum(item.id, monthIndexes, workingYear);
-    const incomeMonths = monthIndexes.filter((index) => {
-      const value = Number(String(getIncomeValue(item.id, monthPeriodKey(workingYear, index + 1)) || '').replace(/\s+/g, '').replace(',', '.'));
-      return value > 0;
-    });
-    if (!incomeMonths.length) return;
-    const avgMonthly = ytd / incomeMonths.length;
-    const remaining = groupLimitAmount(item.group, getSettings().minWage) - ytd;
-    if (remaining < avgMonthly * 3) entries.push({ id: item.id, name: shortClientName(item.name), group: String(item.group) === '3' ? '3' : '12' });
+    const monthlyValues = monthIndexes.map((index) => getIncomeValue(item.id, monthPeriodKey(workingYear, index + 1)));
+    const limit = groupLimitAmount(item.group, getSettings().minWage);
+    if (isIncomeLimitWarning(limit, monthlyValues)) entries.push({ id: item.id, name: shortClientName(item.name), group: String(item.group) === '3' ? '3' : '12' });
   });
   return entries;
 }

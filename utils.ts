@@ -45,9 +45,14 @@ export function escapeHtml(value: unknown): string {
   }[char] as string));
 }
 
+/** Normalise Ukrainian number entry (spaces as thousands separators, comma decimal separator). */
+export function normalizeNumberInput(value: unknown): string {
+  return String(value ?? '').trim().replace(/\s+/g, '').replace(',', '.');
+}
+
 /** Coerce any input into a finite number, defaulting to 0. */
 export function toNumber(value: unknown): number {
-  const num = Number(value);
+  const num = Number(typeof value === 'string' ? normalizeNumberInput(value) : value);
   return Number.isFinite(num) ? num : 0;
 }
 

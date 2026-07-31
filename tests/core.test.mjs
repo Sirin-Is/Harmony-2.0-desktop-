@@ -8,6 +8,7 @@ let vite;
 let tax;
 let reports;
 let clients;
+let income;
 let SyncManager;
 let validateClient;
 
@@ -23,6 +24,7 @@ before(async () => {
   tax = await vite.ssrLoadModule('/tax-model.ts');
   reports = await vite.ssrLoadModule('/report-model.ts');
   clients = await vite.ssrLoadModule('/client-model.ts');
+  income = await vite.ssrLoadModule('/income-model.js');
   ({ SyncManager } = await vite.ssrLoadModule('/sync/sync-manager.ts'));
   ({ validateClient } = await vite.ssrLoadModule('/validation.js'));
 });
@@ -75,6 +77,18 @@ test('ставки та ліміти груп ФОП обмежені дозво
   assert.deepEqual(clients.rateOptionsForGroup('2').map((item) => item.value), ['0.2', '0.15', '0.1']);
   assert.deepEqual(clients.rateOptionsForGroup('3').map((item) => item.value), ['0.05', '0.03']);
   assert.equal(clients.groupLimitAmount('3', 8647), 10091049);
+});
+
+test('попередження ліміту ігнорує порожні місяці, але враховує середній дохід', () => {
+  const limit = 1444049;
+  assert.equal(income.isIncomeLimitWarning(limit, ['500 000', '500000', '', 0]), true);
+  assert.equal(income.isIncomeLimitWarning(limit, ['100 000', '', '0', '-']), false);
+  assert.equal(income.isIncomeLimitWarning(limit, ['', 0, '-']), false);
+});
+
+test('суми з пробілами й комою обробляються як числа', () => {
+  assert.equal(income.isIncomeLimitWarning(1000, ['800,50']), true);
+  assert.equal(income.isIncomeLimitWarning(6000, ['1 000,50', '1 000.50']), false);
 });
 
 test('старі податкові записи 2026 не губляться після переходу на ключі з роком', () => {

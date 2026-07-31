@@ -35,9 +35,18 @@ export function escapeHtml(value) {
   }[char]));
 }
 
+/**
+ * Normalise a human-entered amount before numeric validation/storage.
+ * Ukrainian users commonly use a space as a thousands separator and a comma
+ * as a decimal separator; both forms must remain valid throughout the app.
+ */
+export function normalizeNumberInput(value) {
+  return String(value ?? '').trim().replace(/\s+/g, '').replace(',', '.');
+}
+
 /** Coerce any input into a finite number, defaulting to 0. */
 export function toNumber(value) {
-  const num = Number(value);
+  const num = Number(typeof value === 'string' ? normalizeNumberInput(value) : value);
   return Number.isFinite(num) ? num : 0;
 }
 

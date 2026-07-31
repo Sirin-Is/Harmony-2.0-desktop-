@@ -14,7 +14,7 @@ import * as storage from './storage.js';
 import * as clientModel from './client-model';
 import { getTaxRecord, effectiveDeadline as effectiveTaxDeadline, getDefaultDeadline as getDefaultTaxDeadline } from './tax-model.ts';
 import { getReportRecord, effectiveReportDeadline } from './report-model.ts';
-import { toNumber, generateId } from './utils';
+import { toNumber, normalizeNumberInput, generateId } from './utils';
 import { validateBackupDatabase } from './backup-crypto.js';
 
 export let db = null;
@@ -495,7 +495,7 @@ export function deleteCalendarSubtask(eventId, subtaskId) {
 }
 
 export function setMonthlyPaymentField(clientId, monthKey, type, rawValue) {
-  const normalized = rawValue.trim().replace(',', '.');
+  const normalized = normalizeNumberInput(rawValue);
   if (normalized !== '-' && normalized !== '' && !Number.isFinite(Number(normalized))) return false;
   const clientData = db.monthlyPayments[clientId] ||= {};
   const monthData = clientData[monthKey] ||= {};
@@ -596,7 +596,7 @@ export function getIncomeValue(clientId, monthKey) {
 }
 
 export function setIncomeValue(clientId, monthKey, rawValue) {
-  const normalized = rawValue.trim().replace(',', '.');
+  const normalized = normalizeNumberInput(rawValue);
   if (normalized !== '' && !Number.isFinite(Number(normalized))) return false;
   const clientData = db.incomeRecords[clientId] ||= {};
   clientData[monthKey] = normalized;
