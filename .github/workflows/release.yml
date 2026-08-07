@@ -3,24 +3,43 @@ name: Publish Harmony
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
+
+concurrency:
+  group: harmony-release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   publish-windows:
     runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
       - name: Install frontend dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
+      - name: Verify release tests and version parity
+        run: npm test
+      - name: Verify tag matches application version
+        shell: pwsh
+        run: |
+          $expected = "v$((Get-Content package.json -Raw | ConvertFrom-Json).version)"
+          if ($env:GITHUB_REF_NAME -ne $expected) {
+            throw "Release tag '$env:GITHUB_REF_NAME' does not match manifest version '$expected'."
+          }
+      - name: Reject vulnerable dependencies
+        run: npm audit --audit-level=high
       - name: Build signed Windows release
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

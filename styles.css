@@ -19,9 +19,47 @@ body {
   background: var(--bg);
   color: var(--ink);
   font: 13px/1.4 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
-  display: flex;
   min-height: 100vh;
 }
+
+.app-shell { display: flex; min-height: 100vh; }
+.app-shell[hidden], .auth-gate[hidden] { display: none !important; }
+
+/* A signed-out webview contains no reachable application chrome or data. */
+.auth-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #f8fafc;
+}
+.auth-panel {
+  width: min(100%, 380px);
+  display: grid;
+  gap: 16px;
+  padding: 30px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgb(15 23 42 / 10%);
+}
+.auth-brand { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 10px; background: var(--brand); color: #fff; font-size: 21px; font-weight: 750; }
+.auth-panel h1 { margin: 0; font-size: 22px; }
+.auth-panel > p { margin: -6px 0 0; color: var(--muted); }
+.auth-panel label { display: grid; gap: 6px; color: var(--ink); font-weight: 600; }
+.auth-panel input { width: 100%; height: 40px; border: 1px solid var(--line); border-radius: 7px; padding: 0 11px; background: #fff; color: var(--ink); font: inherit; }
+.auth-panel input:focus { outline: 2px solid rgb(25 118 90 / 18%); border-color: var(--brand); }
+.auth-panel .primary { width: 100%; }
+.auth-panel .auth-error { margin: 0; color: #b42318; font-size: 12px; }
+body.auth-locked { background: #f8fafc; overflow: hidden; }
+body.auth-locked .app-shell,
+body.auth-locked dialog,
+body.auth-locked .app-dialog,
+body.auth-locked .cc-overlay,
+body.auth-locked .toast-stack { display: none !important; }
 
 /* ===== Sidebar / navigation ===== */
 .sidebar {
@@ -49,6 +87,7 @@ nav button:disabled { color: #719092; cursor: not-allowed; }
 .sync-saving, .sync-loading { color: #d8c87f; }
 .sync-error { color: #f0989e; }
 .boot-overlay { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: var(--bg); }
+.boot-overlay[hidden] { display: none !important; }
 .boot-overlay p { color: var(--muted); font-size: 13px; margin: 0; }
 .boot-spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--brand); animation: bootSpin .8s linear infinite; }
 @keyframes bootSpin { to { transform: rotate(360deg); } }
@@ -294,9 +333,6 @@ dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 
 .subtask-row.completed { color: #7a8795; text-decoration: line-through; }
 .subtask-check { width: 20px; min-width: 20px; height: 20px; min-height: 20px; padding: 0; border: 1px solid #aebccc; border-radius: 4px; color: #208354; background: #fff; font-weight: 800; line-height: 1; }
 .subtask-delete { width: 20px; min-width: 20px; height: 20px; min-height: 20px; padding: 0; border: 0; border-radius: 4px; color: #7b8796; background: transparent; font-size: 15px; line-height: 1; }.subtask-delete:hover { color: var(--red); background: #fff0f2; }
-.calendar-icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 9px; }
-.calendar-icon-sample { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 7px; border: 1px solid #d7e0eb; border-radius: 7px; background: #fff; font-size: 12px; }
-.calendar-symbol { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 1px solid #b7c5d7; border-radius: 5px; color: #315cba; background: #edf3ff; font-size: 16px; line-height: 1; }.icon-style-2,.icon-style-14 { background: #fff7df; }.icon-style-3,.icon-style-6,.icon-style-11 { border-radius: 2px; }.icon-style-4,.icon-style-8,.icon-style-12 { background: #edf9f2; color: #20744a; }.icon-style-5,.icon-style-10,.icon-style-15 { background: #f5f2ff; color: #6543ad; }.icon-style-7,.icon-style-9,.icon-style-13 { border-style: dashed; }
 .generic-date-picker { font-size: 12px; }
 .quick-note { min-width: 180px; height: 46px; font-size: 16px; font-weight: 800; box-shadow: 0 5px 16px rgba(35, 82, 182, .24); }
 
@@ -353,18 +389,6 @@ dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 
 .payroll-total-row td { padding-top: 5px; padding-bottom: 6px; color: #334155; background: #fafbfc; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
 .payroll-total-row td:nth-child(2) { text-align: left; }
 .payroll-delete { width: 24px; min-width: 24px; min-height: 24px; height: 24px; margin-right: 6px; vertical-align: middle; }
-.design-test-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.design-test-grid label { display: grid; gap: 6px; font-weight: 700; }
-.modal-samples { display: grid; grid-template-columns: repeat(auto-fill, minmax(245px, 1fr)); gap: 14px; }
-.modal-sample { display: grid; gap: 10px; min-height: 150px; padding: 14px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; box-shadow: 0 8px 18px #3341551a; }
-.modal-sample header, .modal-sample footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }.modal-sample p { margin: 0; color: #5c6675; font-size: 12px; }.modal-sample footer { margin-top: auto; justify-content: flex-end; }.modal-s2 { border-left: 7px solid #315cba; border-radius: 4px; }.modal-s3 { align-self: end; border-radius: 14px 14px 5px 5px; }.modal-s4 { box-shadow: none; border-color: #e5e7eb; }.modal-s5 header { color: #176b58; }.modal-s6 { background: linear-gradient(135deg, #fff, #eef5ff); }.modal-s7 { border-color: #f0b54a; background: #fff9e9; }.modal-s8 { background: #f4f7fb; }.modal-s9 { grid-template-columns: 1fr 1fr; }.modal-s10 { border: 2px solid #7c5cc4; }.modal-s11 { color: #f8fafc; background: #1f2937; }.modal-s11 p { color: #cbd5e1; }.modal-s12 { border-style: dashed; }.modal-s13 { min-height: 210px; }.modal-s14 { border-radius: 999px; padding: 18px; }.modal-s15 { min-height: 230px; background: linear-gradient(135deg, #eef7ff, #fff); }
-.design-input { width: 100%; min-height: 38px; padding: 7px 10px; font: inherit; color: #202a38; background: #fff; }
-.design-input:focus { outline: 2px solid #3c6fe0; outline-offset: 2px; }
-.design-v1 { border: 2px solid #202a38; border-radius: 0; }.design-v2 { border: 1px solid #64748b; border-radius: 999px; padding-inline: 16px; }.design-v3 { border: 0; border-bottom: 3px solid #2f63c5; border-radius: 0; }.design-v4 { border: 1px solid #d5dbe5; border-left: 7px solid #2f63c5; border-radius: 5px; }.design-v5 { border: 1px solid #d5dbe5; border-top: 6px solid #2f63c5; border-radius: 5px; }.design-v6 { border: 1px solid #aab5c5; border-radius: 8px; box-shadow: inset 0 2px 5px #cbd5e155; }.design-v7 { border: 0; border-radius: 9px; box-shadow: 0 7px 16px #33415533; }.design-v8 { border: 4px double #405b94; border-radius: 7px; }.design-v9 { border: 2px dashed #b36a1e; border-radius: 8px; }.design-v10 { border: 3px dotted #805ad5; border-radius: 10px; }.design-v11 { border: 0; border-radius: 8px; background: #eef2f7; }.design-v12 { border: 1px solid #111827; border-radius: 6px; color: #fff; background: #1f2937; }.design-v13 { border: 0; border-radius: 10px; background: linear-gradient(135deg,#e8f1ff,#f6ebff); }.design-v14 { border: 2px solid #0f766e; border-radius: 16px 2px 16px 2px; }.design-v15 { border: 1px solid #64748b; border-radius: 3px; font-family: ui-monospace,Consolas,monospace; }.design-v16 { min-height: 52px; border: 2px solid #315cba; border-radius: 10px; font-size: 16px; }.design-v17 { min-height: 29px; padding: 3px 7px; border: 1px solid #94a3b8; border-radius: 4px; font-size: 12px; }.design-v18 { border: 3px solid #111827; border-radius: 0; background: #fff; }.design-v19 { border: 1px solid #fff; border-radius: 12px; background: #ffffff99; box-shadow: 0 0 0 1px #94a3b8; backdrop-filter: blur(4px); }.design-v20 { border: 1px solid #d4c8ae; border-radius: 2px; background: #fffcf3; box-shadow: 2px 3px 0 #d4c8ae; }.design-v21 { border: 1px solid #4caf7d; border-radius: 6px; box-shadow: inset 0 0 0 2px #e2f5e9; }.design-v22 { border: 1px solid #e08a2e; border-radius: 6px; box-shadow: inset 0 0 0 2px #fff0dd; }.design-v23 { border: 1px solid #8b5cf6; border-radius: 6px; box-shadow: inset 0 0 0 2px #f0eaff; }.design-v24 { border: 2px solid #334155; border-radius: 999px; background: transparent; }.design-v25 { border: 1px solid #64748b; border-radius: 7px; outline: 1px solid #cbd5e1; outline-offset: -5px; }.design-v26 { border: 0; border-bottom: 4px solid #334155; border-radius: 7px 7px 0 0; box-shadow: 0 7px 0 #e2e8f0; }.design-v27 { border: 1px solid #6b7280; border-radius: 6px; box-shadow: 5px 0 0 #cbd5e1; }.design-v28 { border: 1px solid #cbd5e1; border-radius: 0; box-shadow: none; }.design-v29 { border: 0; border-radius: 10px; box-shadow: 0 4px 10px #64748b55; }.design-v30 { border: 3px solid #000; border-radius: 0; color: #000; background: #fff700; font-weight: 700; }
-.date-compact { max-width: 150px; padding: 5px; }
-.date-labelled { border: 2px solid #5577bd; border-radius: 7px; padding: 7px; }
-.date-soft { border: 0; border-radius: 7px; background: #eef3ff; padding: 8px; }
-.date-strong { border: 2px solid #176b58; border-radius: 5px; padding: 7px; }
 
 /* Єдиний «скляний» стиль для текстових і календарних полів (варіант №19). */
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea {

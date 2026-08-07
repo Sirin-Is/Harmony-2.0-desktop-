@@ -4,6 +4,7 @@
 declare module '@tauri-apps/plugin-sql' {
   export default class Database {
     static load(path: string): Promise<Database>;
+    close(db?: string): Promise<boolean>;
     execute(query: string, bindValues?: unknown[]): Promise<{ rowsAffected: number; lastInsertId?: number }>;
     select<T>(query: string, bindValues?: unknown[]): Promise<T>;
   }

@@ -3,7 +3,16 @@
 // list of human-readable Ukrainian messages (empty array = valid) so the
 // UI layer can render them however it wants (banner, toast, inline field).
 
-import { looksLikeEmail, toNumber } from './utils';
+import { looksLikeEmail, normalizeNumberInput } from './utils';
+import { safeContactHref } from './client-model.js';
+import { isValidIsoDate } from './date-input.js';
+
+const finiteNumber = (value) => {
+  const normalized = normalizeNumberInput(value);
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 /**
  * Validate a client record collected from the "Новий/Редагувати ФОП" form.
@@ -18,6 +27,8 @@ export function validateClient(record, existingClients, currentId) {
 
   if (!record.name || record.name.trim().length < 2) {
     errors.push('Вкажіть ПІБ / назву ФОП (мінімум 2 символи).');
+  } else if (record.name.trim().length > 200) {
+    errors.push('ПІБ / назва ФОП не може перевищувати 200 символів.');
   }
 
   if (record.email && !looksLikeEmail(record.email)) {
@@ -25,17 +36,17 @@ export function validateClient(record, existingClients, currentId) {
   }
 
   if (record.serviceCost !== '' && record.serviceCost !== undefined) {
-    const cost = toNumber(record.serviceCost);
-    if (cost < 0) errors.push('Вартість обслуговування не може бути від’ємною.');
+    const cost = finiteNumber(record.serviceCost);
+    if (cost === null) errors.push('Вартість обслуговування має бути коректним числом.');
+    else if (cost < 0) errors.push('Вартість обслуговування не може бути від’ємною.');
   }
 
-  if (record.kepExpiry && Number.isNaN(new Date(`${record.kepExpiry}T00:00:00`).getTime())) {
+  if (record.kepExpiry && !isValidIsoDate(record.kepExpiry)) {
     errors.push('Дата дії КЕП некоректна.');
   }
 
   if (record.contactLink) {
-    const looksSafe = /^https?:\/\//i.test(record.contactLink) || /^t\.me\//i.test(record.contactLink);
-    if (!looksSafe) warnings.push('Посилання «Зв\'язок» не схоже на http(s)/t.me — воно буде показане як звичайний текст, без клікабельного посилання.');
+    if (!safeContactHref(record.contactLink)) warnings.push('Поле «Зв\'язок» не містить безпечного HTTPS-посилання t.me — воно буде показане як звичайний текст.');
   }
 
   const normalizedName = record.name?.trim().toLowerCase();
@@ -59,11 +70,23 @@ export function validateCustomColumn(column) {
 export function validateImportRow(row, rowIndex) {
   const errors = [];
   const warnings = [];
-  if (row.email && !looksLikeEmail(row.email)) {
+  if (!row.name || String(row.name).trim().length < 2 || String(row.name).trim().length > 200) {
+    errors.push(`Рядок ${rowIndex}: ПІБ / назва ФОП має містити 2–200 символів.`);
+  }
+  if (row.email && (!looksLikeEmail(row.email) || String(row.email).length > 320)) {
     errors.push(`Рядок ${rowIndex}: ел. пошта «${row.email}» виглядає некоректною.`);
   }
-  if (row.serviceCost !== undefined && row.serviceCost !== '' && toNumber(row.serviceCost) < 0) {
-    errors.push(`Рядок ${rowIndex}: вартість обслуговування не може бути від’ємною.`);
+  if (row.serviceCost !== undefined && row.serviceCost !== '') {
+    const cost = finiteNumber(row.serviceCost);
+    if (cost === null) errors.push(`Рядок ${rowIndex}: вартість обслуговування має бути коректним числом.`);
+    else if (cost < 0) errors.push(`Рядок ${rowIndex}: вартість обслуговування не може бути від’ємною.`);
   }
+  const group = String(row.group || '').trim();
+  const rate = normalizeNumberInput(row.rate);
+  const allowedRates = { '1': ['0.1'], '2': ['0.2', '0.15', '0.1'], '3': ['0.05', '0.03'], 'Загальна': [''] };
+  if (group && !Object.hasOwn(allowedRates, group)) errors.push(`Рядок ${rowIndex}: некоректна група ЄП.`);
+  if (rate && (!Object.hasOwn(allowedRates, group) || !allowedRates[group].includes(rate))) errors.push(`Рядок ${rowIndex}: ставка ЄП не відповідає групі.`);
+  if (row.kepExpiry && !isValidIsoDate(String(row.kepExpiry))) errors.push(`Рядок ${rowIndex}: дата дії КЕП некоректна.`);
+  if (row.contactLink && !safeContactHref(String(row.contactLink))) warnings.push(`Рядок ${rowIndex}: Telegram-посилання буде збережено як звичайний текст.`);
   return { errors, warnings };
 }

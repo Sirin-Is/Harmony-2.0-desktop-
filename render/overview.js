@@ -101,7 +101,7 @@ function incomeAlertEntries() {
 function alertNamesHtml(entries, section) {
   if (!entries.length) return '<span class="muted">Немає зауважень.</span>';
   const shown = entries.slice(0, 5).map((e) =>
-    `<button type="button" class="overview-link" data-alert-section="${section}" data-alert-client="${e.id}" data-alert-group="${escapeHtml(e.group || '')}" data-alert-period="${escapeHtml(e.period || '')}">${escapeHtml(e.name)}</button>`,
+    `<button type="button" class="overview-link" data-alert-section="${escapeHtml(section)}" data-alert-client="${escapeHtml(e.id)}" data-alert-group="${escapeHtml(e.group || '')}" data-alert-period="${escapeHtml(e.period || '')}">${escapeHtml(e.name)}</button>`,
   ).join(', ');
   const more = entries.length > 5 ? `, та інші (${entries.length - 5})` : '';
   return shown + more;

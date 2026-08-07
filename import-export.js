@@ -6,7 +6,7 @@ import { todayIso } from './utils';
 import { db, getVisibleClients, getCustomColumns, upsertClient, findClientByName } from './state.js';
 import { validateImportRow } from './validation.js';
 import { showToast } from './toast.js';
-import * as XLSX from 'xlsx';
+import { loadSpreadsheetLibrary, readSpreadsheetRows } from './spreadsheet-security.js';
 
 const IMPORT_COLUMNS = [
   { header: 'ПІБ / назва ФОП', key: 'name' },
@@ -29,6 +29,7 @@ const IMPORT_COLUMNS = [
 ];
 
 export async function exportClientsToExcel(onlyIds = null) {
+  const XLSX = await loadSpreadsheetLibrary();
   const columns = getCustomColumns();
   const idSet = onlyIds ? new Set(onlyIds) : null;
   const clients = getVisibleClients().filter((item) => !idSet || idSet.has(item.id));
@@ -70,40 +71,32 @@ function applyImportedRow(row) {
 }
 
 export async function importClientsFromFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Не вдалося прочитати файл.'));
-    reader.onload = (event) => {
-      try {
-        const workbook = XLSX.read(event.target.result, { type: 'array' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-        if (!rows.length) {
-          reject(new Error('Файл порожній або не містить рядків даних.'));
-          return;
-        }
-        const summary = { created: 0, updated: 0, skipped: 0, warnings: [] };
-        rows.forEach((row, index) => {
-          // SheetJS rows use Ukrainian column headers; validate normalized
-          // values rather than looking for internal field names in the sheet.
-          const validation = validateImportRow({
-            email: row[IMPORT_COLUMNS.find((column) => column.key === 'email').header],
-            serviceCost: row[IMPORT_COLUMNS.find((column) => column.key === 'serviceCost').header],
-          }, index + 2);
-          summary.warnings.push(...validation.warnings);
-          if (validation.errors.length) {
-            summary.skipped += 1;
-            summary.warnings.push(...validation.errors.map((message) => `${message} Рядок пропущено.`));
-            return;
-          }
-          const { status } = applyImportedRow(row);
-          summary[status] += 1;
-        });
-        resolve(summary);
-      } catch (error) {
-        reject(new Error('Не вдалося прочитати файл. Перевірте, що це коректний .xlsx/.xls/.csv зі структурою колонок як у прикладі.'));
-      }
-    };
-    reader.readAsArrayBuffer(file);
+  let rows;
+  try {
+    rows = await readSpreadsheetRows(file);
+  } catch (error) {
+    if (error instanceof Error && /^(Файл|Таблиця|У таблиці|Комірка)/.test(error.message)) throw error;
+    throw new Error('Не вдалося прочитати файл. Перевірте, що це коректний .xlsx/.xls/.csv зі структурою колонок як у прикладі.');
+  }
+  if (!rows.length) throw new Error('Файл порожній або не містить рядків даних.');
+  if (!Object.hasOwn(rows[0], IMPORT_COLUMNS[0].header)) {
+    throw new Error(`У таблиці немає обов’язкової колонки «${IMPORT_COLUMNS[0].header}».`);
+  }
+
+  const summary = { created: 0, updated: 0, skipped: 0, warnings: [] };
+  rows.forEach((row, index) => {
+    // SheetJS rows use Ukrainian column headers; validate normalized
+    // values rather than looking for internal field names in the sheet.
+    const normalized = Object.fromEntries(IMPORT_COLUMNS.map((column) => [column.key, row[column.header]]));
+    const validation = validateImportRow(normalized, index + 2);
+    summary.warnings.push(...validation.warnings);
+    if (validation.errors.length) {
+      summary.skipped += 1;
+      summary.warnings.push(...validation.errors.map((message) => `${message} Рядок пропущено.`));
+      return;
+    }
+    const { status } = applyImportedRow(row);
+    summary[status] += 1;
   });
+  return summary;
 }

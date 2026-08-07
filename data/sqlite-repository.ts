@@ -1,16 +1,19 @@
 import Database from '@tauri-apps/plugin-sql';
-import { migrations } from './migrations';
+import { isAlreadyAppliedAddColumn, migrations } from './migrations';
 import { interpretSqliteCheck, type LocalDatabaseHealth } from './database-health';
 import type { Database as AppDatabase } from '../types';
 import { normalizeWorkingYear } from '../utils';
 import type { LocalRepository } from './repository';
-import type { SyncConflict, SyncCursor, SyncLogEntry, SyncRecord, SyncRepository, SyncStatus } from './sync-types';
+import { parseStoredSyncCursor, type SyncConflict, type SyncCursor, type SyncLogEntry, type SyncRecord, type SyncRepository, type SyncStatus } from './sync-types';
+import { LEGACY_DATABASE_URL, workspaceDatabaseUrl } from './workspace-database';
+import { parseStoredObjectPayload } from './stored-payload';
+import { assertRecordPayloadIdentity } from './record-identity';
+import { validateDatabaseIdentifiers } from './identifier-validation.js';
 
 type Row = { id: string; payload: string };
-type SyncRow = { id: string; payload: string; created_at: string; updated_at: string; synced_at: string | null; is_deleted: number; sync_status: SyncStatus };
+type SyncRow = { id: string; payload: string; created_at: string; updated_at: string; synced_at: string | null; is_deleted: number; sync_status: SyncStatus; revision: number; change_sequence: number };
 type SyncLogRow = { id: string; operation: string; entity_type: string; entity_id: string; status: SyncLogEntry['status']; message: string | null; created_at: string };
 
-const DATABASE_URL = 'sqlite:harmony.db';
 const LOCAL_TABLES = ['clients', 'custom_columns', 'monthly_payments', 'tax_records', 'income_records', 'report_records', 'calendar_events', 'hr_orders', 'hr_monthly_documents', 'payroll_records', 'audit_operations', 'audit_events', 'settings'];
 // Rollback snapshots can contain the full working database. They stay on the
 // device that made the edit; compact audit events remain available to other devices.
@@ -56,12 +59,22 @@ function normalizeDatabase(raw: Partial<AppDatabase> | null | undefined): AppDat
 
 const now = () => new Date().toISOString();
 const parse = <T>(payload: string): T | null => { try { return JSON.parse(payload) as T; } catch { return null; } };
+const parseDomainRow = <T>(row: Row, table: string): T => {
+  const payload = parseStoredObjectPayload<T>(row.payload, table);
+  assertRecordPayloadIdentity(table, row.id, payload as Record<string, unknown>);
+  return payload;
+};
 
 export class SqliteRepository implements LocalRepository, SyncRepository {
   private connection: Database | null = null;
   // Queue SQL operations so background sync cannot interleave with a local edit.
   private writeTail: Promise<void> = Promise.resolve();
   private syncLogWrites = 0;
+
+  constructor(
+    private readonly workspaceId: string | null = null,
+    private readonly databaseUrl = workspaceDatabaseUrl(workspaceId),
+  ) {}
 
   private serializeWrite<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.writeTail.then(operation, operation);
@@ -71,16 +84,151 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
 
   private async db(): Promise<Database> {
     if (this.connection) return this.connection;
-    this.connection = await Database.load(DATABASE_URL);
-    // WAL lets readers proceed while a short write is in progress. Together
-    // with the timeout below this prevents normal sync activity from surfacing
-    // as a "database is locked" error to the user.
-    try { await this.connection.execute('PRAGMA journal_mode = WAL'); } catch (error) { console.warn('SQLite WAL is unavailable:', error); }
-    // A second writer may briefly hold SQLite while Sync Engine changes status.
-    // Wait rather than failing a user edit with SQLITE_BUSY.
-    await this.connection.execute('PRAGMA busy_timeout = 10000');
-    await this.runMigrations(this.connection);
-    return this.connection;
+    const connection = await Database.load(this.databaseUrl);
+    try {
+      // WAL lets readers proceed while a short write is in progress. Together
+      // with the timeout below this prevents normal sync activity from surfacing
+      // as a "database is locked" error to the user.
+      try { await connection.execute('PRAGMA journal_mode = WAL'); } catch (error) { console.warn('SQLite WAL is unavailable:', error); }
+      // A second writer may briefly hold SQLite while Sync Engine changes status.
+      // Wait rather than failing a user edit with SQLITE_BUSY.
+      await connection.execute('PRAGMA busy_timeout = 10000');
+      await this.runMigrations(connection);
+      await this.assertWorkspaceBinding(connection);
+      await this.recoverInterruptedSave(connection);
+      this.connection = connection;
+      return connection;
+    } catch (error) {
+      await connection.close(this.databaseUrl).catch(() => {});
+      throw error;
+    }
+  }
+
+  private async assertWorkspaceBinding(database: Database): Promise<void> {
+    if (!this.workspaceId) return;
+    const rows = await database.select<{ value: string }[]>("SELECT value FROM sync_meta WHERE key = 'workspace_id'");
+    const boundWorkspace = rows[0]?.value;
+    if (boundWorkspace && boundWorkspace !== this.workspaceId) {
+      throw new Error(`Локальна база належить іншому робочому простору (${boundWorkspace}).`);
+    }
+    if (!boundWorkspace) await this.bindWorkspace(database, this.workspaceId);
+  }
+
+  private async bindWorkspace(database: Database, workspaceId: string): Promise<void> {
+    await database.execute(
+      `INSERT INTO sync_meta (key, value, updated_at) VALUES ('workspace_id', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      [workspaceId, now()],
+    );
+  }
+
+  private async hasAnyRecords(database: Database): Promise<boolean> {
+    for (const table of LOCAL_TABLES) {
+      const rows = await database.select<{ count: number }[]>(`SELECT COUNT(*) AS count FROM ${table}`);
+      if (Number(rows[0]?.count || 0) > 0) return true;
+    }
+    return false;
+  }
+
+  /** Copy the pre-workspace database once without losing revisions, cursor or
+   * conflict history. Tauri SQL executes through a pool, so this migration is
+   * resumable/idempotent instead of pretending separate execute() calls share
+   * one transaction connection. */
+  async migrateLegacyDatabase(): Promise<boolean> {
+    if (!this.workspaceId || this.databaseUrl === LEGACY_DATABASE_URL) return false;
+    const destination = await this.db();
+    const legacy = new SqliteRepository(null, LEGACY_DATABASE_URL);
+    const source = await legacy.db();
+    try {
+      const binding = await source.select<{ value: string }[]>("SELECT value FROM sync_meta WHERE key = 'workspace_id'");
+      const legacyWorkspace = binding[0]?.value;
+      if (legacyWorkspace && legacyWorkspace !== this.workspaceId) return false;
+      const sourceHasData = await this.hasAnyRecords(source);
+      const destinationHasData = await this.hasAnyRecords(destination);
+      const migrationState = await destination.select<{ key: string }[]>(
+        "SELECT key FROM sync_meta WHERE key IN ('legacy_migration_in_progress', 'legacy_migration_complete')",
+      );
+      const stateKeys = new Set(migrationState.map((row) => row.key));
+      const resuming = stateKeys.has('legacy_migration_in_progress') && !stateKeys.has('legacy_migration_complete');
+      let copied = false;
+      if (sourceHasData && (!destinationHasData || resuming)) {
+          await destination.execute(
+            `INSERT INTO sync_meta (key, value, updated_at) VALUES ('legacy_migration_in_progress', ?, ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+            [this.workspaceId, now()],
+          );
+          for (const table of LOCAL_TABLES) {
+            const rows = await source.select<Array<SyncRow & { entityType?: string }>>(
+              `SELECT id, payload, created_at, updated_at, synced_at, is_deleted, sync_status, revision, change_sequence FROM ${table}`,
+            );
+            for (const row of rows) {
+              await destination.execute(
+                `INSERT INTO ${table} (id, payload, created_at, updated_at, synced_at, is_deleted, sync_status, revision, change_sequence)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, created_at = excluded.created_at,
+                   updated_at = excluded.updated_at, synced_at = excluded.synced_at,
+                   is_deleted = excluded.is_deleted, sync_status = excluded.sync_status,
+                   revision = excluded.revision, change_sequence = excluded.change_sequence`,
+                [row.id, row.payload, row.created_at, row.updated_at, row.synced_at, row.is_deleted, row.sync_status, row.revision, row.change_sequence],
+              );
+            }
+          }
+          const metaRows = await source.select<Array<{ key: string; value: string; updated_at: string }>>(
+            "SELECT key, value, updated_at FROM sync_meta WHERE key <> 'workspace_id'",
+          );
+          for (const row of metaRows) {
+            await destination.execute(
+              `INSERT INTO sync_meta (key, value, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+              [row.key, row.value, row.updated_at],
+            );
+          }
+          const conflicts = await source.select<Array<{
+            id: string; entity_type: string; entity_id: string; local_payload: string; remote_payload: string;
+            local_updated_at: string; remote_updated_at: string; detected_at: string; resolved_at: string | null;
+            resolution: string | null; local_is_deleted: number; remote_is_deleted: number;
+          }>>('SELECT id, entity_type, entity_id, local_payload, remote_payload, local_updated_at, remote_updated_at, detected_at, resolved_at, resolution, local_is_deleted, remote_is_deleted FROM sync_conflicts');
+          for (const row of conflicts) {
+            await destination.execute(
+              `INSERT INTO sync_conflicts (id, entity_type, entity_id, local_payload, remote_payload, local_updated_at, remote_updated_at, detected_at, resolved_at, resolution, local_is_deleted, remote_is_deleted)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET entity_type = excluded.entity_type, entity_id = excluded.entity_id,
+                 local_payload = excluded.local_payload, remote_payload = excluded.remote_payload,
+                 local_updated_at = excluded.local_updated_at, remote_updated_at = excluded.remote_updated_at,
+                 detected_at = excluded.detected_at, resolved_at = excluded.resolved_at,
+                 resolution = excluded.resolution, local_is_deleted = excluded.local_is_deleted,
+                 remote_is_deleted = excluded.remote_is_deleted`,
+              [row.id, row.entity_type, row.entity_id, row.local_payload, row.remote_payload, row.local_updated_at, row.remote_updated_at, row.detected_at, row.resolved_at, row.resolution, row.local_is_deleted, row.remote_is_deleted],
+            );
+          }
+          const logs = await source.select<SyncLogRow[]>('SELECT id, operation, entity_type, entity_id, status, message, created_at FROM sync_log');
+          for (const row of logs) {
+            await destination.execute(
+              'INSERT OR IGNORE INTO sync_log (id, operation, entity_type, entity_id, status, message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              [row.id, row.operation, row.entity_type, row.entity_id, row.status, row.message, row.created_at],
+            );
+          }
+          await destination.execute(
+            `INSERT INTO sync_meta (key, value, updated_at) VALUES ('legacy_migration_complete', ?, ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+            [this.workspaceId, now()],
+          );
+          await destination.execute("DELETE FROM sync_meta WHERE key = 'legacy_migration_in_progress'");
+          copied = true;
+      }
+      await this.bindWorkspace(source, this.workspaceId);
+      return copied;
+    } finally {
+      await legacy.close();
+    }
+  }
+
+  async close(): Promise<void> {
+    const connection = this.connection;
+    this.connection = null;
+    // Passing the path is required when more than one workspace pool exists;
+    // close() without it may close every SQL pool owned by the webview.
+    if (connection) await connection.close(this.databaseUrl);
   }
 
   private async runMigrations(database: Database): Promise<void> {
@@ -95,7 +243,13 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
     const appliedVersions = new Set(applied.map((row) => row.version));
     for (const migration of migrations) {
       if (appliedVersions.has(migration.version)) continue;
-      for (const statement of migration.statements) await database.execute(statement);
+      for (const statement of migration.statements) {
+        try {
+          await database.execute(statement);
+        } catch (error) {
+          if (!isAlreadyAppliedAddColumn(statement, error)) throw error;
+        }
+      }
       await database.execute('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)', [migration.version, migration.name, now()]);
     }
   }
@@ -106,22 +260,22 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
       LOCAL_TABLES.map((table) => database.select<Row[]>(`SELECT id, payload FROM ${table} WHERE is_deleted = 0`)),
     );
     const result = emptyDatabase();
-    result.clients = clients.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['clients'];
-    result.customColumns = columns.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['customColumns'];
+    result.clients = clients.map((row) => parseDomainRow<AppDatabase['clients'][number]>(row, 'clients'));
+    result.customColumns = columns.map((row) => parseDomainRow<AppDatabase['customColumns'][number]>(row, 'custom_columns'));
     for (const row of monthly) {
-      const data = parse<{ clientId: string; monthKey: string; value: unknown }>(row.payload);
-      if (data) (result.monthlyPayments[data.clientId] ||= {})[data.monthKey] = data.value as never;
+      const data = parseDomainRow<{ clientId: string; monthKey: string; value: unknown }>(row, 'monthly_payments');
+      (result.monthlyPayments[data.clientId] ||= {})[data.monthKey] = data.value as never;
     }
-    for (const row of taxes) { const data = parse<{ key: string; value: unknown }>(row.payload); if (data) result.taxRecords[data.key] = data.value as never; }
-    for (const row of income) { const data = parse<{ clientId: string; monthKey: string; value: string }>(row.payload); if (data) (result.incomeRecords[data.clientId] ||= {})[data.monthKey] = data.value; }
-    for (const row of reports) { const data = parse<{ key: string; value: unknown }>(row.payload); if (data) result.reportRecords[data.key] = data.value as never; }
-    result.calendarEvents = calendarEvents.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['calendarEvents'];
-    result.hrOrders = hrOrders.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['hrOrders'];
-    result.hrMonthlyDocuments = hrMonthlyDocuments.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['hrMonthlyDocuments'];
-    result.payrollRecords = payrollRecords.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['payrollRecords'];
-    result.auditOperations = auditOperations.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['auditOperations'];
-    result.auditEvents = auditEvents.map((row) => parse(row.payload)).filter(Boolean) as AppDatabase['auditEvents'];
-    const settingsRecord = settings.map((row) => parse<AppDatabase['settings']>(row.payload)).find(Boolean);
+    for (const row of taxes) { const data = parseDomainRow<{ key: string; value: unknown }>(row, 'tax_records'); result.taxRecords[data.key] = data.value as never; }
+    for (const row of income) { const data = parseDomainRow<{ clientId: string; monthKey: string; value: string }>(row, 'income_records'); (result.incomeRecords[data.clientId] ||= {})[data.monthKey] = data.value; }
+    for (const row of reports) { const data = parseDomainRow<{ key: string; value: unknown }>(row, 'report_records'); result.reportRecords[data.key] = data.value as never; }
+    result.calendarEvents = calendarEvents.map((row) => parseDomainRow<AppDatabase['calendarEvents'][number]>(row, 'calendar_events'));
+    result.hrOrders = hrOrders.map((row) => parseDomainRow<AppDatabase['hrOrders'][number]>(row, 'hr_orders'));
+    result.hrMonthlyDocuments = hrMonthlyDocuments.map((row) => parseDomainRow<AppDatabase['hrMonthlyDocuments'][number]>(row, 'hr_monthly_documents'));
+    result.payrollRecords = payrollRecords.map((row) => parseDomainRow<AppDatabase['payrollRecords'][number]>(row, 'payroll_records'));
+    result.auditOperations = auditOperations.map((row) => parseDomainRow<AppDatabase['auditOperations'][number]>(row, 'audit_operations'));
+    result.auditEvents = auditEvents.map((row) => parseDomainRow<AppDatabase['auditEvents'][number]>(row, 'audit_events'));
+    const settingsRecord = settings.length ? parseDomainRow<AppDatabase['settings']>(settings[0], 'settings') : null;
     if (settingsRecord) result.settings = settingsRecord;
     return normalizeDatabase(result);
   }
@@ -142,25 +296,78 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
     return { ...interpretSqliteCheck(rows), checkedAt: now() };
   }
 
-  async save(snapshot: AppDatabase): Promise<void> {
+  async save(snapshot: AppDatabase, options: { requiresPull?: boolean } = {}): Promise<void> {
     return this.serializeWrite(async () => {
       const database = await this.db();
       const normalized = normalizeDatabase(snapshot);
+      validateDatabaseIdentifiers(normalized);
+      await database.execute(
+        `INSERT INTO save_journal (id, payload, requires_pull, created_at) VALUES (1, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET payload = excluded.payload,
+           requires_pull = excluded.requires_pull, created_at = excluded.created_at`,
+        [JSON.stringify(normalized), options.requiresPull ? 1 : 0, now()],
+      );
       try {
-        await this.replaceRows(database, 'clients', normalized.clients.map((item) => ({ id: item.id, payload: item })));
-        await this.replaceRows(database, 'custom_columns', normalized.customColumns.map((item) => ({ id: item.id, payload: item })));
-        await this.replaceRows(database, 'monthly_payments', Object.entries(normalized.monthlyPayments).flatMap(([clientId, months]) => Object.entries(months).map(([monthKey, value]) => ({ id: `${clientId}|${monthKey}`, payload: { clientId, monthKey, value } }))));
-        await this.replaceRows(database, 'tax_records', Object.entries(normalized.taxRecords).map(([key, value]) => ({ id: key, payload: { key, value } })));
-        await this.replaceRows(database, 'income_records', Object.entries(normalized.incomeRecords).flatMap(([clientId, months]) => Object.entries(months).map(([monthKey, value]) => ({ id: `${clientId}|${monthKey}`, payload: { clientId, monthKey, value } }))));
-        await this.replaceRows(database, 'report_records', Object.entries(normalized.reportRecords).map(([key, value]) => ({ id: key, payload: { key, value } })));
-        await this.replaceRows(database, 'calendar_events', normalized.calendarEvents.map((item) => ({ id: item.id, payload: item })));
-        await this.replaceRows(database, 'hr_orders', normalized.hrOrders.map((item) => ({ id: item.id, payload: item })));
-        await this.replaceRows(database, 'hr_monthly_documents', normalized.hrMonthlyDocuments.map((item) => ({ id: item.id, payload: item })));
-        await this.replaceRows(database, 'payroll_records', normalized.payrollRecords.map((item) => ({ id: item.id, payload: item })));
-        await this.replaceRows(database, 'audit_operations', normalized.auditOperations.map((item) => ({ id: item.id, payload: item })));
-        await this.replaceRows(database, 'audit_events', normalized.auditEvents.map((item) => ({ id: item.id, payload: item })));
-        await this.replaceRows(database, 'settings', [{ id: 'default', payload: normalized.settings }]);
+        await this.applySnapshot(database, normalized);
+        if (options.requiresPull) {
+          await database.execute(
+            `INSERT INTO sync_meta (key, value, updated_at) VALUES ('restore_sync_required', '1', ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+            [now()],
+          );
+        }
+        await database.execute('DELETE FROM save_journal WHERE id = 1');
       } catch (error) { throw error; }
+    });
+  }
+
+  private async applySnapshot(database: Database, normalized: AppDatabase): Promise<void> {
+    await this.replaceRows(database, 'clients', normalized.clients.map((item) => ({ id: item.id, payload: item })));
+    await this.replaceRows(database, 'custom_columns', normalized.customColumns.map((item) => ({ id: item.id, payload: item })));
+    await this.replaceRows(database, 'monthly_payments', Object.entries(normalized.monthlyPayments).flatMap(([clientId, months]) => Object.entries(months).map(([monthKey, value]) => ({ id: `${clientId}|${monthKey}`, payload: { clientId, monthKey, value } }))));
+    await this.replaceRows(database, 'tax_records', Object.entries(normalized.taxRecords).map(([key, value]) => ({ id: key, payload: { key, value } })));
+    await this.replaceRows(database, 'income_records', Object.entries(normalized.incomeRecords).flatMap(([clientId, months]) => Object.entries(months).map(([monthKey, value]) => ({ id: `${clientId}|${monthKey}`, payload: { clientId, monthKey, value } }))));
+    await this.replaceRows(database, 'report_records', Object.entries(normalized.reportRecords).map(([key, value]) => ({ id: key, payload: { key, value } })));
+    await this.replaceRows(database, 'calendar_events', normalized.calendarEvents.map((item) => ({ id: item.id, payload: item })));
+    await this.replaceRows(database, 'hr_orders', normalized.hrOrders.map((item) => ({ id: item.id, payload: item })));
+    await this.replaceRows(database, 'hr_monthly_documents', normalized.hrMonthlyDocuments.map((item) => ({ id: item.id, payload: item })));
+    await this.replaceRows(database, 'payroll_records', normalized.payrollRecords.map((item) => ({ id: item.id, payload: item })));
+    await this.replaceRows(database, 'audit_operations', normalized.auditOperations.map((item) => ({ id: item.id, payload: item })));
+    await this.replaceRows(database, 'audit_events', normalized.auditEvents.map((item) => ({ id: item.id, payload: item })));
+    await this.replaceRows(database, 'settings', [{ id: 'default', payload: normalized.settings }]);
+  }
+
+  private async recoverInterruptedSave(database: Database): Promise<void> {
+    const rows = await database.select<Array<{ payload: string; requires_pull: number }>>(
+      'SELECT payload, requires_pull FROM save_journal WHERE id = 1',
+    );
+    const pending = rows[0];
+    if (!pending) return;
+    const parsed = parse<Partial<AppDatabase>>(pending.payload);
+    if (!parsed || typeof parsed !== 'object') throw new Error('Журнал локального збереження пошкоджено.');
+    await this.applySnapshot(database, normalizeDatabase(parsed));
+    if (pending.requires_pull) {
+      await database.execute(
+        `INSERT INTO sync_meta (key, value, updated_at) VALUES ('restore_sync_required', '1', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        [now()],
+      );
+    }
+    await database.execute('DELETE FROM save_journal WHERE id = 1');
+  }
+
+  async isRestoreSyncRequired(): Promise<boolean> {
+    return this.serializeWrite(async () => {
+      const database = await this.db();
+      const rows = await database.select<{ value: string }[]>("SELECT value FROM sync_meta WHERE key = 'restore_sync_required'");
+      return rows[0]?.value === '1';
+    });
+  }
+
+  async clearRestoreSyncRequired(): Promise<void> {
+    return this.serializeWrite(async () => {
+      const database = await this.db();
+      await database.execute("DELETE FROM sync_meta WHERE key = 'restore_sync_required'");
     });
   }
 
@@ -193,27 +400,31 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
     return this.serializeWrite(async () => {
       const database = await this.db();
       const rows = (await Promise.all(SYNC_TABLES.map((table) => database.select<SyncRow[]>(
-        `SELECT id, payload, created_at, updated_at, synced_at, is_deleted, sync_status FROM ${table}
+        `SELECT id, payload, created_at, updated_at, synced_at, is_deleted, sync_status, revision, change_sequence FROM ${table}
          WHERE sync_status IN ('created', 'updated', 'deleted') ORDER BY updated_at ASC LIMIT ?`, [limit],
       ).then((items) => items.map((item) => ({ ...item, entityType: table })))))).flat()
         .sort((a, b) => a.updated_at.localeCompare(b.updated_at)).slice(0, limit);
       return rows.map((row) => ({
         entityType: row.entityType, id: row.id, payload: row.payload,
         createdAt: row.created_at, updatedAt: row.updated_at, syncedAt: row.synced_at,
-        isDeleted: Boolean(row.is_deleted), syncStatus: row.sync_status,
+        isDeleted: Boolean(row.is_deleted), syncStatus: row.sync_status, revision: Number(row.revision), changeSequence: Number(row.change_sequence),
       }));
     });
   }
 
-  async markRecordsSynced(records: SyncRecord[], syncedAt: string): Promise<void> {
+  async acknowledgePush(records: SyncRecord[], syncedAt: string): Promise<void> {
     return this.serializeWrite(async () => {
       const database = await this.db();
       try {
       for (const record of records) {
         await database.execute(
-          `UPDATE ${record.entityType} SET sync_status = 'synced', synced_at = ?
-           WHERE id = ? AND updated_at = ? AND sync_status IN ('created', 'updated', 'deleted')`,
-          [syncedAt, record.id, record.updatedAt],
+          `UPDATE ${record.entityType}
+              SET revision = ?,
+                  change_sequence = ?,
+                  sync_status = CASE WHEN updated_at = ? THEN 'synced' ELSE sync_status END,
+                  synced_at = CASE WHEN updated_at = ? THEN ? ELSE synced_at END
+            WHERE id = ?`,
+          [record.revision, record.changeSequence, record.updatedAt, record.updatedAt, syncedAt, record.id],
         );
       }
       } catch (error) { throw error; }
@@ -227,9 +438,10 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
       try {
       for (const record of records) {
         if (!SYNC_TABLES.includes(record.entityType)) continue;
-        const local = await database.select<Pick<SyncRow, 'payload' | 'updated_at' | 'sync_status' | 'is_deleted'>[]>(
-          `SELECT payload, updated_at, sync_status, is_deleted FROM ${record.entityType} WHERE id = ?`, [record.id],
+        const local = await database.select<Pick<SyncRow, 'payload' | 'updated_at' | 'sync_status' | 'is_deleted' | 'revision'>[]>(
+          `SELECT payload, updated_at, sync_status, is_deleted, revision FROM ${record.entityType} WHERE id = ?`, [record.id],
         );
+        if (local[0] && Number(local[0].revision) > record.revision) continue;
         const localPending = local[0] && ['created', 'updated', 'deleted', 'conflict'].includes(local[0].sync_status);
         const contentDiffers = local[0] && (local[0].payload !== record.payload || Boolean(local[0].is_deleted) !== record.isDeleted);
         if (localPending && contentDiffers) {
@@ -246,17 +458,18 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [conflict.id, conflict.entityType, conflict.entityId, conflict.localPayload, conflict.remotePayload, conflict.localIsDeleted ? 1 : 0, conflict.remoteIsDeleted ? 1 : 0, conflict.localUpdatedAt, conflict.remoteUpdatedAt, conflict.detectedAt],
           );
-          await database.execute(`UPDATE ${record.entityType} SET sync_status = 'conflict' WHERE id = ?`, [record.id]);
+          await database.execute(`UPDATE ${record.entityType} SET sync_status = 'conflict', revision = ?, change_sequence = ? WHERE id = ?`, [record.revision, record.changeSequence, record.id]);
           conflicts.push(conflict);
           continue;
         }
         await database.execute(
-          `INSERT INTO ${record.entityType} (id, payload, created_at, updated_at, synced_at, is_deleted, sync_status)
-           VALUES (?, ?, ?, ?, ?, ?, 'synced')
+          `INSERT INTO ${record.entityType} (id, payload, created_at, updated_at, synced_at, is_deleted, sync_status, revision, change_sequence)
+           VALUES (?, ?, ?, ?, ?, ?, 'synced', ?, ?)
            ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, created_at = excluded.created_at,
-             updated_at = excluded.updated_at, synced_at = excluded.synced_at,
-             is_deleted = excluded.is_deleted, sync_status = 'synced'`,
-          [record.id, record.payload, record.createdAt, record.updatedAt, record.syncedAt || record.updatedAt, record.isDeleted ? 1 : 0],
+              updated_at = excluded.updated_at, synced_at = excluded.synced_at,
+              is_deleted = excluded.is_deleted, sync_status = 'synced', revision = excluded.revision,
+              change_sequence = excluded.change_sequence`,
+          [record.id, record.payload, record.createdAt, record.updatedAt, record.syncedAt || record.updatedAt, record.isDeleted ? 1 : 0, record.revision, record.changeSequence],
         );
       }
       } catch (error) { throw error; }
@@ -270,11 +483,9 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
       const rows = await database.select<{ value: string }[]>('SELECT value FROM sync_meta WHERE key = ?', ['remote_cursor']);
       const value = rows[0]?.value;
       if (!value) return null;
-      try {
-        const cursor = JSON.parse(value) as SyncCursor;
-        if (cursor.updatedAt && typeof cursor.entityType === 'string' && typeof cursor.id === 'string') return cursor;
-      } catch { /* Legacy cursors were stored as a timestamp. */ }
-      return { updatedAt: value, entityType: '', id: '' };
+      // Returning null deliberately performs one complete pull and replaces the
+      // legacy timestamp cursor without risking skipped server changes.
+      return parseStoredSyncCursor(value);
     });
   }
 

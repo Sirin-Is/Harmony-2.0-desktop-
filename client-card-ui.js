@@ -16,7 +16,7 @@ import { openAppDialog } from './app-dialog.js';
 import { enhanceDateInputs } from './date-input.js';
 import { showToast } from './toast.js';
 import { validateKved, openKvedResults } from './kved-validation.js';
-import * as XLSX from 'xlsx';
+import { readSpreadsheetRows } from './spreadsheet-security.js';
 
 const esc = escapeHtml;
 const uid = generateId;
@@ -69,11 +69,7 @@ function kvedRowHtml(item, index) {
 }
 
 function getSpreadsheetRows(file) {
-  return file.arrayBuffer().then((buffer) => {
-    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    return sheet ? XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false }) : [];
-  });
+  return readSpreadsheetRows(file);
 }
 
 function column(row, names) {
@@ -128,12 +124,12 @@ function bodyHtml() {
 
     <div class="cc-grid">
       <fieldset><legend>Основна інформація</legend>
-        <label>ПІБ / назва ФОП<input id="cc_name" value="${esc(d.name)}" required></label>
+        <label>ПІБ / назва ФОП<input id="cc_name" value="${esc(d.name)}" maxlength="200" required></label>
         <label>Група ЄП<select id="cc_group"><option value="" ${d.group ? '' : 'selected'}>Оберіть групу</option>${['1', '2', '3', 'Загальна'].map((g) => `<option ${d.group === g ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
         <label>Ставка ЄП<select id="cc_rate"><option value="" ${d.rate ? '' : 'selected'}>${d.group ? 'Оберіть ставку' : 'Спочатку оберіть групу'}</option>${rateOpts.map((o) => `<option value="${o.value}" ${String(o.value) === String(d.rate) ? 'selected' : ''}>${o.label}</option>`).join('')}</select></label>
         <label>РНОКПП / ЄДРПОУ<input id="cc_rnokpp" value="${esc(d.rnokpp)}"></label>
         <label>Телефон<input id="cc_phone" value="${esc(d.phone)}"></label>
-        <label>Ел. пошта<input id="cc_email" type="email" value="${esc(d.email)}"></label>
+        <label>Ел. пошта<input id="cc_email" type="email" maxlength="320" value="${esc(d.email)}"></label>
         <label>Джерело залучення<input id="cc_source" value="${esc(d.source)}"></label>
       </fieldset>
 
@@ -389,8 +385,12 @@ function save() {
 
 function close() {
   overlay.classList.remove('open');
+  overlay.replaceChildren();
   draft = null;
 }
+
+/** Immediately remove private draft data from the DOM and memory. */
+export function closeClientCard() { close(); }
 
 export function openClientCard(id) {
   const existing = id ? getClientById(id) : null;

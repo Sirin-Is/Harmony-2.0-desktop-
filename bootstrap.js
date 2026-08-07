@@ -9,7 +9,7 @@
 import { $, todayIso } from './utils';
 import { uiState } from './ui-state.js';
 import {
-  db, initDatabase, refreshDatabaseFromSync, undoLastAction, setAuditActor, setAccessRole, getClientById, deleteClientPermanently, archiveClient, requestClientDeletion, setClientLifecycle, reorderClients, setCustomFieldValue, replaceDatabase,
+  db, initDatabase, lockDatabase, refreshDatabaseFromSync, prepareDatabaseSwitch, undoLastAction, setAuditActor, setAccessRole, getClientById, deleteClientPermanently, archiveClient, requestClientDeletion, setClientLifecycle, reorderClients, setCustomFieldValue, replaceDatabase,
   setMonthlyPaymentField, setTaxField, setReportField, setIncomeValue,
   setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, getSettings,
   deleteCustomColumn, getCustomColumns,
@@ -27,26 +27,26 @@ import { renderReports } from './render/reports.js';
 import { renderCalendar } from './render/calendar.js';
 import { renderActivities } from './render/activities.js';
 import { renderHR } from './render/hr.js';
-import { renderDesignTest } from './render/design-test.js';
 import { renderAudit } from './render/audit.js';
 import { loadActivityReference } from './data/activity-reference.js';
 import { renderInactive } from './render/inactive.js';
 import { renderDeleted } from './render/deleted.js';
 import { renderSettings } from './render/settings.js';
 import { openColumnForm, handleModalSubmit, closeModal } from './modals.js';
-import { openClientCard } from './client-card-ui.js';
+import { openClientCard, closeClientCard } from './client-card-ui.js';
 import { exportClientsToExcel, importClientsFromFile } from './import-export.js';
-import { showToast } from './toast.js';
-import { openAppDialog } from './app-dialog.js';
+import { showToast, clearToasts } from './toast.js';
+import { openAppDialog, closeAppDialog } from './app-dialog.js';
 import { enhanceDateInputs } from './date-input.js';
 import { validateKved, openKvedResults } from './kved-validation.js';
 import { signIn, signOut, signedInEmail } from './auth/session';
 import { getCurrentHarmonyUser, listAuthenticationUsers, manageHarmonyUsers } from './auth/users';
 import { checkLocalDatabase, getOpenSyncConflicts, getRecentSyncLog, requestSync, requestRestoreSync, resolveSyncConflict } from './storage.js';
+import { invoke } from '@tauri-apps/api/core';
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, passwordPolicyError } from './password-policy.js';
 import { check } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
 import { getLocalStorageProtection } from './local-storage-protection.ts';
-import { createEncryptedBackup, decryptBackup, isEncryptedBackup, validateBackupDatabase } from './backup-crypto.js';
+import { assertBackupFileSize, createEncryptedBackup, decryptBackup, isEncryptedBackup, validateBackupDatabase } from './backup-crypto.js';
 
 const TITLES = {
   overview: ['Огляд', 'Зведення зауважень по розділах'],
@@ -58,7 +58,6 @@ const TITLES = {
   calendar: ['Календар', 'Задачі та автоматичні дедлайни'],
   activities: ['Види діяльності', 'Довідники КВЕД-2010 та NACE 2.1-UA'],
   hr: ['Кадри', 'Наймані працівники та кадрові документи'],
-  'design-test': ['Тест дизайну', 'Варіанти полів вибору дати'],
   audit: ['Журнал подій', 'Історія змін і відкат'],
   inactive: ['Неактивні', 'Приховані ФОП'],
   deleted: ['Видалені', 'Кошик — відновлення ФОП'],
@@ -75,7 +74,6 @@ const VIEWS = {
   calendar: renderCalendar,
   activities: renderActivities,
   hr: renderHR,
-  'design-test': renderDesignTest,
   audit: renderAudit,
   inactive: renderInactive,
   deleted: renderDeleted,
@@ -84,7 +82,56 @@ const VIEWS = {
 
 function showBootOverlay(visible) {
   const el = document.getElementById('bootOverlay');
-  if (el) el.style.display = visible ? 'flex' : 'none';
+  if (el) el.hidden = !visible;
+}
+
+function setAuthError(message = '') {
+  const error = $('#authError');
+  error.textContent = message;
+  error.hidden = !message;
+}
+
+function setAuthBusy(busy) {
+  const form = $('#authForm');
+  form.querySelectorAll('input, button').forEach((control) => { control.disabled = busy; });
+  $('#authSubmit').textContent = busy ? 'Перевірка…' : 'Увійти';
+}
+
+function resetPrivateUiState() {
+  uiState.currentUser = null;
+  uiState.managedUsers = [];
+  uiState.syncConflicts = [];
+  uiState.syncLog = [];
+  uiState.localDatabaseHealth = null;
+  uiState.localDatabaseIssues = [];
+  uiState.selectedClientIds.clear();
+  uiState.pendingHighlightClientId = null;
+  uiState.deletedSectionUnlocked = false;
+  uiState.dashboardFilters = {};
+  uiState.dashboardFilterOpen = null;
+  uiState.view = 'overview';
+}
+
+/** Make the unauthenticated DOM an inert, data-free login surface. */
+function setAuthenticatedUi(authenticated) {
+  const shell = $('#appShell');
+  document.body.classList.toggle('auth-locked', !authenticated);
+  shell.hidden = !authenticated;
+  shell.inert = !authenticated;
+  shell.setAttribute('aria-hidden', String(!authenticated));
+  $('#authGate').hidden = authenticated;
+  if (authenticated) return;
+
+  closeAppDialog();
+  closeClientCard();
+  closeModal();
+  clearToasts();
+  $('#content').replaceChildren();
+  $('#userIdentity').textContent = 'CRM для бухгалтера ФОП';
+  $('#authBtn').textContent = 'Вийти';
+  resetPrivateUiState();
+  $('#authForm').reset();
+  requestAnimationFrame(() => $('#authLogin')?.focus());
 }
 
 function localDateTimeValue(value) {
@@ -93,6 +140,7 @@ function localDateTimeValue(value) {
 }
 
 async function downloadBackup() {
+  if (!uiState.currentUser || !db) throw new Error('Потрібно авторизуватися.');
   const password = await openAppDialog({
     title: 'Зашифрувати резервну копію',
     message: 'Створіть окремий пароль щонайменше з 12 символів. Harmony не зберігає його й не зможе відновити файл без цього пароля.',
@@ -103,7 +151,8 @@ async function downloadBackup() {
     confirmText: 'Створити копію',
   });
   if (!password) return;
-  if (password.password.length < 12) { showToast('Пароль резервної копії має містити щонайменше 12 символів.', 'error'); return; }
+  const backupPasswordError = passwordPolicyError(password.password);
+  if (backupPasswordError) { showToast(`Ненадійний пароль резервної копії. ${backupPasswordError}`, 'error', 9000); return; }
   if (password.password !== password.confirmation) { showToast('Паролі не збігаються.', 'error'); return; }
   const backup = await createEncryptedBackup(db, password.password);
   const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' });
@@ -118,6 +167,7 @@ async function downloadBackup() {
 }
 
 export function render() {
+  if (!uiState.currentUser || !db) { setAuthenticatedUi(false); return; }
   const [crumb, title] = TITLES[uiState.view];
   $('#crumb').textContent = crumb;
   $('#title').textContent = title;
@@ -132,7 +182,8 @@ export function render() {
     if (uiState.pendingHighlightClientId) {
       const targetId = uiState.pendingHighlightClientId;
       uiState.pendingHighlightClientId = null;
-      const rows = document.querySelectorAll(`tr[data-row-id="${targetId}"]`);
+      const rows = [...document.querySelectorAll('tr[data-row-id]')]
+        .filter((row) => row.dataset.rowId === targetId);
       rows.forEach((row) => {
         row.classList.add('row-highlight');
         setTimeout(() => row.classList.remove('row-highlight'), 2600);
@@ -161,6 +212,7 @@ function applyAppearance(appearance = getSettings()?.appearance || { fieldColor:
 }
 
 function setView(view) {
+  if (!uiState.currentUser || !db) return;
   if (view === 'deleted' && !uiState.deletedSectionUnlocked) return;
   uiState.view = view;
   document.querySelectorAll('#nav button').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
@@ -557,13 +609,14 @@ function bindCurrentView() {
     event.target.value = '';
     if (!file) return;
     try {
+      assertBackupFileSize(file);
       const parsed = JSON.parse(await file.text());
       let source = parsed;
       if (isEncryptedBackup(parsed)) {
         const password = await openAppDialog({
           title: 'Відкрити зашифровану копію',
           message: 'Введіть пароль, який було задано під час створення цієї резервної копії.',
-          fields: [{ key: 'password', label: 'Пароль резервної копії', type: 'password', required: true }],
+          fields: [{ key: 'password', label: 'Пароль резервної копії', type: 'password', maxLength: MAX_PASSWORD_LENGTH, required: true }],
           confirmText: 'Відкрити',
         });
         if (!password) return;
@@ -643,19 +696,29 @@ function bindCurrentView() {
     } catch (error) { showToast(error.message || String(error), 'error'); }
   }));
   $('[data-create-user]')?.addEventListener('click', async () => {
-    const result = await openAppDialog({ title: 'Новий користувач', message: 'Користувач входитиме за логіном і паролем. Електронна пошта для нього не потрібна.', fields: [{ key: 'login', label: 'Логін', required: true }, { key: 'displayName', label: 'Ім’я', required: true }, { key: 'role', label: 'Роль', type: 'select', options: ['accountant', 'observer', 'administrator'], value: 'accountant', required: true }, { key: 'password', label: 'Пароль (щонайменше 8 символів)', type: 'password', required: true }], confirmText: 'Створити' });
+    const result = await openAppDialog({ title: 'Новий користувач', message: 'Використайте унікальний пароль або парольну фразу. Електронна пошта для входу не потрібна.', fields: [{ key: 'login', label: 'Логін', maxLength: 40, required: true }, { key: 'displayName', label: 'Ім’я', maxLength: 80, required: true }, { key: 'role', label: 'Роль', type: 'select', options: ['accountant', 'observer', 'administrator'], value: 'accountant', required: true }, { key: 'password', label: `Пароль (щонайменше ${MIN_PASSWORD_LENGTH} символів)`, type: 'password', minLength: MIN_PASSWORD_LENGTH, maxLength: MAX_PASSWORD_LENGTH, autocomplete: 'new-password', required: true }, { key: 'passwordConfirmation', label: 'Повторіть пароль', type: 'password', minLength: MIN_PASSWORD_LENGTH, maxLength: MAX_PASSWORD_LENGTH, autocomplete: 'new-password', required: true }], confirmText: 'Створити' });
     if (!result) return;
-    try { await manageHarmonyUsers('create', result); uiState.managedUsers = await listAuthenticationUsers(); render(); showToast('Користувача створено.', 'success'); }
+    const passwordError = passwordPolicyError(result.password, result.login);
+    if (passwordError) { showToast(passwordError, 'error', 9000); return; }
+    if (result.password !== result.passwordConfirmation) { showToast('Паролі не збігаються.', 'error'); return; }
+    const { passwordConfirmation, ...payload } = result;
+    try { await manageHarmonyUsers('create', payload); uiState.managedUsers = await listAuthenticationUsers(); render(); showToast('Користувача створено.', 'success'); }
     catch (error) { showToast(error.message || String(error), 'error', 8000); }
   });
   document.querySelectorAll('[data-manage-user]').forEach((button) => button.addEventListener('click', async () => {
     const user = uiState.managedUsers.find((item) => item.userId === button.dataset.manageUser);
     if (!user) return;
-    const result = await openAppDialog({ title: user.bound ? 'Змінити користувача' : 'Прив’язати користувача', message: user.bound ? 'За потреби задайте новий пароль. Залиште поле порожнім, щоб не змінювати його.' : `Обліковий запис ${user.email || 'Supabase Auth'} буде прив’язано до логіна Harmony.`, fields: [{ key: 'login', label: 'Логін', value: user.login, required: true }, { key: 'displayName', label: 'Ім’я', value: user.displayName, required: true }, { key: 'role', label: 'Роль', type: 'select', options: ['accountant', 'observer', 'administrator'], value: user.role, required: true }, { key: 'password', label: 'Новий пароль', type: 'password' }, { key: 'isActive', label: 'Статус', type: 'select', options: ['Активний', 'Вимкнений'], value: user.isActive ? 'Активний' : 'Вимкнений', required: true }], confirmText: 'Зберегти' });
+    const result = await openAppDialog({ title: user.bound ? 'Змінити користувача' : 'Прив’язати користувача', message: user.bound ? 'За потреби задайте новий пароль. Залиште обидва парольні поля порожніми, щоб не змінювати його.' : `Обліковий запис ${user.email || 'Supabase Auth'} буде прив’язано до логіна Harmony.`, fields: [{ key: 'login', label: 'Логін', value: user.login, maxLength: 40, required: true }, { key: 'displayName', label: 'Ім’я', value: user.displayName, maxLength: 80, required: true }, { key: 'role', label: 'Роль', type: 'select', options: ['accountant', 'observer', 'administrator'], value: user.role, required: true }, { key: 'password', label: 'Новий пароль', type: 'password', minLength: MIN_PASSWORD_LENGTH, maxLength: MAX_PASSWORD_LENGTH, autocomplete: 'new-password' }, { key: 'passwordConfirmation', label: 'Повторіть новий пароль', type: 'password', minLength: MIN_PASSWORD_LENGTH, maxLength: MAX_PASSWORD_LENGTH, autocomplete: 'new-password' }, { key: 'isActive', label: 'Статус', type: 'select', options: ['Активний', 'Вимкнений'], value: user.isActive ? 'Активний' : 'Вимкнений', required: true }], confirmText: 'Зберегти' });
     if (!result) return;
+    if (result.password) {
+      const passwordError = passwordPolicyError(result.password, result.login);
+      if (passwordError) { showToast(passwordError, 'error', 9000); return; }
+      if (result.password !== result.passwordConfirmation) { showToast('Паролі не збігаються.', 'error'); return; }
+    } else if (result.passwordConfirmation) { showToast('Введіть новий пароль у першому полі.', 'error'); return; }
+    const { passwordConfirmation, ...payload } = result;
     try {
       const action = user.bound ? 'update' : 'bind';
-      await manageHarmonyUsers(action, { ...result, userId: user.userId, isActive: result.isActive === 'Активний' });
+      await manageHarmonyUsers(action, { ...payload, userId: user.userId, isActive: result.isActive === 'Активний' });
       uiState.managedUsers = await listAuthenticationUsers(); render(); showToast('Дані користувача збережено.', 'success');
     } catch (error) { showToast(error.message || String(error), 'error', 8000); }
   }));
@@ -757,6 +820,7 @@ function wireGlobalControls() {
 
   let hPresses = [];
   document.addEventListener('keydown', (event) => {
+    if (!uiState.currentUser || !db) return;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
       if (undoLastAction()) { event.preventDefault(); render(); showToast('Останню дію скасовано.', 'info'); }
       return;
@@ -774,31 +838,65 @@ function wireGlobalControls() {
 
   $('#authBtn').addEventListener('click', async () => {
     const email = await signedInEmail();
-    if (email) {
-      const result = await openAppDialog({ title: 'Вихід із синхронізації', message: `Вийти з облікового запису ${email}?`, confirmText: 'Вийти', danger: true });
-      if (!result) return;
-      await signOut();
-      setAuditActor();
-      uiState.currentUser = null;
-      setAccessRole('observer');
-      $('#userIdentity').textContent = 'CRM для бухгалтера ФОП';
-      $('#authBtn').textContent = 'Увійти для синхронізації';
-      showToast('Ви вийшли з облікового запису.', 'info');
-      return;
-    }
-    const credentials = await openAppDialog({ title: 'Вхід для синхронізації', message: 'Введіть логін і пароль, які визначив адміністратор.', fields: [{ key: 'login', label: 'Логін', required: true }, { key: 'password', label: 'Пароль', type: 'password', required: true }], confirmText: 'Увійти' });
-    if (!credentials) return;
+    const result = await openAppDialog({ title: 'Вихід із Harmony', message: `Вийти з облікового запису ${email || uiState.currentUser?.displayName || ''}?`, confirmText: 'Вийти', danger: true });
+    if (!result) return;
+
+    // Hide all private DOM synchronously. Credential and database cleanup then
+    // runs behind the login gate, so even a slow SQLite close cannot leak data.
+    setAuthenticatedUi(false);
+    setAuthBusy(true);
+    setAuthError('Завершення сеансу…');
+    let authenticated = false;
     try {
-      const session = await signIn(credentials.login, credentials.password);
-      uiState.currentUser = await getCurrentHarmonyUser();
-      if (!uiState.currentUser) throw new Error('Для цього облікового запису не задано активний профіль Harmony. Зверніться до адміністратора.');
-      setAuditActor(uiState.currentUser.displayName);
-      setAccessRole(uiState.currentUser.role);
-      $('#authBtn').textContent = `Вийти (${uiState.currentUser.displayName})`;
-      $('#userIdentity').textContent = uiState.currentUser.displayName;
+      await signOut();
+      authenticated = true;
+    } catch (error) {
+      console.warn('Не вдалося очистити локальну auth-сесію:', error);
+    }
+    try {
+      await lockDatabase();
+    } catch (error) {
+      console.error('Не вдалося повністю закрити локальну базу під час виходу:', error);
+    } finally {
+      setAuthBusy(false);
+      setAuthError(authenticated ? '' : 'Сеанс заблоковано. Перезапустіть Harmony перед наступним входом.');
+    }
+  });
+
+  $('#authForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!event.currentTarget.reportValidity()) return;
+    setAuthError();
+    setAuthBusy(true);
+    let authenticated = false;
+    try {
+      await prepareDatabaseSwitch();
+      await signIn($('#authLogin').value, $('#authPassword').value);
+      authenticated = true;
+      const profile = await getCurrentHarmonyUser();
+      if (!profile) throw new Error('Для цього облікового запису не задано активний профіль Harmony. Зверніться до адміністратора.');
+      uiState.currentUser = profile;
+      showBootOverlay(true);
+      await initDatabase(profile.workspaceId);
+      setAuditActor(profile.displayName);
+      setAccessRole(profile.role);
+      $('#authBtn').textContent = `Вийти (${profile.displayName})`;
+      $('#userIdentity').textContent = profile.displayName;
+      setAuthenticatedUi(true);
+      setView('overview');
       requestSync();
       showToast('Вхід виконано. Запущено синхронізацію.', 'success');
-    } catch (error) { showToast(error.message || String(error), 'error', 8000); }
+      void checkForUpdate();
+    } catch (error) {
+      showBootOverlay(false);
+      setAuthenticatedUi(false);
+      await lockDatabase().catch(() => {});
+      if (authenticated) await signOut().catch(() => {});
+      setAuthError(error.message || String(error));
+    } finally {
+      setAuthBusy(false);
+      showBootOverlay(false);
+    }
   });
 
   $('#modalForm').addEventListener('submit', (event) => {
@@ -811,16 +909,19 @@ function wireGlobalControls() {
   $('#modal').addEventListener('click', (event) => { if (event.target === $('#modal')) closeModal(); });
 
   $('#exportBtn').addEventListener('click', () => {
+    if (!uiState.currentUser || !db) return;
     void downloadBackup().catch((error) => showToast(`Не вдалося створити резервну копію: ${error.message || error}`, 'error', 9000));
   });
 
-  document.addEventListener('harmony:changed', () => render());
-  document.addEventListener('harmony:access-denied', () => { showToast('У вас є доступ лише до перегляду.', 'warn'); render(); });
+  document.addEventListener('harmony:changed', () => { if (uiState.currentUser && db) render(); });
+  document.addEventListener('harmony:access-denied', () => { if (uiState.currentUser && db) { showToast('У вас є доступ лише до перегляду.', 'warn'); render(); } });
   window.addEventListener('harmony:sync-conflict', (event) => {
+    if (!uiState.currentUser || !db) return;
     const count = Number(event.detail?.conflicts?.length || 1);
     showToast(`Виявлено конфлікт синхронізації${count > 1 ? ` (${count})` : ''}. Локальні зміни збережено; віддалені дані не перезаписано.`, 'warn', 9000);
   });
   window.addEventListener('harmony:remote-sync', async () => {
+    if (!uiState.currentUser || !db) return;
     try {
       await refreshDatabaseFromSync();
       render();
@@ -834,10 +935,10 @@ function wireGlobalControls() {
 
 /** Check installed desktop builds only; Vite in a browser never attempts an update. */
 async function checkForUpdate() {
-  if (!window.__TAURI_INTERNALS__) return;
+  if (!window.__TAURI_INTERNALS__ || !uiState.currentUser || !db) return;
   try {
     const update = await check();
-    if (!update) return;
+    if (!update || !uiState.currentUser || !db) return;
     const result = await openAppDialog({
       title: `Доступне оновлення ${update.version}`,
       message: update.body || 'Доступна нова версія Harmony. Програма завантажить і встановить її, після чого перезапуститься.',
@@ -846,7 +947,7 @@ async function checkForUpdate() {
     if (!result) return;
     showToast('Завантаження оновлення…', 'info', 0);
     await update.downloadAndInstall();
-    await relaunch();
+    await invoke('restart_app');
   } catch (error) {
     // Updates are optional: an unavailable release must never block accounting work.
     console.info('Перевірка оновлень недоступна:', error);
@@ -854,30 +955,42 @@ async function checkForUpdate() {
 }
 
 async function boot() {
-  showBootOverlay(true);
+  setAuthenticatedUi(false);
+  wireGlobalControls();
   try {
-    await initDatabase();
+    const email = await signedInEmail();
+    if (!email) return;
+    showBootOverlay(true);
+    const profile = await getCurrentHarmonyUser();
+    if (!profile) {
+      await signOut().catch(() => {});
+      setAuthError('Обліковий запис не має активного профілю Harmony.');
+      return;
+    }
+    uiState.currentUser = profile;
+    await initDatabase(profile.workspaceId);
     try { uiState.localStorageProtection = await getLocalStorageProtection(); }
     catch (error) { uiState.localStorageProtection = { enabled: false, detail: error.message || String(error) }; }
     try { await loadActivityReference(); } catch (error) { console.warn('Не вдалося завантажити довідник видів діяльності:', error); }
-    wireGlobalControls();
-    const email = await signedInEmail();
-    if (email) {
-      try { uiState.currentUser = await getCurrentHarmonyUser(); } catch (error) { console.warn('Не вдалося прочитати профіль Harmony:', error); }
-      const actor = uiState.currentUser?.displayName || email;
-      setAuditActor(actor);
-      setAccessRole(uiState.currentUser?.role || 'observer');
-      $('#authBtn').textContent = `Вийти (${actor})`;
-      $('#userIdentity').textContent = actor;
-    }
+    const actor = profile.displayName || email;
+    setAuditActor(actor);
+    setAccessRole(profile.role);
+    $('#authBtn').textContent = `Вийти (${actor})`;
+    $('#userIdentity').textContent = actor;
+    setAuthenticatedUi(true);
     setView('overview');
+    if (!uiState.localStorageProtection?.enabled) {
+      const detail = uiState.localStorageProtection?.detail ? ` Причина: ${uiState.localStorageProtection.detail}` : '';
+      showToast(`УВАГА: локальна база Harmony не захищена Windows EFS.${detail} Увімкніть BitLocker або EFS перед роботою з персональними даними.`, 'error', 0);
+    }
     void checkForUpdate();
   } catch (error) {
-    // Захист від "тихого зависання": яка б помилка не сталась при старті,
-    // overlay має зникнути, а причина — бути видимою (консоль + toast),
-    // а не просто вічний напис "Завантаження даних".
     console.error('Помилка запуску застосунку:', error);
-    showToast(`Помилка запуску: ${error.message || error}`, 'error', 10000);
+    showBootOverlay(false);
+    setAuthenticatedUi(false);
+    await lockDatabase().catch(() => {});
+    await signOut().catch(() => {});
+    setAuthError(`Не вдалося відкрити захищений робочий простір: ${error.message || error}`);
   } finally {
     showBootOverlay(false);
   }
