@@ -1,4 +1,11 @@
-export const shortDate = (iso = '') => /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(2, 4)}` : '';
+export function isValidIsoDate(value = '') {
+  const parts = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!parts) return false;
+  const date = new Date(`${value}T00:00:00`);
+  return date.getFullYear() === Number(parts[1]) && date.getMonth() + 1 === Number(parts[2]) && date.getDate() === Number(parts[3]);
+}
+
+export const shortDate = (iso = '') => isValidIsoDate(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(2, 4)}` : '';
 
 export function shortDateToIso(value = '') {
   const parts = String(value).match(/^(\d{2})\.(\d{2})\.(\d{2})$/);

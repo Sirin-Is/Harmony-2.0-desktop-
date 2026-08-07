@@ -8,6 +8,7 @@
     "sql:default",
     "sql:allow-execute",
     "sql:allow-select",
-    "updater:default"
+    "updater:allow-check",
+    "updater:allow-download-and-install"
   ]
 }

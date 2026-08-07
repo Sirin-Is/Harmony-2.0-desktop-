@@ -49,7 +49,7 @@ function filterHeader(label, key, controls = '') {
 }
 
 function customColumnHeader(column) {
-  const controls = `<button class="column-control" data-edit-column="${column.id}" title="Змінити назву">✎</button><button class="column-control" data-delete-column="${column.id}" title="Видалити колонку">×</button>`;
+  const controls = `<button class="column-control" data-edit-column="${escapeHtml(column.id)}" title="Змінити назву">✎</button><button class="column-control" data-delete-column="${escapeHtml(column.id)}" title="Видалити колонку">×</button>`;
   return filterHeader(column.name, `custom:${column.id}`, controls);
 }
 
@@ -57,14 +57,14 @@ function customColumnCells(item, columns) {
   return columns.map((column) => {
     const inputType = column.type === 'number' ? 'number' : column.type === 'date' ? 'date' : 'text';
     const value = item.customFields?.[column.id] || '';
-    return `<td><input class="custom-cell" data-client="${item.id}" data-column="${column.id}" type="${inputType}" placeholder="-" value="${escapeHtml(value)}"></td>`;
+    return `<td><input class="custom-cell" data-client="${escapeHtml(item.id)}" data-column="${escapeHtml(column.id)}" type="${inputType}" placeholder="-" value="${escapeHtml(value)}"></td>`;
   }).join('');
 }
 
 function clientRow(item, columns) {
-  return `<tr data-client-row data-row-id="${item.id}">
+  return `<tr data-client-row data-row-id="${escapeHtml(item.id)}">
     <td class="drag-cell"><span class="drag-handle" data-drag-handle title="Перетягніть, щоб змінити порядок" role="button" aria-label="Змінити порядок ФОП">⋮⋮</span></td>
-    <td><button type="button" class="link-cell" data-open-card="${item.id}"><strong>${escapeHtml(shortClientName(item.name))}</strong></button></td>
+    <td><button type="button" class="link-cell" data-open-card="${escapeHtml(item.id)}"><strong>${escapeHtml(shortClientName(item.name))}</strong></button></td>
     <td>${escapeHtml(item.group || '-')} / ${rateText(item)}</td>
     <td>${escapeHtml(item.currency || '-')}</td>
     <td>${phoneLines(item.phone)}</td>

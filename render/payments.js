@@ -18,7 +18,7 @@ export const STICKY_COLUMNS_WIDTH = 190 + 125;
 
 function amountInput(item, monthKey, type) {
   const value = getMonthlyCellValue(item.id, monthKey, type) ?? '-';
-  return `<td><input class="month-value" inputmode="decimal" data-client="${item.id}" data-month="${monthKey}" data-type="${type}" value="${escapeHtml(value)}" aria-label="${type} ${monthKey} для ${escapeHtml(item.name)}"></td>`;
+  return `<td><input class="month-value" inputmode="decimal" data-client="${escapeHtml(item.id)}" data-month="${escapeHtml(monthKey)}" data-type="${escapeHtml(type)}" value="${escapeHtml(value)}" aria-label="${escapeHtml(type)} ${escapeHtml(monthKey)} для ${escapeHtml(item.name)}"></td>`;
 }
 
 export function renderPayments() {

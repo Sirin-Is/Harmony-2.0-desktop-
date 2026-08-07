@@ -12,8 +12,8 @@ export function renderDeleted() {
     <td>${rateText(item)}</td>
     <td>${escapeHtml(item.deletedAt || '-')}</td>
     <td class="right row-actions">
-      <button class="secondary" data-restore-deleted-client="${item.id}">Відновити</button>
-      ${item.isTestRecord ? `<button class="danger" data-purge-test-client="${item.id}">Стерти назавжди</button>` : ''}
+      <button class="secondary" data-restore-deleted-client="${escapeHtml(item.id)}">Відновити</button>
+      ${item.isTestRecord ? `<button class="danger" data-purge-test-client="${escapeHtml(item.id)}">Стерти назавжди</button>` : ''}
     </td>
   </tr>`);
   return `<div class="toolbar"><p class="note">Кошик: ці ФОП не видалені з бази й можуть бути відновлені. Остаточне стирання доступне лише для позначених тестових записів після окремого підтвердження.</p></div>

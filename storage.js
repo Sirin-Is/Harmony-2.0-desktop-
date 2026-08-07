@@ -7,17 +7,31 @@ import { MAX_TRANSIENT_SAVE_RETRIES, isTransientLocalWriteError, localSaveRetryD
 
 const LEGACY_STORAGE_KEY = 'fop-oblik-v1';
 let repository = new SqliteRepository();
-let syncManager = new SyncManager(repository);
+let activeWorkspaceId;
 let saveTimer = null;
 let retryTimer = null;
 let pendingDb = null;
 let transientSaveRetries = 0;
 
+function createSyncManager(targetRepository) {
+  const manager = new SyncManager(targetRepository);
+  manager.onState((state) => {
+    if (state === 'syncing') setLocalStatus('syncing');
+    else if (state === 'idle') setLocalStatus('synced');
+    else if (state === 'offline') setLocalStatus('offline');
+    else if (state === 'error') setLocalStatus('syncError');
+  });
+  return manager;
+}
+
+let syncManager = createSyncManager(repository);
+
 /** Dependency-injection seam for repository tests and future adapters. */
 export function configureRepository(nextRepository) {
   repository = nextRepository;
   syncManager.stop();
-  syncManager = new SyncManager(repository);
+  syncManager = createSyncManager(repository);
+  activeWorkspaceId = null;
 }
 
 function setLocalStatus(status, detail = '') {
@@ -39,13 +53,6 @@ function setLocalStatus(status, detail = '') {
   el.className = `sync-status sync-${status}`;
 }
 
-syncManager.onState((state) => {
-  if (state === 'syncing') setLocalStatus('syncing');
-  else if (state === 'idle') setLocalStatus('synced');
-  else if (state === 'offline') setLocalStatus('offline');
-  else if (state === 'error') setLocalStatus('syncError');
-});
-
 function readLegacyState() {
   try {
     const raw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
@@ -55,10 +62,60 @@ function readLegacyState() {
   }
 }
 
-/** Open SQLite and import the last browser-local snapshot once, if present. */
-export async function loadDatabase() {
+async function activateWorkspace(workspaceId) {
+  const normalizedWorkspaceId = workspaceId ? String(workspaceId).trim().toLowerCase() : null;
+  if (activeWorkspaceId === normalizedWorkspaceId) return;
+  await prepareWorkspaceSwitch();
+  if (typeof repository.close === 'function') await repository.close();
+  const nextRepository = new SqliteRepository(normalizedWorkspaceId);
+  try {
+    if (normalizedWorkspaceId) await nextRepository.migrateLegacyDatabase();
+  } catch (error) {
+    await nextRepository.close().catch(() => {});
+    throw error;
+  }
+  repository = nextRepository;
+  syncManager = createSyncManager(repository);
+  activeWorkspaceId = normalizedWorkspaceId;
+}
+
+/** Quiesce the current workspace before auth/session identity can change. */
+export async function prepareWorkspaceSwitch() {
+  await syncManager.pauseForRestore();
+  syncManager.stop();
+  if (pendingDb !== null) await flushSave();
+}
+
+export function resumeWorkspaceSync() {
+  syncManager.start();
+}
+
+/** Close the authenticated workspace and leave no database pool active. */
+export async function closeDatabase() {
+  try {
+    await prepareWorkspaceSwitch();
+  } finally {
+    clearTimeout(saveTimer);
+    clearTimeout(retryTimer);
+    saveTimer = null;
+    retryTimer = null;
+    pendingDb = null;
+    transientSaveRetries = 0;
+    syncManager.stop();
+    if (typeof repository.close === 'function') await repository.close().catch(() => {});
+    repository = new SqliteRepository();
+    syncManager = createSyncManager(repository);
+    activeWorkspaceId = undefined;
+    setLocalStatus('');
+  }
+}
+
+/** Open the SQLite file scoped to one workspace. Signed-out local mode has a
+ * separate file and never opens the last authenticated workspace implicitly. */
+export async function loadDatabase(workspaceId = null) {
   setLocalStatus('loading');
   try {
+    await activateWorkspace(workspaceId);
     if (await repository.isEmpty()) {
       const legacy = readLegacyState();
       if (legacy && typeof legacy === 'object') {
@@ -68,6 +125,8 @@ export async function loadDatabase() {
     }
     const db = await repository.load();
     setLocalStatus('saved');
+    const restoreSyncRequired = await repository.isRestoreSyncRequired?.();
+    if (restoreSyncRequired) syncManager.requestRestoreSync();
     syncManager.start();
     return db;
   } catch (error) {
@@ -131,11 +190,10 @@ export async function saveRestoredDatabase(db) {
   pendingDb = null;
   setLocalStatus('saving');
   try {
-    await repository.save(db);
+    await repository.save(db, { requiresPull: true });
     setLocalStatus('saved');
   } catch (error) {
     setLocalStatus('error', error?.message || error);
-    syncManager.resume();
     throw error;
   }
 }

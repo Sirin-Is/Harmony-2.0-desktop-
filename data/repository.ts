@@ -5,7 +5,7 @@ import type { LocalDatabaseHealth } from './database-health';
 // Tests and a future encrypted/remote replica can supply another adapter.
 export interface LocalRepository {
   load(): Promise<Database>;
-  save(snapshot: Database): Promise<void>;
+  save(snapshot: Database, options?: { requiresPull?: boolean }): Promise<void>;
   isEmpty(): Promise<boolean>;
   checkIntegrity(): Promise<LocalDatabaseHealth>;
 }

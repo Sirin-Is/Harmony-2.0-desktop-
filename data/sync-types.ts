@@ -9,13 +9,31 @@ export interface SyncRecord {
   syncedAt: string | null;
   isDeleted: boolean;
   syncStatus: SyncStatus;
+  /** Last server revision acknowledged locally; 0 means never uploaded. */
+  revision: number;
+  /** Commit-ordered position of the last server change in this workspace. */
+  changeSequence: number;
 }
 
-/** A stable remote position. The tuple prevents records with equal timestamps from being skipped. */
+export interface SyncPushResult {
+  status: 'applied' | 'conflict';
+  record: SyncRecord;
+}
+
+/** A stable, server-assigned position within the current workspace. */
 export interface SyncCursor {
-  updatedAt: string;
-  entityType: string;
-  id: string;
+  sequence: number;
+}
+
+export function parseStoredSyncCursor(value: string): SyncCursor | null {
+  try {
+    const cursor = JSON.parse(value) as Partial<SyncCursor>;
+    return Number.isSafeInteger(cursor.sequence) && Number(cursor.sequence) >= 0
+      ? { sequence: Number(cursor.sequence) }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface SyncConflict {
@@ -43,10 +61,12 @@ export interface SyncLogEntry {
 
 export interface SyncRepository {
   getPendingSyncRecords(limit: number): Promise<SyncRecord[]>;
-  markRecordsSynced(records: SyncRecord[], syncedAt: string): Promise<void>;
+  acknowledgePush(records: SyncRecord[], syncedAt: string): Promise<void>;
   applyRemoteRecords(records: SyncRecord[]): Promise<SyncConflict[]>;
   getSyncCursor(): Promise<SyncCursor | null>;
   setSyncCursor(cursor: SyncCursor): Promise<void>;
   clearSyncCursor(): Promise<void>;
+  isRestoreSyncRequired?(): Promise<boolean>;
+  clearRestoreSyncRequired?(): Promise<void>;
   logSync(operation: string, entityType: string, entityId: string, status: 'success' | 'error' | 'skipped', message?: string): Promise<void>;
 }

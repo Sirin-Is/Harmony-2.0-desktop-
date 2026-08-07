@@ -31,3 +31,7 @@ export function showToast(message, type = 'info', duration = 4000) {
   }
   return toast;
 }
+
+export function clearToasts() {
+  container?.replaceChildren();
+}

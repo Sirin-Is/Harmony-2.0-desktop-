@@ -15,8 +15,8 @@ export function renderInactive() {
     <td>${escapeHtml(item.inactiveReason || '-')}</td>
     <td>${item.deletionEligibleAt ? `До ${escapeHtml(item.deletionEligibleAt)}` : '-'}</td>
     <td class="right row-actions">
-      <button class="secondary" data-restore-client="${item.id}">Активувати</button>
-      ${item.deletionEligibleAt ? '' : `<button class="icon" data-request-delete-client="${item.id}" title="Подати запит на видалення">🗑</button>`}
+      <button class="secondary" data-restore-client="${escapeHtml(item.id)}">Активувати</button>
+      ${item.deletionEligibleAt ? '' : `<button class="icon" data-request-delete-client="${escapeHtml(item.id)}" title="Подати запит на видалення">🗑</button>`}
     </td>
   </tr>`);
   return `<div class="toolbar"><p class="note">Неактивні ФОП не беруть участі в обліку. Після підтвердженого запиту на видалення вони залишаються тут 30 днів, а потім переходять у «Видалені».</p></div>

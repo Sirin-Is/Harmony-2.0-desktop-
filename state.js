@@ -43,12 +43,12 @@ function pruneExpiredRollbackSnapshots(database) {
 }
 
 /** Called once by bootstrap.js before the first render. */
-export async function initDatabase() {
-  db = await storage.loadDatabase();
+export async function initDatabase(workspaceId = null) {
+  db = await storage.loadDatabase(workspaceId);
   const normalizedNestedIds = normalizeNestedRecordIds(db);
   const suppressedAuditNoise = suppressTechnicalEmployeeAuditNoise(db.auditEvents || []);
   const prunedRollbackSnapshots = pruneExpiredRollbackSnapshots(db);
-  lastSnapshot = snapshot(db);
+  lastSnapshot = snapshot(db); undoStack.length = 0;
   if (normalizedNestedIds || suppressedAuditNoise || prunedRollbackSnapshots) storage.scheduleSave(db);
   if (clientModel.advanceScheduledDeletions(db)) save();
   return db;
@@ -64,6 +64,22 @@ export async function refreshDatabaseFromSync() {
 /** Flush any pending debounced write immediately (call before page unload / destructive ops). */
 export async function flushPendingSave() {
   await storage.flushSave();
+}
+
+export async function prepareDatabaseSwitch() { await storage.prepareWorkspaceSwitch(); }
+export function resumeDatabaseSync() { storage.resumeWorkspaceSync(); }
+
+/** Remove every in-memory reference to private workspace data after logout. */
+export async function lockDatabase() {
+  try {
+    await storage.closeDatabase();
+  } finally {
+    db = null;
+    lastSnapshot = null;
+    undoStack.length = 0;
+    currentAuditActor = 'Локальний користувач';
+    currentAccessRole = 'observer';
+  }
 }
 
 function save(action = 'Зміна даних', type = 'Зміна') {

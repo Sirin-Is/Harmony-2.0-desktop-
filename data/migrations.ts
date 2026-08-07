@@ -4,6 +4,15 @@ export interface SqlMigration {
   statements: string[];
 }
 
+/** SQLite has no portable ADD COLUMN IF NOT EXISTS. A crash can commit the
+ * column before the migration-version marker, so only that exact replay error
+ * is safe to treat as an already completed step. */
+export function isAlreadyAppliedAddColumn(statement: string, error: unknown): boolean {
+  const isAddColumn = /^\s*alter\s+table\s+[a-z_][a-z0-9_]*\s+add\s+column\s+[a-z_][a-z0-9_]*/i.test(statement);
+  const message = error instanceof Error ? error.message : String(error || '');
+  return isAddColumn && /duplicate\s+column\s+name/i.test(message);
+}
+
 // All domain records carry the sync columns from the first local version.
 // SyncManager (stage 4) will use these tables without a schema rewrite.
 const AUDITED_TABLES = [
@@ -118,4 +127,22 @@ export const migrations: SqlMigration[] = [
     `ALTER TABLE sync_conflicts ADD COLUMN remote_is_deleted INTEGER NOT NULL DEFAULT 0`,
   ] },
   { version: 10, name: 'sync_log_retention_index', statements: [`CREATE INDEX IF NOT EXISTS idx_sync_log_created_at ON sync_log(created_at DESC)`] },
+  { version: 11, name: 'sync_record_revisions', statements: [
+    ...[...AUDITED_TABLES, 'audit_operations', 'audit_events'].map((table) =>
+      `ALTER TABLE ${table} ADD COLUMN revision INTEGER NOT NULL DEFAULT 0`,
+    ),
+  ] },
+  { version: 12, name: 'sync_server_change_sequence', statements: [
+    ...[...AUDITED_TABLES, 'audit_operations', 'audit_events'].map((table) =>
+      `ALTER TABLE ${table} ADD COLUMN change_sequence INTEGER NOT NULL DEFAULT 0`,
+    ),
+  ] },
+  { version: 13, name: 'durable_snapshot_save_journal', statements: [
+    `CREATE TABLE IF NOT EXISTS save_journal (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      payload TEXT NOT NULL,
+      requires_pull INTEGER NOT NULL DEFAULT 0 CHECK (requires_pull IN (0, 1)),
+      created_at TEXT NOT NULL
+    )`,
+  ] },
 ];

@@ -9,12 +9,25 @@
 <link rel="stylesheet" href="client-card-ui.css">
 <link rel="icon" href="data:,">
 </head>
-<body>
-  <div id="bootOverlay" class="boot-overlay">
+<body class="auth-locked">
+  <div id="bootOverlay" class="boot-overlay" hidden>
     <div class="boot-spinner"></div>
     <p>Завантаження даних…</p>
   </div>
 
+  <section id="authGate" class="auth-gate" aria-labelledby="authTitle">
+    <form id="authForm" class="auth-panel">
+      <div class="auth-brand" aria-hidden="true">H</div>
+      <h1 id="authTitle">Вхід до Harmony</h1>
+      <p>Авторизуйтеся, щоб отримати доступ до робочого простору.</p>
+      <label>Логін<input id="authLogin" name="login" autocomplete="username" required autofocus></label>
+      <label>Пароль<input id="authPassword" name="password" type="password" autocomplete="current-password" required></label>
+      <p id="authError" class="auth-error" role="alert" hidden></p>
+      <button id="authSubmit" type="submit" class="primary">Увійти</button>
+    </form>
+  </section>
+
+  <div id="appShell" class="app-shell" hidden inert aria-hidden="true">
   <aside class="sidebar">
     <div class="brand">
       <div class="brand-icon">H</div>
@@ -30,7 +43,6 @@
       <button data-view="calendar">Календар</button>
       <button data-view="activities">Види діяльності</button>
       <button data-view="hr">Кадри</button>
-      <button data-view="design-test">Тест дизайну</button>
       <button data-view="inactive">Неактивні</button>
       <button data-view="deleted" id="deletedNav" hidden>Видалені</button>
       <button data-view="settings">Налаштування</button>
@@ -38,7 +50,7 @@
     </nav>
     <div class="side-note">
       <div id="syncStatus" class="sync-status"></div>
-      <button class="link" id="authBtn">Увійти для синхронізації</button>
+      <button class="link" id="authBtn">Вийти</button>
       <button class="link" id="exportBtn">Експортувати резервну копію</button>
     </div>
   </aside>
@@ -71,6 +83,7 @@
       </footer>
     </form>
   </dialog>
+  </div>
 
   <!-- Єдина точка входу. Все інше (client-card-ui.js, render/*.js, state.js
        тощо) підвантажується як ES-модулі через import у bootstrap.js. -->

@@ -7,9 +7,23 @@ type StateListener = (state: SyncState, detail?: string) => void;
 type ProfileProvider = () => Promise<{ role?: string } | null>;
 
 const BATCH_SIZE = 100;
+export const MAX_PUSH_BATCH_BYTES = 5 * 1024 * 1024;
+const syncEncoder = new TextEncoder();
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
 const PERIODIC_SYNC_MS = 5 * 60_000;
+
+export function limitPushBatch(records: SyncRecord[]): SyncRecord[] {
+  const selected: SyncRecord[] = [];
+  let bytes = 0;
+  for (const record of records) {
+    const recordBytes = syncEncoder.encode(JSON.stringify(record)).byteLength;
+    if (selected.length && bytes + recordBytes > MAX_PUSH_BATCH_BYTES) break;
+    selected.push(record);
+    bytes += recordBytes;
+  }
+  return selected;
+}
 
 /**
  * Idempotent local-first synchronizer. SQLite is always the source for UI;
@@ -111,6 +125,7 @@ export class SyncManager {
       if (pullBeforePush) {
         await this.repository.clearSyncCursor();
         await this.pull();
+        await this.repository.clearRestoreSyncRequired?.();
         await this.push();
       } else {
         await this.push();
@@ -138,13 +153,23 @@ export class SyncManager {
     const profile = await this.profileProvider();
     if (profile?.role === 'observer') return;
     while (true) {
-      const batch = await this.repository.getPendingSyncRecords(BATCH_SIZE);
-      if (!batch.length) return;
-      await this.remote.upsert(batch);
+      const pending = await this.repository.getPendingSyncRecords(BATCH_SIZE);
+      if (!pending.length) return;
+      const batch = limitPushBatch(pending);
+      const results = await this.remote.compareAndSwap(batch);
       const syncedAt = new Date().toISOString();
-      await this.repository.markRecordsSynced(batch, syncedAt);
-      await this.logBatch('push', batch);
-      if (batch.length < BATCH_SIZE) return;
+      const applied = results.filter((result) => result.status === 'applied').map((result) => result.record);
+      const rejected = results.filter((result) => result.status === 'conflict').map((result) => result.record);
+      if (applied.length) {
+        await this.repository.acknowledgePush(applied, syncedAt);
+        await this.logBatch('push', applied);
+      }
+      if (rejected.length) {
+        const conflicts = await this.repository.applyRemoteRecords(rejected);
+        await Promise.all(rejected.map((record) => this.repository.logSync('push', record.entityType, record.id, 'skipped', 'Server revision changed before upload.')));
+        if (conflicts.length) window.dispatchEvent(new CustomEvent('harmony:sync-conflict', { detail: { conflicts } }));
+      }
+      if (batch.length === pending.length && pending.length < BATCH_SIZE) return;
     }
   }
 
@@ -160,7 +185,7 @@ export class SyncManager {
       if (detected.length) window.dispatchEvent(new CustomEvent('harmony:sync-conflict', { detail: { conflicts: detected } }));
       await this.logBatch('pull', batch);
       const last = batch[batch.length - 1];
-      cursor = { updatedAt: last.updatedAt, entityType: last.entityType, id: last.id };
+      cursor = { sequence: last.changeSequence };
       await this.repository.setSyncCursor(cursor);
       if (batch.length < BATCH_SIZE) return conflicts;
     }

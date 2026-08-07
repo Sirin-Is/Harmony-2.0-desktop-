@@ -1,6 +1,6 @@
 {
   "name": "harmony",
-  "version": "1.5.3",
+  "version": "1.6.0",
   "description": "Harmony — CRM для бухгалтера ФОП",
   "private": true,
   "author": "",
@@ -15,16 +15,15 @@
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
-    "@tauri-apps/plugin-process": "2.0.0",
     "@tauri-apps/plugin-sql": "2.4.0",
     "@tauri-apps/plugin-updater": "2.10.1",
-    "xlsx": "0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.4",
     "supabase": "2.111.0",
     "typescript": "5.9.3",
-    "vite": "5.4.21"
+    "vite": "8.2.1"
   },
   "keywords": []
 }

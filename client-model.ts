@@ -43,10 +43,22 @@ export function phoneLines(value?: string): string {
 }
 
 /** Render a client's "Зв'язок" field as a clickable link only for recognizably safe schemes. */
+export function safeContactHref(value?: string): string | null {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const candidate = /^t\.me\//i.test(raw) ? `https://${raw}` : raw;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === 'https:' && url.hostname.toLowerCase() === 't.me' && url.username === '' && url.password === ''
+      ? url.href
+      : null;
+  } catch { return null; }
+}
+
 export function contactLinkHtml(item: Client): string {
   const raw = (item.contactLink || '').trim();
   if (!raw) return '-';
-  const safeHref = /^https?:\/\//i.test(raw) ? raw : (/^t\.me\//i.test(raw) ? `https://${raw}` : null);
+  const safeHref = safeContactHref(raw);
   return safeHref
     ? `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(raw)}</a>`
     : escapeHtml(raw);
