@@ -50,10 +50,11 @@ function pruneExpiredRollbackSnapshots(database) {
 export async function initDatabase(workspaceId = null) {
   db = await storage.loadDatabase(workspaceId);
   const normalizedNestedIds = normalizeNestedRecordIds(db);
-  const suppressedAuditNoise = suppressTechnicalEmployeeAuditNoise(db.auditEvents || []);
+  const normalizedAuditLabels = normalizeAuditFieldLabels(db.auditEvents || []);
+  const suppressedAuditNoise = suppressTechnicalNestedAuditNoise(db.auditEvents || []);
   const prunedRollbackSnapshots = pruneExpiredRollbackSnapshots(db);
   lastSnapshot = snapshot(db); undoStack.length = 0;
-  if (normalizedNestedIds || suppressedAuditNoise || prunedRollbackSnapshots) storage.scheduleSave(db);
+  if (normalizedNestedIds || normalizedAuditLabels || suppressedAuditNoise || prunedRollbackSnapshots) storage.scheduleSave(db);
   if (clientModel.advanceScheduledDeletions(db)) save();
   return db;
 }
