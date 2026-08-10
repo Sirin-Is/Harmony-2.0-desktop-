@@ -59,11 +59,16 @@ export function quarterEnd(periodKey: string): Date {
   return new Date(year, month + 1, 0);
 }
 
+/** Statutory date before Harmony's internal previous-workday control rule. */
+export function statutoryTaxDeadline(realGroup: string, taxType: string, periodKey: string): string {
+  if (taxType === 'esv') { const end = quarterEnd(realGroup === '3' ? periodKey : `${periodKey.slice(0, 4)}-${quarterKeyForPeriod(periodKey)}`); end.setDate(end.getDate() + 20); return iso(end); }
+  if (realGroup === '3') { const end = quarterEnd(periodKey); end.setDate(end.getDate() + 50); return iso(end); }
+  return `${periodKey}-20`;
+}
+
 /** Deterministic internal deadline for the tax-control workflow. */
 export function calculatedTaxDeadline(realGroup: string, taxType: string, periodKey: string): string {
-  if (taxType === 'esv') { const end = quarterEnd(realGroup === '3' ? periodKey : `${periodKey.slice(0, 4)}-${quarterKeyForPeriod(periodKey)}`); end.setDate(end.getDate() + 20); return controlDeadline(iso(end)); }
-  if (realGroup === '3') { const end = quarterEnd(periodKey); end.setDate(end.getDate() + 50); return controlDeadline(iso(end)); }
-  return controlDeadline(`${periodKey}-20`);
+  return controlDeadline(statutoryTaxDeadline(realGroup, taxType, periodKey));
 }
 
 /** "не було доходів" only makes sense for group 3 (income-based tax); other reasons apply to any group. */

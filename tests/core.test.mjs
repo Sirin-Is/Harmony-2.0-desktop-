@@ -9,6 +9,9 @@ import { collectDatabaseRelationshipIssues } from '../data/database-validation.j
 import { validateSyncPayload } from '../data/identifier-validation.js';
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, passwordPolicyError } from '../password-policy.js';
 import { escapeHtml } from '../utils.js';
+import { normalizeHrOrderNumber, validateHrOrder } from '../hr-order-model.js';
+import { payrollPaymentTypes } from '../payroll-model.js';
+import { isValidIsoDate, isValidMonthPeriodKey, isValidReportPeriodKey, isValidTaxPeriodKey, validateCalendarEvent, validateReportRecordChange, validateTaxRecordChange } from '../workflow-validation.js';
 
 test('політика паролів компенсує недоступну перевірку витоків на Free Plan', () => {
   assert.equal(MIN_PASSWORD_LENGTH, 12);
@@ -51,6 +54,7 @@ let parseStoredSyncCursor;
 let workspaceDatabaseUrl;
 let validateClient;
 let validateImportRow;
+let validateCustomColumn;
 let readSyncJsonResponse;
 let MAX_SYNC_RESPONSE_BYTES;
 let isAlreadyAppliedAddColumn;
@@ -58,6 +62,8 @@ let parseStoredObjectPayload;
 let assertRecordPayloadIdentity;
 let normalizeSessionPayload;
 let parseHarmonyProfile;
+let moneyValidation;
+let mergeCalendarCompletion;
 
 before(async () => {
   // Vite's SSR loader executes the same TypeScript modules that the desktop
@@ -89,13 +95,15 @@ before(async () => {
   ({ SyncManager, limitPushBatch, MAX_PUSH_BATCH_BYTES } = await vite.ssrLoadModule('/sync/sync-manager.ts'));
   ({ parseStoredSyncCursor } = await vite.ssrLoadModule('/data/sync-types.ts'));
   ({ workspaceDatabaseUrl } = await vite.ssrLoadModule('/data/workspace-database.ts'));
-  ({ validateClient, validateImportRow } = await vite.ssrLoadModule('/validation.js'));
+  ({ validateClient, validateImportRow, validateCustomColumn } = await vite.ssrLoadModule('/validation.js'));
   ({ readSyncJsonResponse, MAX_SYNC_RESPONSE_BYTES } = await vite.ssrLoadModule('/sync/supabase-gateway.ts'));
   ({ isAlreadyAppliedAddColumn } = await vite.ssrLoadModule('/data/migrations.ts'));
   ({ parseStoredObjectPayload } = await vite.ssrLoadModule('/data/stored-payload.ts'));
   ({ assertRecordPayloadIdentity } = await vite.ssrLoadModule('/data/record-identity.ts'));
   ({ normalizeSessionPayload } = await vite.ssrLoadModule('/auth/session.ts'));
   ({ parseHarmonyProfile } = await vite.ssrLoadModule('/auth/users.ts'));
+  moneyValidation = await vite.ssrLoadModule('/money-validation.js');
+  ({ mergeCalendarCompletion } = await vite.ssrLoadModule('/data/sqlite-repository.ts'));
 });
 
 after(async () => {
@@ -103,6 +111,7 @@ after(async () => {
 });
 
 test('податкові дедлайни 1–2 груп переносяться на попередню п’ятницю', () => {
+  assert.equal(tax.statutoryTaxDeadline('2', 'unified', '2026-06'), '2026-06-20');
   assert.equal(tax.calculatedTaxDeadline('2', 'unified', '2026-06'), '2026-06-19'); // 20 червня — субота
   assert.equal(tax.calculatedTaxDeadline('1', 'military', '2026-09'), '2026-09-18'); // 20 вересня — неділя
   assert.equal(tax.calculatedTaxDeadline('2', 'esv', '2026-03'), '2026-04-20');
@@ -115,14 +124,37 @@ test('податкові дедлайни 3 групи рахуються від
 });
 
 test('звітність має окремі квартальні та річні дедлайни', () => {
+  assert.equal(reports.statutoryReportDeadline('3', '2026-q1'), '2026-05-10');
   assert.equal(reports.getDefaultReportDeadline({}, '3', '2026-q1'), '2026-05-08'); // 10 травня — неділя
   assert.equal(reports.getDefaultReportDeadline({}, '3', '2026-year'), '2027-02-09');
   assert.equal(reports.getDefaultReportDeadline({}, '2', '2026'), '2027-03-01');
 });
 
+test('типи виплати зарплати залежать від вибраного періоду, а не попереднього екрана', () => {
+  assert.deepEqual(payrollPaymentTypes('2026-08').slice(0, 2), [
+    'Виплата зарплати за другу половину липня',
+    'Виплата зарплати за першу половину серпня',
+  ]);
+  assert.equal(payrollPaymentTypes('2026-01')[0], 'Виплата зарплати за другу половину грудня');
+  assert.deepEqual(payrollPaymentTypes('2026-13'), []);
+});
+
+test('синхронізація автоматично зливає лише стан виконання підзадачі', () => {
+  const remote = { id: 'task-1', title: 'Звіт', completedAt: '', completedDates: [], subtasks: [{ id: 'sub-1', title: 'Перевірити', completedAt: '', completedDates: [] }] };
+  const local = { ...remote, subtasks: [{ ...remote.subtasks[0], completedAt: '2026-08-10T08:00:00.000Z', completionUpdatedAt: '2026-08-10T08:00:00.000Z' }] };
+  const merged = JSON.parse(mergeCalendarCompletion(JSON.stringify(local), JSON.stringify(remote)));
+  assert.equal(merged.subtasks[0].completedAt, '2026-08-10T08:00:00.000Z');
+  assert.equal(mergeCalendarCompletion(JSON.stringify({ ...local, title: 'Інша задача' }), JSON.stringify(remote)), null);
+});
+
 test('лічильник звітності після подання фіксує фактичну різницю до дедлайну', () => {
   assert.match(reports.reportDaysUntilLabel('2026-05-08', { submittedDate: '2026-05-06' }), /2 дн\./);
   assert.match(reports.reportDaysUntilLabel('2026-05-08', { submittedDate: '2026-05-10' }), /-2 дн\./);
+});
+
+test('статус звіту відрізняє своєчасне подання від простроченого', () => {
+  assert.deepEqual(reports.reportStatus({ submittedDate: '2026-05-08' }, '2026-05-08'), { text: 'Подано вчасно', cls: 'ok' });
+  assert.deepEqual(reports.reportStatus({ submittedDate: '2026-05-10' }, '2026-05-08'), { text: 'Подано із запізненням', cls: 'late' });
 });
 
 test('ручне введення дат приймає коректний формат дд.мм.рр і відхиляє неможливі дати', () => {
@@ -138,8 +170,125 @@ test('ручне введення дат приймає коректний фо�
 test('валідація картки ФОП не пропускає критичні помилки, але попереджає про дублікати', () => {
   const invalid = validateClient({ name: 'А', email: 'not-email', serviceCost: '-1', kepExpiry: '2026-99-99' }, [], null);
   assert.equal(invalid.errors.length, 4);
+  const invalidPricing = validateClient({ name: 'Коректний ФОП', pricingBase: '-1', pricingStaff: 'не число', pricingPrro: '0' }, [], null);
+  assert.equal(invalidPricing.errors.length, 2);
   const duplicate = validateClient({ name: '  Тестовий ФОП ', email: 'test@example.com', serviceCost: '0' }, [{ id: 'existing', name: 'тестовий фоп' }], null);
   assert.match(duplicate.warnings[0], /вже є в списку/);
+});
+
+test('користувацькі колонки мають короткі унікальні назви', () => {
+  const existing = [{ id: 'column-1', name: 'Внутрішній номер', type: 'text' }];
+  assert.match(validateCustomColumn({ name: ' внутрішній НОМЕР ', type: 'number' }, existing).errors[0], /вже існує/);
+  assert.match(validateCustomColumn({ name: 'x'.repeat(81), type: 'text' }, []).errors[0], /80 символів/);
+  assert.deepEqual(validateCustomColumn({ name: 'Менеджер', type: 'text' }, existing), { errors: [], warnings: [] });
+});
+
+test('грошові поля приймають український формат і відхиляють від’ємні та надмірні суми', () => {
+  assert.deepEqual(moneyValidation.normalizeNonNegativeAmount('1 234,50'), { ok: true, value: '1234.50' });
+  assert.equal(moneyValidation.normalizeNonNegativeAmount('-0.01').ok, false);
+  assert.equal(moneyValidation.normalizeNonNegativeAmount('1000000000000').ok, false);
+  assert.deepEqual(moneyValidation.normalizeNonNegativeAmount('-', { allowDash: true }), { ok: true, value: '-' });
+});
+
+test('критичні захисти етапу 1 підключені до UI та журналу аудиту', () => {
+  const cardUi = readFileSync(new URL('../client-card-ui.js', import.meta.url), 'utf8');
+  const bootstrap = readFileSync(new URL('../bootstrap.js', import.meta.url), 'utf8');
+  const state = readFileSync(new URL('../state.js', import.meta.url), 'utf8');
+  const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  const index = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+
+  assert.match(cardUi, /validateClient\(draft, getVisibleClients\(\), isNew \? null : draft\.id\)/);
+  assert.match(bootstrap, /title: 'Видалити зарплатний рядок'/);
+  assert.match(state, /revertedOperationIds:/);
+  assert.match(state, /status: 'cancelled'/);
+  assert.match(state, /isSamePayrollSlot/);
+  assert.match(styles, /\.table-wrap \{[^}]*overflow-x: auto/);
+  assert.doesNotMatch(styles, /\.top-scrollbar \{[^}]*display:\s*none\s*!important/);
+  assert.match(index, /class="nav-icon"/);
+  assert.match(index, /class="nav-label"/);
+});
+
+test('кадровий реєстр не приймає дублікати номера документа для одного ФОП', () => {
+  assert.equal(normalizeHrOrderNumber(' №  15-К '), '15-к');
+  const existing = [{ id: 'order-1', clientId: 'client-1', number: '№ 15-К' }];
+  const fields = { clientId: 'client-1', number: '15-к', date: '2026-08-10', subject: 'Прийняття', effectiveDate: '2026-08-11' };
+  assert.match(validateHrOrder(fields, existing).reason, /уже є/);
+  assert.equal(validateHrOrder({ ...fields, clientId: 'client-2' }, existing).ok, true);
+  assert.match(validateHrOrder({ ...fields, date: '2026-02-30' }, []).reason, /коректні дати/);
+});
+
+test('етап 2 підключає пошук, очищення фільтрів і доступні стани навігації', () => {
+  const dashboard = readFileSync(new URL('../render/dashboard.js', import.meta.url), 'utf8');
+  const bootstrap = readFileSync(new URL('../bootstrap.js', import.meta.url), 'utf8');
+  const index = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.match(dashboard, /data-dashboard-search/);
+  assert.match(dashboard, /data-clear-dashboard-filters/);
+  assert.match(bootstrap, /aria-current/);
+  assert.match(bootstrap, /aria-pressed/);
+  assert.match(bootstrap, /\['Enter', ' '\]/);
+  assert.match(bootstrap, /uiState\.dashboardSearch = ''/);
+  assert.match(index, /class="skip-link"/);
+});
+
+test('доменна валідація відхиляє неможливі дати та суперечливу податкову хронологію', () => {
+  assert.equal(isValidIsoDate('2026-02-29'), false);
+  assert.equal(isValidIsoDate('2028-02-29'), true);
+  assert.match(validateTaxRecordChange({ queuedDate: '2026-08-10' }, 'paidDate', '2026-08-09').reason, /не може передувати/);
+  assert.equal(validateTaxRecordChange({ queuedDate: '2026-08-10' }, 'paidDate', '2026-08-10').ok, true);
+  assert.equal(validateReportRecordChange('submittedDate', '2026-13-01').ok, false);
+  assert.equal(validateReportRecordChange('unknown', '').ok, false);
+});
+
+test('повторювана задача не завершується раніше старту й має обмежений інтервал', () => {
+  const task = { title: 'Подати звіт', note: 'Перевірити квитанцію', eventDate: '2026-08-10', eventTime: '09:30' };
+  assert.equal(validateCalendarEvent(task).ok, true);
+  assert.match(validateCalendarEvent({ ...task, recurrence: { frequency: 'monthly', interval: 1, until: '2026-08-09' } }).reason, /раніше/);
+  assert.match(validateCalendarEvent({ ...task, recurrence: { frequency: 'monthly', interval: 121, until: '' } }).reason, /від 1 до 120/);
+  assert.equal(validateCalendarEvent({ ...task, eventTime: '25:10' }).ok, false);
+});
+
+test('етап 3 підключає доменну валідацію до стану та показує помилки у формах', () => {
+  const state = readFileSync(new URL('../state.js', import.meta.url), 'utf8');
+  const bootstrap = readFileSync(new URL('../bootstrap.js', import.meta.url), 'utf8');
+  assert.match(state, /validateTaxRecordChange/);
+  assert.match(state, /validateReportRecordChange/);
+  assert.match(state, /validateCalendarEvent/);
+  assert.match(state, /normalized <= 0/);
+  assert.match(bootstrap, /сплата не може передувати/);
+  assert.match(bootstrap, /діапазон повторення/);
+});
+
+test('фінальний accessibility-прохід додає контекст полям таблиць і станам збереження', () => {
+  const sources = ['dashboard.js', 'payments.js', 'taxes.js', 'reports.js', 'hr.js']
+    .map((name) => readFileSync(new URL(`../render/${name}`, import.meta.url), 'utf8')).join('\n');
+  const index = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const toast = readFileSync(new URL('../toast.js', import.meta.url), 'utf8');
+  assert.match(sources, /aria-label="Набрано в банку:/);
+  assert.match(sources, /aria-label="Дата подання звіту:/);
+  assert.match(sources, /aria-label="Статус виплати:/);
+  assert.match(sources, /aria-pressed=/);
+  assert.match(index, /id="syncStatus"[^>]*aria-live="polite"/);
+  assert.match(toast, /\['error', 'warn'\]\.includes\(type\) \? 'alert' : 'status'/);
+  assert.match(toast, /'Escape'/);
+});
+
+test('робочі періоди суворо відповідають типу бізнес-запису', () => {
+  assert.equal(isValidMonthPeriodKey('2026-08'), true);
+  assert.equal(isValidMonthPeriodKey('2026-13'), false);
+  assert.equal(isValidTaxPeriodKey('2', '2026-08'), true);
+  assert.equal(isValidTaxPeriodKey('3', '2026-q1'), true);
+  assert.equal(isValidTaxPeriodKey('3', '2026-08'), false);
+  assert.equal(isValidReportPeriodKey('2', '2026'), true);
+  assert.equal(isValidReportPeriodKey('2', '2026-q1'), false);
+});
+
+test('mutation boundary перевіряє клієнта, поле, період і дозволені статуси', () => {
+  const state = readFileSync(new URL('../state.js', import.meta.url), 'utf8');
+  assert.match(state, /!\['charged', 'paid'\]\.includes\(type\)/);
+  assert.match(state, /!\['paymentDate', 'amount', 'pdfo', 'vz', 'esv', 'status'\]\.includes\(field\)/);
+  assert.match(state, /!\['timesheetStatus', 'payrollStatus', 'cashStatementStatus'\]\.includes\(field\)/);
+  assert.match(state, /String\(client\.group\) !== String\(realGroup\)/);
+  assert.match(state, /db\.customColumns\.some\(\(column\) => column\.id === columnId\)/);
 });
 
 test('поле Telegram відкриває лише HTTPS-посилання точного домену t.me', () => {

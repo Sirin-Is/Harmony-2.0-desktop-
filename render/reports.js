@@ -11,13 +11,14 @@ import { uiState } from '../ui-state.js';
 import { shortClientName } from '../client-model.js';
 
 function reportRow(item, realGroup, record, deadline, isDefaultDeadline) {
+  const clientName = escapeHtml(item.name);
   return `<tr data-row-id="${escapeHtml(item.id)}">
     <td class="fop-name-cell">${escapeHtml(shortClientName(item.name))}</td>
-    <td><input type="date" class="report-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(realGroup)}" data-field="submittedDate" value="${escapeHtml(record.submittedDate || '')}"></td>
+    <td><input type="date" class="report-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(realGroup)}" data-field="submittedDate" value="${escapeHtml(record.submittedDate || '')}" aria-label="Дата подання звіту: ${clientName}"></td>
     <td class="report-days">${reportDaysUntilLabel(deadline, record)}</td>
-    <td><input type="date" class="report-field ${isDefaultDeadline ? 'tax-field-default' : ''}" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(realGroup)}" data-field="deadline" value="${escapeHtml(deadline)}" title="${isDefaultDeadline ? 'Значення з «Налаштувань». Змініть, щоб задати виняток лише для цього ФОП.' : ''}"></td>
+    <td><input type="date" class="report-field ${isDefaultDeadline ? 'tax-field-default' : ''}" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(realGroup)}" data-field="deadline" value="${escapeHtml(deadline)}" title="${isDefaultDeadline ? 'Значення з «Налаштувань». Змініть, щоб задати виняток лише для цього ФОП.' : ''}" aria-label="Дедлайн звіту: ${clientName}"></td>
     <td class="report-status">${reportStatusPillHtml(record, deadline)}</td>
-    <td><input type="text" class="report-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(realGroup)}" data-field="note" placeholder="Примітка" value="${escapeHtml(record.note || '')}"></td>
+    <td><input type="text" class="report-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(realGroup)}" data-field="note" placeholder="Примітка" value="${escapeHtml(record.note || '')}" aria-label="Примітка до звіту: ${clientName}"></td>
   </tr>`;
 }
 

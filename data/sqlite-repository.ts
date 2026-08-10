@@ -14,6 +14,36 @@ type Row = { id: string; payload: string };
 type SyncRow = { id: string; payload: string; created_at: string; updated_at: string; synced_at: string | null; is_deleted: number; sync_status: SyncStatus; revision: number; change_sequence: number };
 type SyncLogRow = { id: string; operation: string; entity_type: string; entity_id: string; status: SyncLogEntry['status']; message: string | null; created_at: string };
 
+function withoutCalendarCompletion(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutCalendarCompletion);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .filter(([key]) => !['completedAt', 'completedDates', 'completionUpdatedAt'].includes(key))
+    .map(([key, item]) => [key, withoutCalendarCompletion(item)]));
+}
+
+export function mergeCalendarCompletion(localPayload: string, remotePayload: string): string | null {
+  try {
+    const local = JSON.parse(localPayload) as Record<string, any>;
+    const remote = JSON.parse(remotePayload) as Record<string, any>;
+    if (JSON.stringify(withoutCalendarCompletion(local)) !== JSON.stringify(withoutCalendarCompletion(remote))) return null;
+    const newer = (left: Record<string, any>, right: Record<string, any>) =>
+      String(left.completionUpdatedAt || '') >= String(right.completionUpdatedAt || '') ? left : right;
+    const chosen = newer(local, remote);
+    remote.completedAt = chosen.completedAt || '';
+    remote.completedDates = Array.isArray(chosen.completedDates) ? chosen.completedDates : [];
+    remote.completionUpdatedAt = chosen.completionUpdatedAt || '';
+    const localSubtasks = new Map((local.subtasks || []).map((item: Record<string, any>) => [item.id, item]));
+    remote.subtasks = (remote.subtasks || []).map((item: Record<string, any>) => {
+      const localItem = localSubtasks.get(item.id) as Record<string, any> | undefined;
+      if (!localItem) return item;
+      const selected = newer(localItem, item);
+      return { ...item, completedAt: selected.completedAt || '', completedDates: Array.isArray(selected.completedDates) ? selected.completedDates : [], completionUpdatedAt: selected.completionUpdatedAt || '' };
+    });
+    return JSON.stringify(remote);
+  } catch { return null; }
+}
+
 const LOCAL_TABLES = ['clients', 'custom_columns', 'monthly_payments', 'tax_records', 'income_records', 'report_records', 'calendar_events', 'hr_orders', 'hr_monthly_documents', 'payroll_records', 'audit_operations', 'audit_events', 'settings'];
 // Rollback snapshots can contain the full working database. They stay on the
 // device that made the edit; compact audit events remain available to other devices.
@@ -445,6 +475,15 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
         const localPending = local[0] && ['created', 'updated', 'deleted', 'conflict'].includes(local[0].sync_status);
         const contentDiffers = local[0] && (local[0].payload !== record.payload || Boolean(local[0].is_deleted) !== record.isDeleted);
         if (localPending && contentDiffers) {
+          const mergedCalendar = record.entityType === 'calendar_events' && !local[0].is_deleted && !record.isDeleted
+            ? mergeCalendarCompletion(local[0].payload, record.payload) : null;
+          if (mergedCalendar) {
+            await database.execute(
+              `UPDATE calendar_events SET payload = ?, revision = ?, change_sequence = ?, updated_at = ?, sync_status = 'updated' WHERE id = ?`,
+              [mergedCalendar, record.revision, record.changeSequence, now(), record.id],
+            );
+            continue;
+          }
           const conflict: SyncConflict = {
             id: `${record.entityType}|${record.id}|${record.updatedAt}`,
             entityType: record.entityType, entityId: record.id,

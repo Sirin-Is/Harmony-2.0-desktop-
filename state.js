@@ -12,11 +12,15 @@
 
 import * as storage from './storage.js';
 import * as clientModel from './client-model';
-import { getTaxRecord, effectiveDeadline as effectiveTaxDeadline, getDefaultDeadline as getDefaultTaxDeadline } from './tax-model.ts';
+import { getTaxRecord, effectiveDeadline as effectiveTaxDeadline, getDefaultDeadline as getDefaultTaxDeadline, exemptionOptions } from './tax-model.ts';
 import { getReportRecord, effectiveReportDeadline } from './report-model.ts';
-import { toNumber, normalizeNumberInput, generateId } from './utils';
+import { toNumber, generateId } from './utils';
+import { normalizeNonNegativeAmount } from './money-validation.js';
+import { validateHrOrder } from './hr-order-model.js';
+import { isValidMonthPeriodKey, isValidOptionalIsoDate, isValidReportPeriodKey, isValidTaxPeriodKey, validateCalendarEvent, validateReportRecordChange, validateTaxRecordChange } from './workflow-validation.js';
 import { validateBackupDatabase } from './backup-crypto.js';
 import { collectDatabaseRelationshipIssues } from './data/database-validation.js';
+import { validateCustomColumn } from './validation.js';
 
 export let db = null;
 let lastSnapshot = null;
@@ -135,12 +139,22 @@ const SECTION_NAMES = {
   payrollRecords: 'Виплата зарплати', settings: 'Налаштування',
 };
 const FIELD_NAMES = {
-  name: 'ПІБ', group: 'Група', rate: 'Ставка', phone: 'Телефон', email: 'Ел. пошта',
+  name: 'ПІБ', group: 'Група', rate: 'Ставка', phone: 'Телефон', email: 'Email',
   status: 'Статус', note: 'Примітка', amount: 'Сума', paid: 'Сплачено', charged: 'Нараховано',
   paymentDate: 'Дата виплати', paymentType: 'Тип виплати', pdfo: 'ПДФО', vz: 'ВЗ', esv: 'ЄСВ',
   title: 'Назва', eventDate: 'Дата події', eventTime: 'Час події', subject: 'Суть документа',
   deliveryStatus: 'Статус надсилання', deadline: 'Дедлайн', submittedDate: 'Дата подання',
-  employees: 'Працівники', position: 'Посада',
+  employees: 'Працівники', position: 'Посада', rnokpp: 'РНОКПП', source: 'Джерело', form: 'Форма',
+  currency: 'Валюта', bankAccess: 'Банк', banks: 'Банки', prro: 'П/РРО', prroName: 'Назва П/РРО',
+  employeesCount: 'Кількість найманих', serviceCost: 'Вартість', kepIssuer: 'КЕП від:', kepValidFrom: 'КЕП дійсний з', kepExpiry: 'Дійсний',
+  registrationAddress: 'Адреса реєстрації', taxOffice: 'ДПІ', additionalInfo: 'Додаткова інформація',
+  kvedMainCode: 'Основний код КВЕД', kvedMainName: 'Назва основного КВЕД', kvedAdditional: 'Додаткові КВЕД',
+  code: 'Код КВЕД', accounts: 'Рахунки', iban: 'IBAN', bankName: 'Банк / Установа', openDate: 'Дата відкриття',
+  pricingBase: 'Базова вартість', pricingStaff: 'Доплата за працівників', pricingPrro: 'Доплата за П/РРО',
+  queuedDate: 'Набрано в банку', paidDate: 'Дата сплати', exemption: 'Причина звільнення',
+  timesheetStatus: 'Табель робочого часу', payrollStatus: 'Розрахунково-платіжна відомість', cashStatementStatus: 'Відомість на виплату готівки',
+  date: 'Дата документа', effectiveDate: 'Дата початку дії', number: 'Номер документа', employeeName: 'ПІБ працівника',
+  completedAt: 'Виконано', completedDates: 'Дати виконання', subtasks: 'Підзадачі', customFields: 'Додаткові поля',
 };
 
 function leafValues(value, path = [], result = new Map()) {
@@ -179,6 +193,21 @@ function auditField(root, path) {
   return labels.join(' → ') || 'Значення';
 }
 
+const LEGACY_AUDIT_FIELD_NAMES = new Map(Object.entries(FIELD_NAMES).flatMap(([key, label]) => [
+  [key, label],
+  [key.replace(/([A-Z])/g, ' $1').trim(), label],
+]));
+
+function normalizeAuditFieldLabels(events) {
+  let changed = false;
+  events.forEach((item) => {
+    if (!item.field || item.field === '-') return;
+    const normalized = String(item.field).split(' → ').map((part) => LEGACY_AUDIT_FIELD_NAMES.get(part) || part).join(' → ');
+    if (normalized !== item.field) { item.field = normalized; changed = true; }
+  });
+  return changed;
+}
+
 function buildAuditEvents(before, after, metadata) {
   const oldValues = leafValues(before);
   const newValues = leafValues(after);
@@ -201,34 +230,37 @@ function buildAuditEvents(before, after, metadata) {
   return events.length ? events : [{ id: generateId(), ...metadata, section: '-', clientId: '', clientName: '-', field: '-', oldValue: '-', newValue: '-', status: 'active' }];
 }
 
-/** Cancels only legacy noise caused by old card saves recreating employee IDs. */
-function suppressTechnicalEmployeeAuditNoise(events) {
+/** Cancels legacy delete/add pairs caused only by old card saves recreating nested IDs. */
+function suppressTechnicalNestedAuditNoise(events) {
   let changed = false;
-  const groups = new Map();
-  events.filter((item) => item.status === 'active' && item.section === 'Картки клієнтів' && String(item.field || '').startsWith('employees → ')).forEach((item) => {
-    const key = `${item.operationId}|${item.clientId || ''}`;
-    (groups.get(key) || groups.set(key, []).get(key)).push(item);
-  });
-  groups.forEach((items) => {
-    items.filter((item) => /→ id$/i.test(item.field)).forEach((item) => { item.status = 'cancelled'; changed = true; });
-    const paired = new Set();
-    const userFields = items.filter((item) => !/→ id$/i.test(item.field));
-    userFields.forEach((item) => {
-      if (paired.has(item) || item.oldValue === '-' || item.newValue !== '-') return;
-      const suffix = item.field.replace(/^[^→]+ → [^→]+ → /, '');
-      const partner = userFields.find((candidate) => !paired.has(candidate) && candidate !== item
-        && candidate.field.replace(/^[^→]+ → [^→]+ → /, '') === suffix
-        && candidate.oldValue === '-' && candidate.newValue === item.oldValue);
-      if (!partner) return;
-      item.status = 'cancelled'; partner.status = 'cancelled'; paired.add(item); paired.add(partner); changed = true;
+  ['Працівники → ', 'employees → ', 'Додаткові КВЕД → ', 'kved Additional → ', 'kvedAdditional → '].forEach((prefix) => {
+    const groups = new Map();
+    events.filter((item) => item.status === 'active' && item.section === 'Картки клієнтів' && String(item.field || '').startsWith(prefix)).forEach((item) => {
+      const key = `${item.operationId}|${item.clientId || ''}`;
+      (groups.get(key) || groups.set(key, []).get(key)).push(item);
+    });
+    groups.forEach((items) => {
+      const removed = items.filter((item) => item.oldValue !== '-' && item.newValue === '-');
+      const added = items.filter((item) => item.oldValue === '-' && item.newValue !== '-');
+      const paired = new Set();
+      removed.forEach((item) => {
+        const field = String(item.field).split(' → ').at(-1);
+        const partner = added.find((candidate) => !paired.has(candidate)
+          && String(candidate.field).split(' → ').at(-1) === field && candidate.newValue === item.oldValue);
+        if (!partner) return;
+        item.status = 'cancelled'; partner.status = 'cancelled'; paired.add(partner); changed = true;
+      });
     });
   });
   return changed;
 }
 
 export const getAuditEvents = () => {
-  if (suppressTechnicalEmployeeAuditNoise(db.auditEvents || [])) storage.scheduleSave(db);
-  return db.auditEvents || [];
+  const events = db.auditEvents || [];
+  const labelsChanged = normalizeAuditFieldLabels(events);
+  const noiseChanged = suppressTechnicalNestedAuditNoise(events);
+  if (labelsChanged || noiseChanged) storage.scheduleSave(db);
+  return events;
 };
 export const getAuditOperations = () => db.auditOperations || [];
 export const getDatabaseRelationshipIssues = () => collectDatabaseRelationshipIssues(db);
@@ -257,8 +289,47 @@ export function undoLastAction() {
   if (!canEditData()) return false;
   const previous = undoStack.pop();
   if (!previous) return false;
-  db = JSON.parse(previous);
-  lastSnapshot = previous;
+  const targetSnapshot = JSON.parse(previous);
+  const targetBusiness = businessSnapshot(targetSnapshot);
+  const auditOperations = db.auditOperations ||= [];
+  const auditEvents = db.auditEvents ||= [];
+  const previousOperationIds = new Set((targetSnapshot.auditOperations || []).map((item) => item.id));
+  const revertedOperations = auditOperations.filter((item) => item.status === 'active' && !previousOperationIds.has(item.id));
+  const undoId = generateId();
+  const occurredAt = new Date().toISOString();
+  const revertedIds = new Set(revertedOperations.map((item) => item.id));
+  auditOperations.forEach((item) => {
+    if (revertedIds.has(item.id)) Object.assign(item, { status: 'cancelled', cancelledAt: occurredAt, cancelledBy: undoId });
+  });
+  auditEvents.forEach((item) => {
+    if (revertedIds.has(item.operationId)) item.status = 'cancelled';
+  });
+  const revertedActions = revertedOperations.map((item) => item.action).filter(Boolean);
+  auditOperations.push({
+    id: undoId,
+    occurredAt,
+    action: 'Скасовано останню дію',
+    actor: currentAuditActor,
+    status: 'rollback',
+    revertedOperationIds: [...revertedIds],
+  });
+  auditEvents.push({
+    id: generateId(),
+    operationId: undoId,
+    occurredAt,
+    actor: currentAuditActor,
+    type: 'Скасування',
+    description: revertedActions.length ? `Скасовано: ${revertedActions.join(', ')}` : 'Скасовано останню локальну зміну',
+    section: 'Журнал подій',
+    clientId: '',
+    clientName: '-',
+    field: '-',
+    oldValue: '-',
+    newValue: '-',
+    status: 'active',
+  });
+  db = { ...targetBusiness, auditOperations, auditEvents };
+  lastSnapshot = snapshot(db);
   storage.scheduleSave(db);
   return true;
 }
@@ -322,10 +393,11 @@ export function reorderClients(sourceId, targetId) {
 
 export function setCustomFieldValue(clientId, columnId, value) {
   const item = clientModel.findClientById(db, clientId);
-  if (!item) return;
+  if (!item || !db.customColumns.some((column) => column.id === columnId)) return false;
   item.customFields ||= {};
   item.customFields[columnId] = value;
   save();
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -335,7 +407,8 @@ export function setCustomFieldValue(clientId, columnId, value) {
 export const getCustomColumns = () => db.customColumns;
 
 export function addCustomColumn(fields) {
-  const column = { id: generateId(), name: fields.name, type: fields.type };
+  if (validateCustomColumn(fields, db.customColumns).errors.length) return null;
+  const column = { id: generateId(), name: fields.name.trim(), type: fields.type };
   db.customColumns.push(column);
   save();
   return column;
@@ -343,8 +416,8 @@ export function addCustomColumn(fields) {
 
 export function updateCustomColumn(id, fields) {
   const column = db.customColumns.find((item) => item.id === id);
-  if (!column) return null;
-  Object.assign(column, fields);
+  if (!column || validateCustomColumn(fields, db.customColumns, id).errors.length) return null;
+  Object.assign(column, { ...fields, name: fields.name.trim() });
   save();
   return column;
 }
@@ -365,6 +438,8 @@ export function deleteCustomColumn(id) {
 export const getCalendarEvents = () => db.calendarEvents;
 
 export function saveCalendarEvent(fields, id = null) {
+  const validation = validateCalendarEvent(fields);
+  if (!validation.ok) return null;
   const event = { id: id || generateId(), kind: 'note', ...fields };
   const index = db.calendarEvents.findIndex((item) => item.id === event.id);
   if (index >= 0) db.calendarEvents[index] = event;
@@ -379,23 +454,30 @@ export function saveCalendarEvent(fields, id = null) {
 export const getHrOrders = () => db.hrOrders || [];
 
 export function saveHrOrder(fields, id = null) {
+  const validation = validateHrOrder(fields, db.hrOrders || [], id);
+  if (!validation.ok) return null;
   const order = { id: id || generateId(), ...fields };
   const index = db.hrOrders.findIndex((item) => item.id === order.id);
   if (index >= 0) db.hrOrders[index] = order;
   else db.hrOrders.push(order);
-  save();
+  save(id ? 'Змінено кадровий документ' : 'Створено кадровий документ', 'Кадри');
   return order;
 }
 
 export function deleteHrOrder(id) {
   const before = db.hrOrders.length;
   db.hrOrders = db.hrOrders.filter((item) => item.id !== id);
-  if (db.hrOrders.length !== before) save();
+  const removed = db.hrOrders.length !== before;
+  if (removed) save('Видалено кадровий документ', 'Кадри');
+  return removed;
 }
 
 export const getHrMonthlyDocuments = () => db.hrMonthlyDocuments || [];
 
 export function setHrMonthlyDocumentStatus(clientId, period, field, value) {
+  if (!clientModel.findClientById(db, clientId) || !isValidMonthPeriodKey(period)) return null;
+  if (!['timesheetStatus', 'payrollStatus', 'cashStatementStatus'].includes(field)) return null;
+  if (!['Надіслано', 'Не надіслано'].includes(value)) return null;
   const id = `${clientId}|${period}`;
   let record = db.hrMonthlyDocuments.find((item) => item.id === id);
   if (!record) {
@@ -409,13 +491,21 @@ export function setHrMonthlyDocumentStatus(clientId, period, field, value) {
 
 export const getPayrollRecords = () => db.payrollRecords || [];
 
+function isSamePayrollSlot(record, clientId, employeeId, period, paymentType) {
+  return record.clientId === clientId
+    && record.employeeId === employeeId
+    && record.period === period
+    && String(record.paymentType || '').trim() === String(paymentType || '').trim();
+}
+
 export function addPayrollForClient(clientId, period, paymentType = '') {
   const client = getClientById(clientId);
   if (!client) return 0;
   const employees = client.employees || [];
   let added = 0;
   employees.forEach((employee) => {
-    db.payrollRecords.push({ id: generateId(), clientId, employeeId: employee.id, employeeName: employee.name || '', period, paymentType, status: 'Набрано', amount: '', pdfo: '', vz: '', esv: '' });
+    if (db.payrollRecords.some((record) => isSamePayrollSlot(record, clientId, employee.id, period, paymentType))) return;
+    db.payrollRecords.push({ id: generateId(), clientId, employeeId: employee.id, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), status: 'Набрано', amount: '', pdfo: '', vz: '', esv: '' });
     added += 1;
   });
   if (added) save();
@@ -425,27 +515,35 @@ export function addPayrollForClient(clientId, period, paymentType = '') {
 export function addPayrollEmployee(clientId, employeeId, period, paymentType = '') {
   const employee = getClientById(clientId)?.employees?.find((item) => item.id === employeeId);
   if (!employee) return null;
-  const record = { id: generateId(), clientId, employeeId, employeeName: employee.name || '', period, paymentType, status: 'Набрано', amount: '', pdfo: '', vz: '', esv: '' };
+  if (db.payrollRecords.some((record) => isSamePayrollSlot(record, clientId, employeeId, period, paymentType))) return null;
+  const record = { id: generateId(), clientId, employeeId, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), status: 'Набрано', amount: '', pdfo: '', vz: '', esv: '' };
   db.payrollRecords.push(record); save(); return record;
 }
 
 export function deletePayrollRecord(id) {
   const before = db.payrollRecords.length;
   db.payrollRecords = db.payrollRecords.filter((item) => item.id !== id);
-  if (db.payrollRecords.length !== before) save();
+  const removed = db.payrollRecords.length !== before;
+  if (removed) save('Видалено зарплатний рядок', 'Зарплата');
+  return removed;
 }
 
 export function setPayrollField(id, field, value) {
   const record = db.payrollRecords.find((item) => item.id === id);
-  if (!record) return;
+  if (!record) return false;
+  if (!['paymentDate', 'amount', 'pdfo', 'vz', 'esv', 'status'].includes(field)) return false;
+  if (field === 'paymentDate' && !isValidOptionalIsoDate(value)) return false;
+  if (field === 'status' && !['Набрано', 'Сплачено', 'Повідомлено', 'Сплачено невчасно'].includes(value)) return false;
   const numeric = ['amount', 'pdfo', 'vz', 'esv'].includes(field);
-  const normalized = numeric ? String(value).replace(/\s+/g, '').replace(',', '.') : value;
-  if (numeric && normalized && !Number.isFinite(Number(normalized))) return;
+  const amount = numeric ? normalizeNonNegativeAmount(value) : null;
+  if (numeric && !amount.ok) return false;
+  const normalized = numeric ? amount.value : value;
   const formatted = numeric && normalized ? new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 2 }).format(Number(normalized)).replace(/\u00a0/g, ' ') : normalized;
   if (field === 'paymentDate') {
     db.payrollRecords.filter((item) => item.clientId === record.clientId && item.period === record.period && (item.paymentType || '') === (record.paymentType || '')).forEach((item) => { item.paymentDate = value; });
   } else record[field] = formatted;
   save();
+  return true;
 }
 
 export function deleteCalendarEvent(id) {
@@ -472,6 +570,7 @@ function setTaskCompleted(item, occurrenceDate, completed) {
     if (completed) dates.add(occurrenceDate); else dates.delete(occurrenceDate);
     item.completedDates = [...dates].sort();
   } else item.completedAt = completed ? new Date().toISOString() : '';
+  item.completionUpdatedAt = new Date().toISOString();
 }
 
 function taskIsCompleted(item, occurrenceDate) {
@@ -513,8 +612,10 @@ export function deleteCalendarSubtask(eventId, subtaskId) {
 }
 
 export function setMonthlyPaymentField(clientId, monthKey, type, rawValue) {
-  const normalized = normalizeNumberInput(rawValue);
-  if (normalized !== '-' && normalized !== '' && !Number.isFinite(Number(normalized))) return false;
+  if (!clientModel.findClientById(db, clientId) || !isValidMonthPeriodKey(monthKey) || !['charged', 'paid'].includes(type)) return false;
+  const amount = normalizeNonNegativeAmount(rawValue, { allowDash: true });
+  if (!amount.ok) return false;
+  const normalized = amount.value;
   const clientData = db.monthlyPayments[clientId] ||= {};
   const monthData = clientData[monthKey] ||= {};
   monthData[type] = normalized === '' ? '-' : normalized;
@@ -544,9 +645,14 @@ export function getTaxField(clientId, realGroup, period, taxType) {
 }
 
 export function setTaxField(clientId, realGroup, period, taxType, field, value) {
+  const client = clientModel.findClientById(db, clientId);
+  if (!client || String(client.group) !== String(realGroup) || !isValidTaxPeriodKey(realGroup, period) || !['unified', 'military', 'esv'].includes(taxType)) return false;
   const record = getTaxRecord(db, clientId, realGroup, period, taxType);
+  const validation = validateTaxRecordChange(record, field, value);
+  if (!validation.ok) return false;
+  if (field === 'exemption' && !exemptionOptions(String(realGroup) === '3' ? '3' : '12').includes(value)) return false;
   record[field] = value;
-  save();
+  save('Змінено податковий запис', 'Податки');
   return record;
 }
 
@@ -595,9 +701,13 @@ export function getReportField(clientId, realGroup, period) {
 }
 
 export function setReportField(clientId, realGroup, period, field, value) {
+  const client = clientModel.findClientById(db, clientId);
+  if (!client || String(client.group) !== String(realGroup) || !isValidReportPeriodKey(realGroup, period)) return false;
   const record = getReportRecord(db, clientId, realGroup, period);
+  const validation = validateReportRecordChange(field, value);
+  if (!validation.ok) return false;
   record[field] = value;
-  save();
+  save('Змінено запис звітності', 'Звітність');
   return record;
 }
 
@@ -614,8 +724,10 @@ export function getIncomeValue(clientId, monthKey) {
 }
 
 export function setIncomeValue(clientId, monthKey, rawValue) {
-  const normalized = normalizeNumberInput(rawValue);
-  if (normalized !== '' && !Number.isFinite(Number(normalized))) return false;
+  if (!clientModel.findClientById(db, clientId) || !isValidMonthPeriodKey(monthKey)) return false;
+  const amount = normalizeNonNegativeAmount(rawValue);
+  if (!amount.ok) return false;
+  const normalized = amount.value;
   const clientData = db.incomeRecords[clientId] ||= {};
   clientData[monthKey] = normalized;
   save();
@@ -654,24 +766,35 @@ export function createWorkingYear(value) {
 }
 
 export function setMinWage(value) {
-  db.settings.minWage = toNumber(value);
-  save();
+  const amount = normalizeNonNegativeAmount(value);
+  const normalized = amount.ok ? Number(amount.value) : NaN;
+  if (!Number.isFinite(normalized) || normalized <= 0) return false;
+  db.settings.minWage = normalized;
+  save('Змінено мінімальну заробітну плату', 'Налаштування');
+  return true;
 }
 
 export function setMonthlyTaxDeadline(periodKey, value) {
+  if (!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(periodKey) || !isValidOptionalIsoDate(value)) return false;
   db.settings.monthlyDeadlines[periodKey] = value;
-  save();
+  save('Змінено місячний податковий дедлайн', 'Налаштування');
+  return true;
 }
 
 export function setQuarterlyTaxDeadline(taxKey, periodKey, value) {
+  if (!['group3', 'esv'].includes(taxKey) || !/^\d{4}-(?:q1|half|9m|year)$/.test(periodKey) || !isValidOptionalIsoDate(value)) return false;
   db.settings.quarterlyDeadlines[taxKey][periodKey] = value;
-  save();
+  save('Змінено квартальний податковий дедлайн', 'Налаштування');
+  return true;
 }
 
 export function setReportDeadline(scope, periodKeyOrNull, value) {
+  const validKey = scope === 'annual' ? /^\d{4}$/.test(periodKeyOrNull) : /^\d{4}-(?:q1|half|9m|year)$/.test(periodKeyOrNull);
+  if (!['annual', 'quarterly'].includes(scope) || !validKey || !isValidOptionalIsoDate(value)) return false;
   if (scope === 'annual') db.settings.reportDeadlines.annual[periodKeyOrNull] = value;
   else db.settings.reportDeadlines.quarterly[periodKeyOrNull] = value;
-  save();
+  save('Змінено дедлайн звітності', 'Налаштування');
+  return true;
 }
 
 export function setAppearanceSetting(key, value) {

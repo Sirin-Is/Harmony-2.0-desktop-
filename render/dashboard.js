@@ -16,7 +16,7 @@ import { getVisibleClients, getCustomColumns } from '../state.js';
 import { uiState } from '../ui-state.js';
 
 const FILTER_COLUMNS = [
-  ['name', 'ПІБ'], ['groupRate', 'Група / ставка'], ['currency', 'Валюта'], ['phone', 'Телефон'], ['email', 'Ел. пошта'], ['bankAccess', 'Банк'], ['prro', 'П/РРО'], ['employees', 'Наймані'], ['serviceCost', 'Обслуговування'], ['kepIssuer', 'Видавець КЕП'], ['kepExpiry', 'КЕП дійсний'],
+  ['name', 'ПІБ'], ['groupRate', 'Група / ставка'], ['currency', 'Валюта'], ['phone', 'Телефон'], ['email', 'Email'], ['bankAccess', 'Банк'], ['prro', 'П/РРО'], ['employees', 'Наймані'], ['serviceCost', 'Вартість'], ['kepIssuer', 'КЕП від:'], ['kepExpiry', 'Дійсний'],
 ];
 
 function filterValue(item, key) {
@@ -32,7 +32,6 @@ function filterValue(item, key) {
 
 function filterMenu(label, key, clients) {
   if (uiState.dashboardFilterOpen !== key) return '';
-  const active = (uiState.dashboardFilters[key] || []).length;
   const options = [...new Set(clients.map((item) => filterValue(item, key)))].sort((a, b) => String(a).localeCompare(String(b), 'uk'));
   const selected = new Set(uiState.dashboardFilters[key] || options);
   return `<div class="dashboard-filter-menu" data-dashboard-filter-menu data-filter-key="${escapeHtml(key)}">
@@ -44,7 +43,7 @@ function filterMenu(label, key, clients) {
 }
 
 function filterHeader(label, key, controls = '') {
-  const active = (uiState.dashboardFilters[key] || []).length;
+  const active = Object.hasOwn(uiState.dashboardFilters, key);
   return `<span class="dashboard-header-label">${escapeHtml(label)}<button type="button" class="table-filter-button${active ? ' active' : ''}" data-dashboard-filter="${escapeHtml(key)}" title="Фільтр: ${escapeHtml(label)}" aria-label="Фільтр: ${escapeHtml(label)}">▾</button>${controls}</span>`;
 }
 
@@ -57,13 +56,13 @@ function customColumnCells(item, columns) {
   return columns.map((column) => {
     const inputType = column.type === 'number' ? 'number' : column.type === 'date' ? 'date' : 'text';
     const value = item.customFields?.[column.id] || '';
-    return `<td><input class="custom-cell" data-client="${escapeHtml(item.id)}" data-column="${escapeHtml(column.id)}" type="${inputType}" placeholder="-" value="${escapeHtml(value)}"></td>`;
+    return `<td><input class="custom-cell" data-client="${escapeHtml(item.id)}" data-column="${escapeHtml(column.id)}" type="${inputType}" placeholder="-" value="${escapeHtml(value)}" aria-label="${escapeHtml(column.name)}: ${escapeHtml(item.name)}"></td>`;
   }).join('');
 }
 
 function clientRow(item, columns) {
   return `<tr data-client-row data-row-id="${escapeHtml(item.id)}">
-    <td class="drag-cell"><span class="drag-handle" data-drag-handle title="Перетягніть, щоб змінити порядок" role="button" aria-label="Змінити порядок ФОП">⋮⋮</span></td>
+    <td class="drag-cell"><span class="drag-handle" data-drag-handle title="Перетягніть або використайте стрілки ↑ ↓" role="button" tabindex="0" aria-keyshortcuts="ArrowUp ArrowDown" aria-label="Змінити порядок ФОП: стрілка вгору або вниз">⋮⋮</span></td>
     <td><button type="button" class="link-cell" data-open-card="${escapeHtml(item.id)}"><strong>${escapeHtml(shortClientName(item.name))}</strong></button></td>
     <td>${escapeHtml(item.group || '-')} / ${rateText(item)}</td>
     <td>${escapeHtml(item.currency || '-')}</td>
@@ -82,16 +81,27 @@ function clientRow(item, columns) {
 export function renderDashboard() {
   const columns = getCustomColumns();
   const allClients = getVisibleClients();
-  const clients = allClients.filter((item) => Object.entries(uiState.dashboardFilters).every(([key, selected]) => selected.includes(filterValue(item, key))));
+  const search = String(uiState.dashboardSearch || '').trim().toLocaleLowerCase('uk');
+  const clients = allClients.filter((item) => {
+    const matchesFilters = Object.entries(uiState.dashboardFilters).every(([key, selected]) => selected.includes(filterValue(item, key)));
+    if (!matchesFilters || !search) return matchesFilters;
+    const values = [...FILTER_COLUMNS.map(([key]) => filterValue(item, key)), ...columns.map((column) => filterValue(item, `custom:${column.id}`))];
+    return values.some((value) => String(value).toLocaleLowerCase('uk').includes(search));
+  });
   const rows = clients.map((item) => clientRow(item, columns));
   const openColumn = [...FILTER_COLUMNS, ...columns.map((column) => [`custom:${column.id}`, column.name])].find(([key]) => key === uiState.dashboardFilterOpen);
+  const activeFilterCount = Object.keys(uiState.dashboardFilters).length;
+  const hasQuery = Boolean(search || activeFilterCount);
   const headings = [
     '', ...FILTER_COLUMNS.map(([key, label]) => filterHeader(label, key)),
     ...columns.map(customColumnHeader),
   ];
   return `<div class="toolbar">
-      <p class="note">Клікніть на ПІБ, щоб відкрити картку клієнта. Перетягніть рядок за ⋮⋮, щоб змінити порядок — він застосується і в «Оплатах».</p>
+      <p class="note">Пошук працює за всіма полями; точні фільтри — у заголовках таблиці.</p>
       <div class="toolbar-actions">
+        <label class="dashboard-search"><span class="visually-hidden">Швидкий пошук ФОП</span><input type="search" data-dashboard-search value="${escapeHtml(uiState.dashboardSearch || '')}" placeholder="Пошук ФОП…" autocomplete="off"></label>
+        <span class="dashboard-result-count" aria-live="polite">${clients.length} із ${allClients.length}</span>
+        ${hasQuery ? `<button class="secondary compact-action" data-clear-dashboard-filters>Скинути${activeFilterCount ? ` (${activeFilterCount})` : ''}</button>` : ''}
         <button class="secondary" data-export-clients>Експорт</button>
         <button class="secondary" data-import-clients>Імпорт</button>
         <button class="secondary" data-check-all-kved>Перевірити всі КВЕД</button>
@@ -100,5 +110,5 @@ export function renderDashboard() {
       </div>
     </div>
     ${openColumn ? `<div class="dashboard-filter-area">${filterMenu(openColumn[1], openColumn[0], allClients)}</div>` : ''}
-    ${table(rows.length ? rows : [`<tr><td colspan="${headings.length}" class="empty-cell">За обраними фільтрами записів немає.</td></tr>`], headings, 'dashboard-table')}`;
+    ${table(rows.length ? rows : [`<tr><td colspan="${headings.length}" class="empty-cell">${hasQuery ? 'За пошуком або вибраними фільтрами записів немає.' : 'Активних ФОП поки немає.'}</td></tr>`], headings, 'dashboard-table')}`;
 }

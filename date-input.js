@@ -7,6 +7,9 @@ export function isValidIsoDate(value = '') {
 
 export const shortDate = (iso = '') => isValidIsoDate(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(2, 4)}` : '';
 
+/** Design-test option №2: an outlined calendar with a visible date and no background. */
+export const calendarDateIconSvg = '<svg class="calendar-date-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5v3M15 2.5v3M3 7h14M4.5 4h11A1.5 1.5 0 0 1 17 5.5v11A1.5 1.5 0 0 1 15.5 18h-11A1.5 1.5 0 0 1 3 16.5v-11A1.5 1.5 0 0 1 4.5 4Z"/><text x="10" y="14.3">15</text></svg>';
+
 export function shortDateToIso(value = '') {
   const parts = String(value).match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
   if (!parts) return null;
@@ -23,7 +26,7 @@ export function enhanceDateInputs(root = document) {
     const text = document.createElement('input');
     text.type = 'text'; text.inputMode = 'numeric'; text.maxLength = 8; text.placeholder = 'дд.мм.рр'; text.value = shortDate(native.value); text.className = 'generic-date-field';
     text.setAttribute('aria-label', native.getAttribute('aria-label') || 'Дата');
-    const button = document.createElement('button'); button.type = 'button'; button.className = 'generic-date-picker'; button.textContent = '🗓'; button.title = 'Відкрити календар'; button.setAttribute('aria-label', 'Відкрити календар');
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'generic-date-picker'; button.innerHTML = calendarDateIconSvg; button.title = 'Відкрити календар'; button.setAttribute('aria-label', 'Відкрити календар');
     wrapper.prepend(text); wrapper.appendChild(button);
     text.addEventListener('input', () => {
       const digitsBefore = text.value.slice(0, text.selectionStart || 0).replace(/\D/g, '').length;
