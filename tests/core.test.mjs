@@ -274,6 +274,8 @@ test('критичні захисти етапу 1 підключені до UI 
   assert.doesNotMatch(styles, /\.top-scrollbar \{[^}]*display:\s*none\s*!important/);
   assert.match(index, /class="nav-icon"/);
   assert.match(index, /class="nav-label"/);
+  assert.match(styles, /\.nav-icon svg \{[^}]*stroke: currentColor/);
+  assert.doesNotMatch(index, /📊|👥|💸|🏛|📈|📋|🪪|📅|💼|⏸️|⚙️|📜/);
 });
 
 test('кадровий реєстр не приймає дублікати номера документа для одного ФОП', () => {

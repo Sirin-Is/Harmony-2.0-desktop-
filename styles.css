@@ -88,7 +88,8 @@ nav { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; gap:
 nav button { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; background: transparent; color: #b8cecd; text-align: left; border-radius: 7px; padding: 8px 10px; font: inherit; cursor: pointer; }
 nav button:hover, nav button.active { background: #21454a; color: #fff; }
 nav button:disabled { color: #719092; cursor: not-allowed; }
-.nav-icon { display: inline-flex; align-items: center; justify-content: center; width: 18px; min-width: 18px; font-size: 15px; line-height: 1; }
+.nav-icon { display: inline-flex; align-items: center; justify-content: center; width: 18px; min-width: 18px; line-height: 1; }
+.nav-icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .nav-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-note { margin: 6px 10px 0; font-size: 11px; color: #9eb6b6; }
 .sync-status { margin: 6px 0; font-size: 11px; }
@@ -508,7 +509,8 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus, selec
   .brand { padding: 0 0 18px; justify-content: center; }
   .brand-text, .nav-label, .side-action-label, .sync-status { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   nav button { justify-content: center; gap: 0; min-height: 38px; padding: 9px; }
-  .nav-icon { width: 22px; min-width: 22px; font-size: 17px; }
+  .nav-icon { width: 22px; min-width: 22px; }
+  .nav-icon svg { width: 19px; height: 19px; }
   .side-note { display: grid; justify-items: center; gap: 2px; margin: auto 0 0; }
   .side-note .link { justify-content: center; width: 38px; min-height: 34px; padding: 0; }
   .side-action-icon { width: 22px; min-width: 22px; font-size: 17px; }
