@@ -122,11 +122,12 @@ export function setLifecycleStatus(db, id, status, reason = '') {
 export function requestDeletion(db, id, reason) {
   const item = findClientById(db, id);
   if (!item || lifecycleOf(item) !== 'inactive' || !reason.trim()) return null;
-  const eligible = new Date(`${todayIso()}T00:00:00`);
-  eligible.setDate(eligible.getDate() + 30);
   item.inactiveReason = reason.trim();
   item.deletionRequestedAt = todayIso();
-  item.deletionEligibleAt = eligible.toISOString().slice(0, 10);
+  item.deletionEligibleAt = todayIso();
+  item.lifecycleStatus = 'deleted';
+  item.archived = true;
+  item.deletedAt = todayIso();
   return item;
 }
 

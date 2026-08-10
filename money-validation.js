@@ -13,3 +13,11 @@ export function normalizeNonNegativeAmount(rawValue, { allowDash = false } = {})
   }
   return { ok: true, value: normalized };
 }
+
+/** Format a persisted canonical amount for editable money fields. */
+export function formatEditableAmount(rawValue) {
+  if (rawValue === undefined || rawValue === null || rawValue === '' || rawValue === '-') return '';
+  const amount = normalizeNonNegativeAmount(rawValue);
+  if (!amount.ok || amount.value === '') return '';
+  return Number(amount.value).toLocaleString('uk-UA', { maximumFractionDigits: 2 });
+}

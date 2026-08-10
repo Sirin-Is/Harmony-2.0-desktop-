@@ -145,4 +145,12 @@ export const migrations: SqlMigration[] = [
       created_at TEXT NOT NULL
     )`,
   ] },
+  { version: 14, name: 'sync_three_way_merge_base_payload', statements: [
+    ...[...AUDITED_TABLES, 'audit_operations', 'audit_events'].map((table) =>
+      `ALTER TABLE ${table} ADD COLUMN base_payload TEXT`,
+    ),
+    ...[...AUDITED_TABLES, 'audit_operations', 'audit_events'].map((table) =>
+      `UPDATE ${table} SET base_payload = payload WHERE sync_status = 'synced' AND base_payload IS NULL`,
+    ),
+  ] },
 ];

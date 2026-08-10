@@ -21,6 +21,8 @@ import { isValidMonthPeriodKey, isValidOptionalIsoDate, isValidReportPeriodKey, 
 import { validateBackupDatabase } from './backup-crypto.js';
 import { collectDatabaseRelationshipIssues } from './data/database-validation.js';
 import { validateCustomColumn } from './validation.js';
+import { payrollDateForPaymentType } from './payroll-model.js';
+import { normalizeEmployeeName, validateEmployee } from './employee-model.js';
 
 export let db = null;
 let lastSnapshot = null;
@@ -46,6 +48,14 @@ function pruneExpiredRollbackSnapshots(database) {
   return changed;
 }
 
+function normalizeLegacyTaxExemptions(database) {
+  let changed = false;
+  Object.values(database.taxRecords || {}).forEach((record) => {
+    if (record?.exemption === 'ТМБД') { record.exemption = 'Т(М)БД'; changed = true; }
+  });
+  return changed;
+}
+
 /** Called once by bootstrap.js before the first render. */
 export async function initDatabase(workspaceId = null) {
   db = await storage.loadDatabase(workspaceId);
@@ -53,8 +63,9 @@ export async function initDatabase(workspaceId = null) {
   const normalizedAuditLabels = normalizeAuditFieldLabels(db.auditEvents || []);
   const suppressedAuditNoise = suppressTechnicalNestedAuditNoise(db.auditEvents || []);
   const prunedRollbackSnapshots = pruneExpiredRollbackSnapshots(db);
+  const normalizedTaxExemptions = normalizeLegacyTaxExemptions(db);
   lastSnapshot = snapshot(db); undoStack.length = 0;
-  if (normalizedNestedIds || normalizedAuditLabels || suppressedAuditNoise || prunedRollbackSnapshots) storage.scheduleSave(db);
+  if (normalizedNestedIds || normalizedAuditLabels || suppressedAuditNoise || prunedRollbackSnapshots || normalizedTaxExemptions) storage.scheduleSave(db);
   if (clientModel.advanceScheduledDeletions(db)) save();
   return db;
 }
@@ -145,7 +156,7 @@ const FIELD_NAMES = {
   paymentDate: 'Дата виплати', paymentType: 'Тип виплати', pdfo: 'ПДФО', vz: 'ВЗ', esv: 'ЄСВ',
   title: 'Назва', eventDate: 'Дата події', eventTime: 'Час події', subject: 'Суть документа',
   deliveryStatus: 'Статус надсилання', deadline: 'Дедлайн', submittedDate: 'Дата подання',
-  employees: 'Працівники', position: 'Посада', rnokpp: 'РНОКПП', source: 'Джерело', form: 'Форма',
+  employees: 'Працівники', employeeId: 'Працівник', employeeName: 'ПІБ працівника', position: 'Посада', hireDate: 'Дата прийняття', dismissalDate: 'Дата звільнення', rnokpp: 'РНОКПП', source: 'Джерело', form: 'Форма',
   currency: 'Валюта', bankAccess: 'Банк', banks: 'Банки', prro: 'П/РРО', prroName: 'Назва П/РРО',
   employeesCount: 'Кількість найманих', serviceCost: 'Вартість', kepIssuer: 'КЕП від:', kepValidFrom: 'КЕП дійсний з', kepExpiry: 'Дійсний',
   registrationAddress: 'Адреса реєстрації', taxOffice: 'ДПІ', additionalInfo: 'Додаткова інформація',
@@ -450,14 +461,50 @@ export function saveCalendarEvent(fields, id = null) {
 }
 
 // ---------------------------------------------------------------------------
-// HR: employees are kept in a client card; orders are a separate register.
+// HR: employees are stored under their employer client; cards expose them as a dedicated register.
 // ---------------------------------------------------------------------------
+export function getEmployeeById(id) {
+  for (const client of db.clients || []) {
+    const employee = (client.employees || []).find((item) => item.id === id);
+    if (employee) return { client, employee };
+  }
+  return null;
+}
+
+export function saveEmployee(fields, id = null) {
+  const validation = validateEmployee(fields);
+  const client = clientModel.findClientById(db, fields?.clientId);
+  if (!validation.ok || !client) return null;
+  const existing = id ? getEmployeeById(id) : null;
+  if (existing && existing.client.id !== client.id) return null;
+  const duplicate = (client.employees || []).some((item) => item.id !== id && normalizeEmployeeName(item.name) === normalizeEmployeeName(fields.name));
+  if (duplicate) return null;
+  const employee = { ...(existing?.employee || {}), id: id || generateId(), name: String(fields.name).trim(), position: String(fields.position).trim(), hireDate: fields.hireDate, dismissalDate: fields.dismissalDate || '' };
+  client.employees ||= [];
+  const index = client.employees.findIndex((item) => item.id === employee.id);
+  if (index >= 0) client.employees[index] = employee;
+  else client.employees.push(employee);
+  client.employeesCount = String(client.employees.length);
+  client.hadEmployees = true;
+  (db.hrOrders || []).forEach((order) => {
+    const legacyMatch = order.clientId === client.id && !order.employeeId && normalizeEmployeeName(order.employeeName) === normalizeEmployeeName(existing?.employee?.name || employee.name);
+    if (order.employeeId === employee.id || legacyMatch) { order.employeeId = employee.id; order.employeeName = employee.name; }
+  });
+  (db.payrollRecords || []).filter((record) => record.employeeId === employee.id).forEach((record) => { record.employeeName = employee.name; });
+  save(id ? 'Змінено картку працівника' : 'Створено картку працівника', 'Кадри');
+  return employee;
+}
+
 export const getHrOrders = () => db.hrOrders || [];
 
 export function saveHrOrder(fields, id = null) {
   const validation = validateHrOrder(fields, db.hrOrders || [], id);
   if (!validation.ok) return null;
-  const order = { id: id || generateId(), ...fields };
+  const client = clientModel.findClientById(db, fields.clientId);
+  const linkedEmployee = fields.employeeId
+    ? (client?.employees || []).find((employee) => employee.id === fields.employeeId)
+    : (client?.employees || []).find((employee) => normalizeEmployeeName(employee.name) === normalizeEmployeeName(fields.employeeName));
+  const order = { id: id || generateId(), ...fields, employeeId: linkedEmployee?.id || '', employeeName: linkedEmployee?.name || String(fields.employeeName || '').trim() };
   const index = db.hrOrders.findIndex((item) => item.id === order.id);
   if (index >= 0) db.hrOrders[index] = order;
   else db.hrOrders.push(order);
@@ -506,7 +553,7 @@ export function addPayrollForClient(clientId, period, paymentType = '') {
   let added = 0;
   employees.forEach((employee) => {
     if (db.payrollRecords.some((record) => isSamePayrollSlot(record, clientId, employee.id, period, paymentType))) return;
-    db.payrollRecords.push({ id: generateId(), clientId, employeeId: employee.id, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), status: 'Набрано', amount: '', pdfo: '', vz: '', esv: '' });
+    db.payrollRecords.push({ id: generateId(), clientId, employeeId: employee.id, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), paymentDate: payrollDateForPaymentType(db.settings, period, paymentType), status: 'Набрано', amount: '', pdfo: '', vz: '', esv: '' });
     added += 1;
   });
   if (added) save();
@@ -517,7 +564,7 @@ export function addPayrollEmployee(clientId, employeeId, period, paymentType = '
   const employee = getClientById(clientId)?.employees?.find((item) => item.id === employeeId);
   if (!employee) return null;
   if (db.payrollRecords.some((record) => isSamePayrollSlot(record, clientId, employeeId, period, paymentType))) return null;
-  const record = { id: generateId(), clientId, employeeId, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), status: 'Набрано', amount: '', pdfo: '', vz: '', esv: '' };
+  const record = { id: generateId(), clientId, employeeId, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), paymentDate: payrollDateForPaymentType(db.settings, period, paymentType), status: 'Набрано', amount: '', pdfo: '', vz: '', esv: '' };
   db.payrollRecords.push(record); save(); return record;
 }
 
@@ -651,7 +698,7 @@ export function setTaxField(clientId, realGroup, period, taxType, field, value) 
   const record = getTaxRecord(db, clientId, realGroup, period, taxType);
   const validation = validateTaxRecordChange(record, field, value);
   if (!validation.ok) return false;
-  if (field === 'exemption' && !exemptionOptions(String(realGroup) === '3' ? '3' : '12').includes(value)) return false;
+  if (field === 'exemption' && !exemptionOptions(String(realGroup) === '3' ? '3' : '12', taxType).includes(value)) return false;
   record[field] = value;
   save('Змінено податковий запис', 'Податки');
   return record;
@@ -802,6 +849,13 @@ export function setAppearanceSetting(key, value) {
   db.settings.appearance ||= { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 };
   db.settings.appearance[key] = value;
   save();
+}
+
+export function setActivityReference(kind, rows) {
+  if (!['kved', 'nace'].includes(kind) || !Array.isArray(rows) || !rows.length) return false;
+  db.settings.activityReferences ||= {};
+  db.settings.activityReferences[kind] = rows;
+  return save(`Оновлено довідник ${kind === 'kved' ? 'КВЕД' : 'NACE'}`, 'Налаштування') !== false;
 }
 
 // ---------------------------------------------------------------------------

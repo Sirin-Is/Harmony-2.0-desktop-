@@ -72,10 +72,10 @@ export function calculatedTaxDeadline(realGroup: string, taxType: string, period
 }
 
 /** "не було доходів" only makes sense for group 3 (income-based tax); other reasons apply to any group. */
-export function exemptionOptions(group: string): string[] {
-  const options = ['', 'працевлаштування', 'пенсія', 'ТМБД'];
-  if (group === '3') options.splice(3, 0, 'не було доходів');
-  return options;
+export function exemptionOptions(group: string, taxType = ''): string[] {
+  if (taxType === 'esv') return ['', 'пенсія', 'працевлаштування', 'До реєстрації'];
+  if (group === '3') return ['', 'не було доходів', 'До реєстрації'];
+  return ['', 'Т(М)БД', 'До реєстрації'];
 }
 
 /** Given an ordered periods list, return the key right before `currentKey`, or null if it's the first. */

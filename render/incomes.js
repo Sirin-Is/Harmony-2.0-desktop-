@@ -4,11 +4,12 @@
 // (I квартал / Півріччя / 9 місяців / Рік). "Залишок ліміту" = ліміт
 // групи (з Налаштувань) мінус накопичений дохід з початку року.
 
-import { escapeHtml, moneyFormat, MONTH_SHORT_UA, monthPeriodKey, toNumber } from '../utils';
+import { escapeHtml, moneyFormat, MONTH_SHORT_UA, monthPeriodKey } from '../utils';
 import { getClientsByGroup, incomeSum, getIncomeValue, getSettings } from '../state.js';
 import { groupLimitAmount } from '../client-model';
 import { uiState } from '../ui-state.js';
 import { shortClientName } from '../client-model.js';
+import { formatEditableAmount } from '../money-validation.js';
 
 function remainingLimitLabel(group, ytdIncome) {
   const limit = groupLimitAmount(group, getSettings().minWage);
@@ -20,7 +21,7 @@ function remainingLimitLabel(group, ytdIncome) {
 
 function incomeCell(item, monthKey) {
   const value = getIncomeValue(item.id, monthKey);
-  const display = value === undefined || value === null || value === '' ? '' : toNumber(value).toLocaleString('uk-UA', { maximumFractionDigits: 2 });
+  const display = formatEditableAmount(value);
   return `<td><input class="income-value" inputmode="decimal" data-client="${escapeHtml(item.id)}" data-month="${escapeHtml(monthKey)}" value="${escapeHtml(display)}" aria-label="Дохід ${escapeHtml(monthKey)} для ${escapeHtml(item.name)}"></td>`;
 }
 

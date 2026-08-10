@@ -1,5 +1,5 @@
 import { escapeHtml } from '../utils.js';
-import { getActivityReference } from '../data/activity-reference.js';
+import { getActivityReference, getActivityReferenceStatus } from '../data/activity-reference.js';
 import { uiState } from '../ui-state.js';
 import { empty, table } from './layout.js';
 
@@ -35,12 +35,14 @@ function correspondence() {
 export function renderActivities() {
   const section = uiState.activitiesSection || 'kved';
   const data = getActivityReference();
-  const loaded = data.kved.length && data.nace.length && data.mapping.length;
-  const content = !loaded ? empty('Завантаження довідників…') : section === 'mapping' ? correspondence() : codeGroups(section === 'nace' ? 'nace' : 'kved');
+  const referenceStatus = getActivityReferenceStatus();
+  const selectedKind = section === 'nace' ? 'nace' : 'kved';
+  const loaded = section === 'mapping' ? Boolean(data.mapping.length) : Boolean(data[selectedKind].length);
+  const content = !loaded ? empty(referenceStatus.error ? `Не вдалося завантажити цей довідник: ${esc(referenceStatus.error)}. Імпортуйте актуальний файл у «Налаштуваннях».` : 'Завантаження довідника…') : section === 'mapping' ? correspondence() : codeGroups(selectedKind);
   return `<div class="subnav" role="tablist">
     <button class="tab ${section === 'kved' ? 'active' : ''}" data-activities-section="kved">КВЕД і групи ЄП</button>
     <button class="tab ${section === 'mapping' ? 'active' : ''}" data-activities-section="mapping">Відповідність КВЕД — NACE</button>
     <button class="tab ${section === 'nace' ? 'active' : ''}" data-activities-section="nace">NACE і групи ЄП</button>
   </div>
-  <div class="toolbar"><input id="activitiesSearch" class="search-input" value="${esc(uiState.activitiesSearch || '')}" placeholder="Пошук за кодом або назвою"></div>${content}`;
+  <div class="toolbar"><div class="toolbar-actions"><input id="activitiesSearch" class="search-input" value="${esc(uiState.activitiesSearch || '')}" placeholder="Пошук за кодом або назвою"><button type="button" class="secondary" data-batch-activity-check>Одночасна перевірка</button></div></div>${content}`;
 }

@@ -10,6 +10,12 @@ export const REPORT_GROUPS: TabGroup[] = [
   { key: '3', label: '3 група' },
 ];
 
+/** Загальний календарний дедлайн, який не залежить від ФОП або групи ЄП. */
+export function annualPropertyIncomeDeclarationDeadline(workingYear: number): string {
+  const year = Number(workingYear);
+  return Number.isInteger(year) && year >= 1900 && year <= 9999 ? `${year}-04-30` : '';
+}
+
 export function reportPeriodsFor(group: string, workingYear: number): Period[] {
   return group === '3' ? taxPeriodsFor('3', workingYear) : [{ key: String(workingYear), label: `Рік ${workingYear}` }];
 }

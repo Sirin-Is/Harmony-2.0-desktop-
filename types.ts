@@ -20,6 +20,8 @@ export interface Employee {
   id: string;
   name: string;
   position?: string;
+  hireDate?: string;
+  dismissalDate?: string;
 }
 
 export interface HrOrder {
@@ -29,6 +31,7 @@ export interface HrOrder {
   date: string;
   subject: string;
   employeeName?: string;
+  employeeId?: string;
   effectiveDate: string;
   deliveryStatus?: 'Надіслано' | 'Не надіслано';
   period?: string;
@@ -208,7 +211,9 @@ export interface Settings {
   monthlyDeadlines: Record<string, string>;
   quarterlyDeadlines: { group3: Record<string, string>; esv: Record<string, string> };
   reportDeadlines: { annual: Record<string, string>; quarterly: Record<string, string> };
+  payrollDates?: Record<string, { secondHalf?: string; firstHalf?: string }>;
   appearance?: { fieldColor: string; fieldRadius: number; fieldOpacity: number };
+  activityReferences?: { kved?: string[][]; nace?: string[][] };
 }
 
 /** Точна форма того, що зараз зберігається одним JSONB-рядком у Supabase (та ж форма, що й у storage.js). */

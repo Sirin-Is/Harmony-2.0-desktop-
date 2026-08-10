@@ -11,7 +11,7 @@ import { uiState } from './ui-state.js';
 import {
   db, initDatabase, lockDatabase, refreshDatabaseFromSync, prepareDatabaseSwitch, undoLastAction, setAuditActor, setAccessRole, getClientById, deleteClientPermanently, archiveClient, requestClientDeletion, setClientLifecycle, reorderClients, setCustomFieldValue, replaceDatabase,
   setMonthlyPaymentField, setTaxField, setReportField, setIncomeValue,
-  setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, getSettings,
+  setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, setActivityReference, getSettings,
   deleteCustomColumn, getCustomColumns,
   copyTaxPeriodForward, getVisibleClients, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, canRollbackChanges, rollbackChangesAfter, rollbackRetentionStart, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField,
   getDatabaseRelationshipIssues,
@@ -28,17 +28,18 @@ import { renderCalendar } from './render/calendar.js';
 import { renderActivities } from './render/activities.js';
 import { renderHR } from './render/hr.js';
 import { renderAudit } from './render/audit.js';
-import { loadActivityReference } from './data/activity-reference.js';
+import { applyActivityReferenceOverrides, loadActivityReference, normalizeActivityCode } from './data/activity-reference.js';
 import { renderInactive } from './render/inactive.js';
 import { renderDeleted } from './render/deleted.js';
 import { renderSettings } from './render/settings.js';
 import { openColumnForm, handleModalSubmit, closeModal } from './modals.js';
 import { openClientCard, closeClientCard } from './client-card-ui.js';
+import { openEmployeeCard, closeEmployeeCard } from './employee-card-ui.js';
 import { exportClientsToExcel, importClientsFromFile } from './import-export.js';
 import { showToast, clearToasts } from './toast.js';
 import { openAppDialog, closeAppDialog } from './app-dialog.js';
 import { enhanceDateInputs } from './date-input.js';
-import { validateKved, openKvedResults } from './kved-validation.js';
+import { openBatchKvedCheck } from './kved-validation.js';
 import { signIn, signOut, signedInEmail } from './auth/session';
 import { getCurrentHarmonyUser, listAuthenticationUsers, manageHarmonyUsers } from './auth/users';
 import { checkLocalDatabase, getOpenSyncConflicts, getRecentSyncLog, requestSync, requestRestoreSync, resolveSyncConflict } from './storage.js';
@@ -48,6 +49,7 @@ import { check } from '@tauri-apps/plugin-updater';
 import { getLocalStorageProtection } from './local-storage-protection.ts';
 import { assertBackupFileSize, createEncryptedBackup, decryptBackup, isEncryptedBackup, validateBackupDatabase } from './backup-crypto.js';
 import { payrollPaymentTypes } from './payroll-model.js';
+import { readSpreadsheetRows } from './spreadsheet-security.js';
 
 const TITLES = {
   overview: ['Огляд', 'Зведення зауважень по розділах'],
@@ -139,6 +141,7 @@ function setAuthenticatedUi(authenticated) {
 
   closeAppDialog();
   closeClientCard();
+  closeEmployeeCard();
   closeModal();
   clearToasts();
   $('#content').replaceChildren();
@@ -332,6 +335,7 @@ async function openNoteViewer(event, occurrenceDate = '') {
 }
 
 function bindCurrentView() {
+  document.querySelector('[data-batch-activity-check]')?.addEventListener('click', openBatchKvedCheck);
   document.querySelectorAll('[data-calendar-section]').forEach((button) => button.addEventListener('click', () => {
     uiState.calendarSection = button.dataset.calendarSection;
     if (uiState.calendarSection === 'tasks' && !uiState.calendarTaskDate) {
@@ -345,6 +349,13 @@ function bindCurrentView() {
   }));
   document.querySelector('[data-calendar-prev]')?.addEventListener('click', () => { uiState.calendarMonth = uiState.calendarMonth === 1 ? 12 : uiState.calendarMonth - 1; render(); });
   document.querySelector('[data-calendar-next]')?.addEventListener('click', () => { uiState.calendarMonth = uiState.calendarMonth === 12 ? 1 : uiState.calendarMonth + 1; render(); });
+  document.querySelector('[data-calendar-today]')?.addEventListener('click', () => {
+    const now = new Date();
+    const year = getSettings().workingYear;
+    uiState.calendarMonth = now.getFullYear() === year ? now.getMonth() + 1 : 1;
+    uiState.calendarTaskDate = now.getFullYear() === year ? todayIso() : `${year}-01-01`;
+    render();
+  });
   document.querySelectorAll('[data-calendar-day]').forEach((cell) => {
     const openDay = () => { uiState.calendarTaskDate = cell.dataset.calendarDay; uiState.calendarSection = 'tasks'; render(); };
     cell.addEventListener('click', openDay);
@@ -408,6 +419,8 @@ function bindCurrentView() {
     render();
   });
   document.querySelectorAll('[data-hr-section]').forEach((button) => button.addEventListener('click', () => { uiState.hrSection = button.dataset.hrSection; render(); }));
+  document.querySelector('[data-add-employee]')?.addEventListener('click', () => openEmployeeCard());
+  document.querySelectorAll('[data-open-employee]').forEach((button) => button.addEventListener('click', () => openEmployeeCard(button.dataset.openEmployee)));
   document.querySelector('[data-hr-doc-prev]')?.addEventListener('click', () => { if (uiState.hrDocumentsMonth > 1) { uiState.hrDocumentsMonth -= 1; render(); } });
   document.querySelector('[data-hr-doc-next]')?.addEventListener('click', () => { if (uiState.hrDocumentsMonth < 12) { uiState.hrDocumentsMonth += 1; render(); } });
   document.querySelectorAll('[data-hr-document]').forEach((button) => button.addEventListener('click', () => {
@@ -550,6 +563,17 @@ function bindCurrentView() {
     if (!saved) { showToast('Документ із таким номером уже є для цього ФОП або містить некоректні реквізити.', 'warn'); return; }
     render();
   });
+  document.querySelectorAll('[data-edit-hr-order]').forEach((button) => button.addEventListener('click', async () => {
+    const order = getHrOrders().find((item) => item.id === button.dataset.editHrOrder);
+    if (!order) return;
+    const clients = getVisibleClients();
+    const employeeNames = clients.flatMap((client) => (client.employees || []).map((employee) => employee.name)).filter(Boolean);
+    const result = await openAppDialog({ title: 'Редагувати кадровий документ', fields: [{ key: 'client', label: 'ФОП', required: true, value: getClientById(order.clientId)?.name || '', options: clients.map((client) => client.name) }, { key: 'number', label: 'Номер документа', required: true, value: order.number }, { key: 'date', label: 'Дата документа', type: 'date', value: order.date, required: true }, { key: 'subject', label: 'Суть документа', required: true, value: order.subject }, { key: 'employeeName', label: 'ПІБ працівника (необов’язково)', value: order.employeeName || '', options: employeeNames }, { key: 'effectiveDate', label: 'Дата початку дії', type: 'date', value: order.effectiveDate, required: true }, { key: 'deliveryStatus', label: 'Статус надсилання', value: order.deliveryStatus || 'Не надіслано', required: true, options: ['Не надіслано', 'Надіслано'] }], confirmText: 'Зберегти' });
+    if (!result) return;
+    const clientId = clients.find((client) => client.name === result.client)?.id;
+    if (!clientId || !saveHrOrder({ ...order, ...result, clientId }, order.id)) { showToast('Не вдалося зберегти документ. Перевірте реквізити та номер.', 'error'); return; }
+    render();
+  }));
   document.querySelectorAll('[data-delete-hr-order]').forEach((button) => button.addEventListener('click', async () => {
     const result = await openAppDialog({ title: 'Видалити наказ', message: 'Наказ буде видалено з кадрового реєстру.', confirmText: 'Видалити', danger: true });
     if (!result) return;
@@ -566,10 +590,6 @@ function bindCurrentView() {
     button.onclick = () => openClientCard(button.dataset.openCard);
   });
   document.querySelector('[data-add-client]')?.addEventListener('click', () => openClientCard(null));
-  document.querySelector('[data-check-all-kved]')?.addEventListener('click', () => {
-    const entries = getVisibleClients().flatMap((client) => validateKved(client).map((entry) => ({ ...entry, clientName: client.name })));
-    openKvedResults('Масова перевірка КВЕД', entries, true, true);
-  });
 
   // --- Перетягування рядків (Картки клієнтів) ---
   const clientRows = [...document.querySelectorAll('[data-client-row]')];
@@ -819,13 +839,62 @@ function bindCurrentView() {
       uiState.managedUsers = await listAuthenticationUsers(); render(); showToast('Дані користувача збережено.', 'success');
     } catch (error) { showToast(error.message || String(error), 'error', 8000); }
   }));
-  const previewAppearance = () => Object.fromEntries([...document.querySelectorAll('[data-appearance]')].map((field) => [field.dataset.appearance, field.value]));
+  const previewAppearance = () => Object.fromEntries([...document.querySelectorAll('[data-appearance]')]
+    .filter((field) => field.type !== 'radio' || field.checked)
+    .map((field) => [field.dataset.appearance, field.value]));
   document.querySelectorAll('[data-appearance]').forEach((field) => field.addEventListener('change', () => applyAppearance(previewAppearance(), document.querySelector('#appearancePreview'))));
   document.querySelector('[data-save-appearance]')?.addEventListener('click', () => {
     const appearance = previewAppearance();
     Object.entries(appearance).forEach(([key, value]) => setAppearanceSetting(key, key === 'fieldColor' ? value : Number(value)));
     applyAppearance();
     showToast('Зовнішній вигляд збережено.', 'success');
+  });
+  let activityReferenceKind = '';
+  document.querySelectorAll('[data-import-activity-reference]').forEach((button) => button.addEventListener('click', () => {
+    activityReferenceKind = button.dataset.importActivityReference;
+    $('#activityReferenceFile')?.click();
+  }));
+  $('#activityReferenceFile')?.addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !activityReferenceKind) return;
+    try {
+      const source = await readSpreadsheetRows(file);
+      const field = (row, names) => {
+        const entry = Object.entries(row).find(([key]) => names.includes(String(key).trim().toLocaleLowerCase('uk-UA')));
+        return String(entry?.[1] ?? '').trim();
+      };
+      const permission = (value) => {
+        const normalized = String(value || '').trim().toLocaleLowerCase('uk-UA');
+        if (['ні', 'не дозволено', 'заборонено', 'no', 'false', '0'].includes(normalized)) return 'ні';
+        if (['так', 'дозволено', 'yes', 'true', '1'].includes(normalized)) return 'так';
+        return normalized;
+      };
+      const rows = source.map((row) => [normalizeActivityCode(field(row, ['код', 'код квед', 'код nace'])), field(row, ['назва', 'найменування', 'назва квед', 'назва nace']), permission(field(row, ['1 група', 'група 1'])), permission(field(row, ['2 група', 'група 2'])), permission(field(row, ['3 група', 'група 3'])), field(row, ['примітка', 'обмеження'])]).filter((row) => row[0] && row[1]);
+      if (!rows.length) throw new Error('Не знайдено рядків з обов’язковими колонками «Код» і «Назва».');
+      if (!setActivityReference(activityReferenceKind, rows)) throw new Error('Не вдалося зберегти довідник.');
+      applyActivityReferenceOverrides({ [activityReferenceKind]: rows });
+      showToast(`Довідник ${activityReferenceKind === 'kved' ? 'КВЕД' : 'NACE'} оновлено: ${rows.length} записів.`, 'success');
+      render();
+    } catch (error) { showToast(error.message || String(error), 'error', 9000); }
+    finally { event.target.value = ''; activityReferenceKind = ''; }
+  });
+  document.querySelector('[data-download-activity-template]')?.addEventListener('click', () => {
+    let objectUrl = '';
+    try {
+      const csv = '\uFEFFКод;Назва;1 група;2 група;3 група;Примітка\r\n01.11;Вирощування зернових культур;так;так;так;\r\n';
+      const link = document.createElement('a');
+      objectUrl = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      link.href = objectUrl;
+      link.download = 'pryklad-dovidnyka-kved-nace.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      showToast('Приклад довідника КВЕД/NACE успішно завантажено.', 'success');
+    } catch (error) {
+      showToast(`Не вдалося завантажити приклад довідника: ${error.message || error}`, 'error', 9000);
+    } finally {
+      if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    }
   });
 
   // --- Неактивні ---
@@ -836,13 +905,11 @@ function bindCurrentView() {
   document.querySelectorAll('[data-request-delete-client]').forEach((b) => b.onclick = async () => {
     const item = getClientById(b.dataset.requestDeleteClient);
     if (!item) return;
-    const result = await openAppDialog({ title: 'Запит на видалення', message: `ФОП залишатиметься в «Неактивних» ще 30 днів. Введіть повний ПІБ і причину.`, fields: [{ key: 'name', label: `Повний ПІБ: ${item.name}`, required: true }, { key: 'reason', label: 'Причина видалення', required: true }], confirmText: 'Подати запит', danger: true });
+    const result = await openAppDialog({ title: 'Перенести до видалених', message: 'ФОП одразу буде перенесено до розділу «Видалені». Введіть повний ПІБ і причину.', fields: [{ key: 'name', label: `Повний ПІБ: ${item.name}`, required: true }, { key: 'reason', label: 'Причина видалення', required: true }], confirmText: 'Перенести', danger: true });
     if (!result) return;
     if (result.name !== item.name) { showToast('ПІБ не збігається. Запит на видалення скасовано.', 'error'); return; }
-    const eligible = new Date();
-    eligible.setDate(eligible.getDate() + 30);
     requestClientDeletion(item.id, result.reason);
-    showToast(`Запит підтверджено. До ${eligible.toLocaleDateString('uk-UA')} ФОП залишатиметься неактивним.`, 'info');
+    showToast('ФОП перенесено до «Видалених».', 'info');
     render();
   });
   document.querySelectorAll('[data-restore-deleted-client]').forEach((b) => b.onclick = () => {
@@ -937,7 +1004,7 @@ function wireGlobalControls() {
       if (undoLastAction()) { event.preventDefault(); render(); showToast('Останню дію скасовано.', 'info'); }
       return;
     }
-    if (event.key.toLowerCase() !== 'h' || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+      if (String(event.key || '').toLowerCase() !== 'h' || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
     const now = Date.now();
     hPresses = hPresses.filter((time) => now - time < 2000);
     hPresses.push(now);
@@ -1078,7 +1145,9 @@ async function boot() {
     await initDatabase(profile.workspaceId);
     try { uiState.localStorageProtection = await getLocalStorageProtection(); }
     catch (error) { uiState.localStorageProtection = { enabled: false, detail: error.message || String(error) }; }
-    try { await loadActivityReference(); } catch (error) { console.warn('Не вдалося завантажити довідник видів діяльності:', error); }
+    try { await loadActivityReference(); }
+    catch (error) { console.warn('Не вдалося завантажити вбудований довідник видів діяльності:', error); }
+    applyActivityReferenceOverrides(getSettings().activityReferences || {});
     const actor = profile.displayName || email;
     setAuditActor(actor);
     setAccessRole(profile.role);
@@ -1088,7 +1157,7 @@ async function boot() {
     setView('overview');
     if (!uiState.localStorageProtection?.enabled) {
       const detail = uiState.localStorageProtection?.detail ? ` Причина: ${uiState.localStorageProtection.detail}` : '';
-      showToast(`УВАГА: локальна база Harmony не захищена Windows EFS.${detail} Увімкніть BitLocker або EFS перед роботою з персональними даними.`, 'error', 0);
+      showToast(`Локальна база не захищена EFS.${detail} Стан шифрування можна переглянути у «Налаштування → Діагностика».`, 'warn', 9000);
     }
     void checkForUpdate();
   } catch (error) {
