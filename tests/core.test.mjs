@@ -147,6 +147,12 @@ test('синхронізація автоматично зливає лише с
   assert.equal(mergeCalendarCompletion(JSON.stringify({ ...local, title: 'Інша задача' }), JSON.stringify(remote)), null);
 });
 
+test('ініціалізація бази використовує актуальний очищувач технічного шуму аудиту', () => {
+  const stateSource = readFileSync(new URL('../state.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(stateSource, /suppressTechnicalEmployeeAuditNoise/);
+  assert.match(stateSource, /initDatabase[\s\S]*normalizeAuditFieldLabels\(db\.auditEvents \|\| \[\]\)[\s\S]*suppressTechnicalNestedAuditNoise\(db\.auditEvents \|\| \[\]\)/);
+});
+
 test('лічильник звітності після подання фіксує фактичну різницю до дедлайну', () => {
   assert.match(reports.reportDaysUntilLabel('2026-05-08', { submittedDate: '2026-05-06' }), /2 дн\./);
   assert.match(reports.reportDaysUntilLabel('2026-05-08', { submittedDate: '2026-05-10' }), /-2 дн\./);
