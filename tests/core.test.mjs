@@ -255,6 +255,9 @@ test('грошові поля приймають український форм
   assert.equal(moneyValidation.normalizeNonNegativeAmount('-0.01').ok, false);
   assert.equal(moneyValidation.normalizeNonNegativeAmount('1000000000000').ok, false);
   assert.deepEqual(moneyValidation.normalizeNonNegativeAmount('-', { allowDash: true }), { ok: true, value: '-' });
+  assert.equal(moneyValidation.formatEditableAmount('1700').replace(/\s/g, ' '), '1 700');
+  assert.equal(moneyValidation.formatEditableAmount('1 700'), moneyValidation.formatEditableAmount('1700'));
+  assert.equal(moneyValidation.formatEditableAmount('-'), '');
 });
 
 test('критичні захисти етапу 1 підключені до UI та журналу аудиту', () => {

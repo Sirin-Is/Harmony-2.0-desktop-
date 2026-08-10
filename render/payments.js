@@ -7,6 +7,7 @@ import { getVisibleClients, getClientMonthlyTotals, getMonthlyCellValue, getSett
 import { empty } from './layout.js';
 import { uiState } from '../ui-state.js';
 import { shortClientName } from '../client-model.js';
+import { formatEditableAmount } from '../money-validation.js';
 
 const monthsFor = (workingYear) => Array.from({ length: 12 }, (_, index) => ({
   key: monthPeriodKey(workingYear, index + 1),
@@ -17,7 +18,7 @@ const monthsFor = (workingYear) => Array.from({ length: 12 }, (_, index) => ({
 export const STICKY_COLUMNS_WIDTH = 190 + 125;
 
 function amountInput(item, monthKey, type) {
-  const value = getMonthlyCellValue(item.id, monthKey, type) ?? '';
+  const value = formatEditableAmount(getMonthlyCellValue(item.id, monthKey, type));
   const typeLabel = type === 'charged' ? 'Нараховано' : 'Сплачено';
   return `<td><input class="month-value" inputmode="decimal" data-client="${escapeHtml(item.id)}" data-month="${escapeHtml(monthKey)}" data-type="${escapeHtml(type)}" value="${escapeHtml(value)}" aria-label="${typeLabel}, ${escapeHtml(monthKey)}, ${escapeHtml(item.name)}"></td>`;
 }
