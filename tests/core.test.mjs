@@ -304,6 +304,8 @@ test('картка працівника вимагає роботодавця, �
   assert.match(card, /data-employee-order-status/);
   assert.match(card, /data-employee-doc-prev/);
   assert.match(card, /data-employee-doc-next/);
+  assert.doesNotMatch(card, /\.innerHTML\s*=/);
+  assert.match(card, /replaceChildren\(heading, navigation, documentRows/);
   assert.match(card, /filter\(\(order\) => String\(order\.date \|\| ''\)\.startsWith\(`\$\{year\}-`\)\)/);
   assert.match(hr, /data-add-employee/);
   assert.match(hr, /data-open-employee/);
