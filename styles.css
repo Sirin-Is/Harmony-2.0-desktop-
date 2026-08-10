@@ -83,13 +83,14 @@ body.auth-locked .toast-stack { display: none !important; }
 .brand-text { display: flex; flex-direction: column; justify-content: center; min-height: 42px; }
 .brand-mark { color: #83d5bd; }
 .brand-text small { display: block; font-weight: 400; font-size: 10px; color: #9eb6b6; letter-spacing: 0; margin-top: 2px; }
-nav { display: grid; gap: 3px; }
+nav { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; gap: 3px; }
+.nav-bottom-start { margin-top: auto; }
 nav button { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; background: transparent; color: #b8cecd; text-align: left; border-radius: 7px; padding: 8px 10px; font: inherit; cursor: pointer; }
 nav button:hover, nav button.active { background: #21454a; color: #fff; }
 nav button:disabled { color: #719092; cursor: not-allowed; }
 .nav-icon { display: inline-flex; align-items: center; justify-content: center; width: 18px; min-width: 18px; font-size: 15px; line-height: 1; }
 .nav-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-note { margin: auto 10px 0; font-size: 11px; color: #9eb6b6; }
+.side-note { margin: 6px 10px 0; font-size: 11px; color: #9eb6b6; }
 .sync-status { margin: 6px 0; font-size: 11px; }
 .sync-saved { color: #7fd8b8; }
 .sync-saving, .sync-loading { color: #d8c87f; }
@@ -229,15 +230,17 @@ input.tax-field-default { border-style: dashed; background: #fbfdfc; color: #4b6
 .toast-warn { background: var(--amber); }
 .toast-error { background: var(--red); }
 .tax-table { width: 100%; min-width: 980px; table-layout: fixed; }
-.tax-table th:first-child, .tax-table td:first-child { width: 124px; white-space: nowrap; }
-.tax-table th:nth-child(2), .tax-table td:nth-child(2) { width: 132px; }
+.tax-table th:first-child, .tax-table td:first-child { width: 168px; white-space: nowrap; }
+.tax-table th:nth-child(2), .tax-table td:nth-child(2) { width: 112px; }
 .tax-table th:nth-child(3), .tax-table td:nth-child(3), .tax-table th:nth-child(4), .tax-table td:nth-child(4), .tax-table th:nth-child(6), .tax-table td:nth-child(6) { width: 122px; }
-.tax-table th:nth-child(5), .tax-table td:nth-child(5) { width: 78px; }
-.tax-table th:nth-child(7), .tax-table td:nth-child(7) { width: 138px; }
+.tax-table th:nth-child(5), .tax-table td:nth-child(5) { width: 70px; }
+.tax-table th:nth-child(7), .tax-table td:nth-child(7) { width: 108px; }
 .tax-table th:nth-child(8), .tax-table td:nth-child(8) { width: 130px; }
 .tax-table th:nth-child(9), .tax-table td:nth-child(9) { width: 104px; }
 .tax-table input.tax-field[type="date"] { width: 112px; }
 .tax-table input.tax-field[type="text"], .tax-table select.tax-field { width: 100%; min-width: 0; }
+body:has(.tax-table) { overflow: hidden; }
+#content:has(.tax-table) > .table-wrap { max-height: calc(100vh - 285px); }
 
 /* ===== Misc cards / widgets kept for upcoming modules (Звітність, …) ===== */
 .client-card { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; margin-bottom: 8px; background: #fff; }
@@ -265,7 +268,7 @@ input.tax-field-default { border-style: dashed; background: #fbfdfc; color: #4b6
 .compact-date { border: 1px solid #d7dde5; border-radius: 5px; padding: 4px; font: 12px inherit; color: var(--ink); width: 112px; }
 
 /* ===== Доходи ===== */
-.income-value { width: 74px; border: 1px solid #d7dde5; border-radius: 5px; padding: 5px 3px; font: 11px inherit; text-align: right; color: var(--ink); }
+.income-value { width: 74px; border: 1px solid #d7dde5; border-radius: 5px; padding: 5px 3px; font: 10px inherit; text-align: right; color: var(--ink); }
 .income-sum { font-weight: 700; background: #f6f8fb; }
 
 /* ===== Огляд (cross-section summary) ===== */
@@ -313,8 +316,8 @@ dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 
 .calendar-weekdays, .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; background: #dfe5ee; border: 1px solid #dfe5ee; }
 .calendar-grid { position: relative; }
 .calendar-transfer-layer { position: absolute; inset: 0; z-index: 4; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.calendar-transfer-layer path { fill: none; stroke: #9a6700; stroke-width: 1.6; }
-.calendar-transfer-layer marker path { fill: #9a6700; stroke: none; }
+.calendar-transfer-layer path { fill: none; stroke: #14532d; stroke-width: 1.8; stroke-dasharray: 7 6; }
+.calendar-transfer-layer marker path { fill: #14532d; stroke: none; stroke-dasharray: none; }
 .calendar-event.deadline-statutory { border: 1px dashed currentColor; background: #fff; }
 .calendar-event.deadline-control::before { content: '↤ '; font-weight: 800; }
 .calendar-weekdays { background: transparent; border: 0; margin-bottom: 4px; gap: 8px; color: #687386; font-size: 12px; font-weight: 700; text-align: center; }
@@ -409,6 +412,27 @@ dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 
 .payroll-total-row td { padding-top: 5px; padding-bottom: 6px; color: #334155; background: #fafbfc; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
 .payroll-total-row td:nth-child(2) { text-align: left; }
 .payroll-delete { width: 24px; min-width: 24px; min-height: 24px; height: 24px; margin-right: 6px; vertical-align: middle; }
+.payroll-settings-table th:first-child { min-width: 190px; text-align: left; }
+.payroll-settings-table td { min-width: 118px; }
+
+.employee-card-dialog { border: 0; border-radius: 14px; padding: 0; width: min(820px, calc(100vw - 30px)); max-height: calc(100vh - 30px); color: var(--ink); box-shadow: 0 24px 70px #10182855; }
+.employee-card-dialog::backdrop { background: #10182866; }
+.employee-card-form { display: grid; gap: 16px; padding: 20px; }
+.employee-card-form > header, .employee-card-form > footer, .employee-card-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.employee-card-form header p, .employee-card-form header h2, .employee-card-documents h3 { margin: 0; }
+.employee-card-form header p { color: var(--muted); font-size: 11px; }
+.employee-card-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.employee-card-fields label { display: grid; gap: 5px; color: #475467; font-size: 12px; font-weight: 600; }
+.employee-card-fields label:first-child, .employee-card-fields label:nth-child(2) { grid-column: span 1; }
+.employee-card-fields input, .employee-card-fields select { width: 100%; box-sizing: border-box; padding: 9px; }
+.employee-card-documents { min-height: 120px; }
+.employee-card-documents .table-wrap { max-height: 260px; }
+.employee-document-year-nav { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 10px 0; }
+.employee-document-year-nav button { min-width: 34px; min-height: 28px; padding: 3px 9px; }
+.employee-document-year-nav strong { min-width: 52px; text-align: center; font-size: 12px; }
+.employee-card-form footer { border-top: 1px solid var(--line); padding-top: 14px; justify-content: flex-end; }
+body.auth-locked .employee-card-dialog { display: none; }
+@media (max-width: 680px) { .employee-card-fields { grid-template-columns: 1fr; } }
 
 /* Єдиний «скляний» стиль для текстових і календарних полів (варіант №19). */
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea {
@@ -434,8 +458,12 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus, selec
 .appearance-preview { display: grid; grid-template-columns: 110px minmax(160px, 1fr) minmax(160px, 1fr); gap: 8px; align-items: center; max-width: 620px; padding: 12px; border: 1px dashed #b8c2d0; border-radius: 8px; background: #f8fafc; }
 .appearance-preview > span { font-size: 12px; color: var(--muted); }
 .appearance-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
-.appearance-swatches input { appearance: none; width: 26px; height: 26px; margin: 0; border: 1px solid #94a3b8; border-radius: 7px; background: var(--swatch); cursor: pointer; }
+.appearance-swatches input { appearance: none; width: 26px; height: 26px; margin: 0; border: 1px solid #94a3b8; border-radius: 7px; background: var(--swatch) !important; cursor: pointer; }
 .appearance-swatches input:checked { outline: 3px solid var(--brand); outline-offset: 2px; }
+.payroll-schedule-summary { display: grid; grid-template-columns: repeat(2, minmax(190px, 1fr)); gap: 10px; max-width: 620px; margin: 10px 0; }
+.payroll-schedule-summary > div { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fafc; }
+.payroll-schedule-summary strong { font-size: 18px; color: var(--brand); white-space: nowrap; }
+.payroll-schedule-summary span { font-size: 12px; color: var(--muted); }
 
 /* Журнал подій: скасовані записи залишаються в історії, але не змішуються з активними. */
 .audit-toolbar { position: sticky; top: 70px; z-index: 8; margin-bottom: 8px; padding: 6px; background: var(--bg); }
@@ -465,6 +493,10 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus, selec
 .sync-conflict-comparison th:first-child { width: 150px; }
 .sync-conflict-comparison td { white-space: normal; overflow-wrap: anywhere; }
 .sync-conflict-warning { padding: 8px 10px; border-radius: 6px; background: #fff4e5; color: #8a5700; font-weight: 650; }
+.sync-conflict-context { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.sync-conflict-context > div { display: flex; gap: 5px; align-items: baseline; padding: 5px 8px; border: 1px solid #dbe3ee; border-radius: 7px; background: #f8fafc; }
+.sync-conflict-context dt { color: var(--muted); font-size: 11px; }
+.sync-conflict-context dd { margin: 0; color: var(--ink); font-size: 12px; font-weight: 650; }
 
 #content > .toolbar:first-child, #content > .subnav { position: sticky; top: 70px; z-index: 7; padding: 5px 0; background: var(--bg); }
 #content > .subnav { top: 70px; }

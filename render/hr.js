@@ -5,6 +5,7 @@ import { uiState } from '../ui-state.js';
 import { MONTH_NAMES_UA, monthPeriodKey } from '../utils.js';
 import { empty, table } from './layout.js';
 import { calendarDateIconSvg } from '../date-input.js';
+import { normalizeEmployeeName } from '../employee-model.js';
 
 const esc = escapeHtml;
 const shortName = (name = '') => name.trim().split(/\s+/).slice(0, 2).join(' ') || '-';
@@ -12,16 +13,19 @@ const date = (value) => value ? new Intl.DateTimeFormat('uk-UA').format(new Date
 const MONTH_NAMES_GENITIVE_UA = ['січня', 'лютого', 'березня', 'квітня', 'травня', 'червня', 'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня'];
 
 function employees() {
-  const rows = getVisibleClients().flatMap((client) => {
-    const list = Array.isArray(client.employees) ? client.employees : [];
-    return list.map((employee, index) => `<tr>${index === 0 ? `<td rowspan="${list.length}">${esc(shortName(client.name))}</td>` : ''}<td><strong>${esc(employee.name || '-')}</strong></td><td>${esc(employee.position || '-')}</td><td>-</td></tr>`);
-  });
-  return table(rows, ['ФОП', 'Працівник', 'Посада', 'Примітка'], 'hr-table');
+  const orders = getHrOrders();
+  const rows = getVisibleClients().flatMap((client) => (client.employees || []).map((employee) => {
+    const linked = orders.filter((order) => order.employeeId === employee.id || (!order.employeeId && order.clientId === client.id && normalizeEmployeeName(order.employeeName) === normalizeEmployeeName(employee.name)));
+    const sent = linked.filter((order) => order.deliveryStatus === 'Надіслано').length;
+    const documentStatus = linked.length ? `${sent}/${linked.length} надіслано` : 'Немає';
+    return `<tr><td>${esc(shortName(client.name))}</td><td><button type="button" class="link-cell" data-open-employee="${esc(employee.id)}"><strong>${esc(employee.name || '-')}</strong></button></td><td>${esc(employee.position || '-')}</td><td>${date(employee.hireDate)}</td><td>${date(employee.dismissalDate)}</td><td>${esc(documentStatus)}</td></tr>`;
+  }));
+  return `<div class="toolbar"><p class="note">Окремі картки працівників містять роботодавця, посаду, дати роботи та пов’язані кадрові документи.</p><button class="primary" data-add-employee>+ Працівник</button></div>${rows.length ? table(rows, ['ФОП', 'Працівник', 'Посада', 'Прийнято', 'Звільнено', 'Документи'], 'hr-table') : empty('Найманих працівників поки немає.')}`;
 }
 
 function orders(period) {
   const clients = new Map(getVisibleClients().map((client) => [client.id, client]));
-  const rows = [...getHrOrders()].filter((order) => !period || !order.period || order.period === period).sort((a, b) => String(b.date).localeCompare(String(a.date))).map((order) => { const sent = order.deliveryStatus === 'Надіслано'; const context = `${order.number}, ${clients.get(order.clientId)?.name || 'ФОП'}`; return `<tr><td><strong>${esc(shortName(clients.get(order.clientId)?.name || '-'))}</strong></td><td>${esc(order.number)}</td><td>${date(order.date)}</td><td>${esc(order.subject)}</td><td>${esc(order.employeeName || '-')}</td><td>${date(order.effectiveDate)}</td><td><button class="delivery-status ${sent ? 'sent' : 'pending'}" data-toggle-order-delivery="${esc(order.id)}" title="Змінити статус" aria-pressed="${sent}" aria-label="Статус надсилання документа ${esc(context)}">${sent ? 'Надіслано' : 'Не надіслано'}</button></td><td><button class="icon" data-delete-hr-order="${esc(order.id)}" title="Видалити документ" aria-label="Видалити документ ${esc(context)}">✕</button></td></tr>`; });
+  const rows = [...getHrOrders()].filter((order) => !period || !order.period || order.period === period).sort((a, b) => String(b.date).localeCompare(String(a.date))).map((order) => { const sent = order.deliveryStatus === 'Надіслано'; const context = `${order.number}, ${clients.get(order.clientId)?.name || 'ФОП'}`; return `<tr><td><strong>${esc(shortName(clients.get(order.clientId)?.name || '-'))}</strong></td><td>${esc(order.number)}</td><td>${date(order.date)}</td><td>${esc(order.subject)}</td><td>${esc(order.employeeName || '-')}</td><td>${date(order.effectiveDate)}</td><td><button class="delivery-status ${sent ? 'sent' : 'pending'}" data-toggle-order-delivery="${esc(order.id)}" title="Змінити статус" aria-pressed="${sent}" aria-label="Статус надсилання документа ${esc(context)}">${sent ? 'Надіслано' : 'Не надіслано'}</button></td><td class="row-actions"><button class="icon" data-edit-hr-order="${esc(order.id)}" title="Редагувати документ" aria-label="Редагувати документ ${esc(context)}">✎</button><button class="icon" data-delete-hr-order="${esc(order.id)}" title="Видалити документ" aria-label="Видалити документ ${esc(context)}">✕</button></td></tr>`; });
   return `<div class="toolbar"><p class="note">Фіксуйте кадрові документи, які необхідно надіслати конкретному ФОП.</p><button class="primary" data-add-hr-order>+ Документ</button></div>${rows.length ? table(rows, ['ФОП', '№', 'Дата', 'Суть документа', 'Працівник', 'Початок дії', 'Статус', ''], 'hr-table') : empty('Кадрових документів поки немає.')}`;
 }
 

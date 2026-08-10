@@ -124,6 +124,7 @@ function fromRemote(row: RemoteRow, expectedWorkspaceId?: string): SyncRecord {
     syncStatus: 'synced',
     revision,
     changeSequence,
+    basePayload: payload,
   };
 }
 
@@ -152,7 +153,13 @@ export class SupabaseGateway {
           || row.entity_type !== expected.entityType || row.id !== expected.id) {
         throw new Error('Supabase повернув некоректний порядок або статус CAS-синхронізації.');
       }
-      return { status: row.status, record: fromRemote(row) };
+      const remote = fromRemote(row);
+      // PostgreSQL normalizes an ISO timestamp (for example .090Z to
+      // .09+00:00). For an applied write, acknowledgement must compare the
+      // exact local timestamp that was submitted so a concurrent later edit
+      // stays pending while this revision is still recorded as its base.
+      if (row.status === 'applied') remote.updatedAt = expected.updatedAt;
+      return { status: row.status, record: remote };
     });
   }
 

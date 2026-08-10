@@ -142,11 +142,12 @@ export function setLifecycleStatus(db: Database, id: string, status: 'active' | 
 export function requestDeletion(db: Database, id: string, reason: string): Client | null {
   const item = findClientById(db, id);
   if (!item || lifecycleOf(item) !== 'inactive' || !reason.trim()) return null;
-  const requested = new Date(`${todayIso()}T00:00:00`);
-  requested.setDate(requested.getDate() + 30);
   item.inactiveReason = reason.trim();
   item.deletionRequestedAt = todayIso();
-  item.deletionEligibleAt = requested.toISOString().slice(0, 10);
+  item.deletionEligibleAt = todayIso();
+  item.lifecycleStatus = 'deleted';
+  item.archived = true;
+  item.deletedAt = todayIso();
   return item;
 }
 

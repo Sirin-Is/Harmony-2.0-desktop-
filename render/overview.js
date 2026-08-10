@@ -9,6 +9,7 @@ import { TAX_TYPES, taxPeriodsFor } from '../tax-model';
 import { reportPeriodsFor } from '../report-model';
 import { groupLimitAmount, GROUP_MZP_MULTIPLIERS, shortClientName } from '../client-model';
 import { isIncomeLimitWarning } from '../income-model.js';
+import { payrollDatesForPeriod } from '../payroll-model.js';
 
 function kepAlertEntries() {
   return getVisibleClients().filter((item) => {
@@ -139,7 +140,7 @@ function todayIso() { const now = new Date(); return `${now.getFullYear()}-${Str
 function salaryReminder() {
   const today = todayIso(); const year = getSettings().workingYear;
   if (!today.startsWith(`${year}-`)) return false;
-  return Array.from({ length: 12 }, (_, i) => i + 1).some((month) => [7, 21].some((day) => { const date = new Date(year, month - 1, day); if (date.getDay() === 6) date.setDate(date.getDate() - 1); if (date.getDay() === 0) date.setDate(date.getDate() - 2); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` === today; }));
+  return Array.from({ length: 12 }, (_, i) => payrollDatesForPeriod(getSettings(), `${year}-${String(i + 1).padStart(2, '0')}`)).some((dates) => dates.secondHalf === today || dates.firstHalf === today);
 }
 function hrDocumentsReminder() {
   const now = new Date(); const year = getSettings().workingYear; if (now.getFullYear() !== year) return '';

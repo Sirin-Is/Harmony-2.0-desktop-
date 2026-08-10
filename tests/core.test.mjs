@@ -10,8 +10,10 @@ import { validateSyncPayload } from '../data/identifier-validation.js';
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, passwordPolicyError } from '../password-policy.js';
 import { escapeHtml } from '../utils.js';
 import { normalizeHrOrderNumber, validateHrOrder } from '../hr-order-model.js';
-import { payrollPaymentTypes } from '../payroll-model.js';
+import { normalizeEmployeeName, validateEmployee } from '../employee-model.js';
+import { defaultPayrollDates, payrollDateForPaymentType, payrollDatesForPeriod, payrollPaymentTypes } from '../payroll-model.js';
 import { isValidIsoDate, isValidMonthPeriodKey, isValidReportPeriodKey, isValidTaxPeriodKey, validateCalendarEvent, validateReportRecordChange, validateTaxRecordChange } from '../workflow-validation.js';
+import { findActivityByCode, loadActivityReference, normalizeActivityCode } from '../data/activity-reference.js';
 
 test('політика паролів компенсує недоступну перевірку витоків на Free Plan', () => {
   assert.equal(MIN_PASSWORD_LENGTH, 12);
@@ -64,6 +66,8 @@ let normalizeSessionPayload;
 let parseHarmonyProfile;
 let moneyValidation;
 let mergeCalendarCompletion;
+let jsonValuesEqual;
+let threeWayMerge;
 
 before(async () => {
   // Vite's SSR loader executes the same TypeScript modules that the desktop
@@ -104,6 +108,7 @@ before(async () => {
   ({ parseHarmonyProfile } = await vite.ssrLoadModule('/auth/users.ts'));
   moneyValidation = await vite.ssrLoadModule('/money-validation.js');
   ({ mergeCalendarCompletion } = await vite.ssrLoadModule('/data/sqlite-repository.ts'));
+  ({ jsonValuesEqual, threeWayMerge } = await vite.ssrLoadModule('/data/three-way-merge.ts'));
 });
 
 after(async () => {
@@ -128,6 +133,8 @@ test('звітність має окремі квартальні та річн�
   assert.equal(reports.getDefaultReportDeadline({}, '3', '2026-q1'), '2026-05-08'); // 10 травня — неділя
   assert.equal(reports.getDefaultReportDeadline({}, '3', '2026-year'), '2027-02-09');
   assert.equal(reports.getDefaultReportDeadline({}, '2', '2026'), '2027-03-01');
+  assert.equal(reports.annualPropertyIncomeDeclarationDeadline(2026), '2026-04-30');
+  assert.equal(reports.annualPropertyIncomeDeclarationDeadline(2027), '2027-04-30');
 });
 
 test('типи виплати зарплати залежать від вибраного періоду, а не попереднього екрана', () => {
@@ -139,12 +146,66 @@ test('типи виплати зарплати залежать від вибр�
   assert.deepEqual(payrollPaymentTypes('2026-13'), []);
 });
 
+test('зарплатний графік використовує 7/22 і переносить вихідні на попередній робочий день', () => {
+  assert.deepEqual(defaultPayrollDates('2026-08'), { secondHalf: '2026-08-07', firstHalf: '2026-08-21' });
+  assert.deepEqual(defaultPayrollDates('2026-11'), { secondHalf: '2026-11-06', firstHalf: '2026-11-20' });
+  const settings = { payrollDates: { '2026-08': { secondHalf: '2026-08-05', firstHalf: '2026-08-19' } } };
+  assert.deepEqual(payrollDatesForPeriod(settings, '2026-08'), { secondHalf: '2026-08-07', firstHalf: '2026-08-21' });
+  assert.equal(payrollDateForPaymentType(settings, '2026-08', 'Виплата зарплати за другу половину липня'), '2026-08-07');
+  assert.equal(payrollDateForPaymentType(settings, '2026-08', 'Виплата зарплати за першу половину серпня'), '2026-08-21');
+  assert.equal(payrollDateForPaymentType(settings, '2026-08', 'Лікарняні'), '');
+});
+
+test('налаштування зарплати не містять помісячних полів, а палітра читає лише обраний колір', () => {
+  const settingsSource = readFileSync(new URL('../render/settings.js', import.meta.url), 'utf8');
+  const bootstrapSource = readFileSync(new URL('../bootstrap.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(settingsSource, /data-scope="payroll"/);
+  assert.match(settingsSource, /7 число[\s\S]*22 число/);
+  assert.match(bootstrapSource, /field\.type !== 'radio' \|\| field\.checked/);
+  assert.match(bootstrapSource, /Приклад довідника КВЕД\/NACE успішно завантажено/);
+  assert.match(bootstrapSource, /Не вдалося завантажити приклад довідника/);
+});
+
+test('картка конфлікту показує користувацький контекст запису', () => {
+  const settingsSource = readFileSync(new URL('../render/settings.js', import.meta.url), 'utf8');
+  assert.match(settingsSource, /sync-conflict-context/);
+  assert.match(settingsSource, /label: 'Розділ'/);
+  assert.match(settingsSource, /label: 'ФОП'/);
+  assert.match(settingsSource, /label: 'Період'/);
+  assert.match(settingsSource, /label: 'Відрізняється полів'/);
+});
+
 test('синхронізація автоматично зливає лише стан виконання підзадачі', () => {
   const remote = { id: 'task-1', title: 'Звіт', completedAt: '', completedDates: [], subtasks: [{ id: 'sub-1', title: 'Перевірити', completedAt: '', completedDates: [] }] };
   const local = { ...remote, subtasks: [{ ...remote.subtasks[0], completedAt: '2026-08-10T08:00:00.000Z', completionUpdatedAt: '2026-08-10T08:00:00.000Z' }] };
   const merged = JSON.parse(mergeCalendarCompletion(JSON.stringify(local), JSON.stringify(remote)));
   assert.equal(merged.subtasks[0].completedAt, '2026-08-10T08:00:00.000Z');
   assert.equal(mergeCalendarCompletion(JSON.stringify({ ...local, title: 'Інша задача' }), JSON.stringify(remote)), null);
+});
+
+test('тристороннє злиття автоматично поєднує зміни різних полів', () => {
+  const base = { name: 'ФОП', email: 'old@example.com', settings: { color: 'white', radius: 5 } };
+  const local = { ...base, email: 'local@example.com' };
+  const remote = { ...base, settings: { ...base.settings, color: 'blue' } };
+  const result = threeWayMerge(base, local, remote);
+  assert.deepEqual(result.conflictPaths, []);
+  assert.deepEqual(result.merged, { name: 'ФОП', email: 'local@example.com', settings: { color: 'blue', radius: 5 } });
+});
+
+test('конфлікт виникає лише для різних змін того самого поля', () => {
+  const base = { email: 'old@example.com', note: '' };
+  const result = threeWayMerge(base, { email: 'local@example.com', note: 'локальна' }, { email: 'remote@example.com', note: '' });
+  assert.deepEqual(result.conflictPaths, ['email']);
+  assert.deepEqual(result.localCandidate, { email: 'local@example.com', note: 'локальна' });
+  assert.deepEqual(result.remoteCandidate, { email: 'remote@example.com', note: 'локальна' });
+  assert.equal(result.merged, null);
+});
+
+test('JSON з іншим порядком ключів і однакові паралельні зміни не конфліктують', () => {
+  assert.equal(jsonValuesEqual({ first: 1, second: { a: true, b: null } }, { second: { b: null, a: true }, first: 1 }), true);
+  const result = threeWayMerge({ status: 'old' }, { status: 'done' }, { status: 'done' });
+  assert.deepEqual(result.conflictPaths, []);
+  assert.deepEqual(result.merged, { status: 'done' });
 });
 
 test('ініціалізація бази використовує актуальний очищувач технічного шуму аудиту', () => {
@@ -205,6 +266,7 @@ test('критичні захисти етапу 1 підключені до UI 
 
   assert.match(cardUi, /validateClient\(draft, getVisibleClients\(\), isNew \? null : draft\.id\)/);
   assert.match(bootstrap, /title: 'Видалити зарплатний рядок'/);
+  assert.match(bootstrap, /String\(event\.key \|\| ''\)\.toLowerCase\(\)/);
   assert.match(state, /revertedOperationIds:/);
   assert.match(state, /status: 'cancelled'/);
   assert.match(state, /isSamePayrollSlot/);
@@ -221,6 +283,26 @@ test('кадровий реєстр не приймає дублікати но�
   assert.match(validateHrOrder(fields, existing).reason, /уже є/);
   assert.equal(validateHrOrder({ ...fields, clientId: 'client-2' }, existing).ok, true);
   assert.match(validateHrOrder({ ...fields, date: '2026-02-30' }, []).reason, /коректні дати/);
+});
+
+test('картка працівника вимагає роботодавця, посаду і коректну хронологію дат', () => {
+  const valid = { clientId: 'client-1', name: '  Іваненко  Іван ', position: 'Менеджер', hireDate: '2026-02-01', dismissalDate: '' };
+  assert.equal(validateEmployee(valid).ok, true);
+  assert.equal(normalizeEmployeeName(valid.name), 'іваненко іван');
+  assert.match(validateEmployee({ ...valid, position: '' }).reason, /посаду/);
+  assert.match(validateEmployee({ ...valid, dismissalDate: '2026-01-31' }).reason, /не може передувати/);
+  assert.match(validateEmployee({ ...valid, hireDate: '2026-02-30' }).reason, /коректні дати/);
+  const card = readFileSync(new URL('../employee-card-ui.js', import.meta.url), 'utf8');
+  const hr = readFileSync(new URL('../render/hr.js', import.meta.url), 'utf8');
+  const bootstrap = readFileSync(new URL('../bootstrap.js', import.meta.url), 'utf8');
+  assert.match(card, /Пов’язані документи/);
+  assert.match(card, /data-employee-order-status/);
+  assert.match(card, /data-employee-doc-prev/);
+  assert.match(card, /data-employee-doc-next/);
+  assert.match(card, /filter\(\(order\) => String\(order\.date \|\| ''\)\.startsWith\(`\$\{year\}-`\)\)/);
+  assert.match(hr, /data-add-employee/);
+  assert.match(hr, /data-open-employee/);
+  assert.match(bootstrap, /openEmployeeCard\(button\.dataset\.openEmployee\)/);
 });
 
 test('етап 2 підключає пошук, очищення фільтрів і доступні стани навігації', () => {
@@ -376,7 +458,7 @@ test('видалення ФОП очищує прив’язані записи,
   assert.deepEqual(Object.keys(database.reportRecords), ['two|2|2026']);
 });
 
-test('відкладене видалення не стирає ФОП раніше 30-денного строку', () => {
+test('видалення з неактивних відбувається одразу, а старі відкладені записи мігрують', () => {
   const database = {
     clients: [
       { id: 'due', name: 'Можна перенести', lifecycleStatus: 'inactive', deletionEligibleAt: '2000-01-01' },
@@ -387,7 +469,16 @@ test('відкладене видалення не стирає ФОП рані�
   assert.equal(database.clients[0].lifecycleStatus, 'deleted');
   assert.equal(database.clients[1].lifecycleStatus, 'inactive');
   assert.equal(clients.requestDeletion(database, 'wait', ''), null);
-  assert.ok(clients.requestDeletion(database, 'wait', 'Тестова причина')?.deletionEligibleAt);
+  const deleted = clients.requestDeletion(database, 'wait', 'Тестова причина');
+  assert.equal(deleted?.lifecycleStatus, 'deleted');
+  assert.ok(deleted?.deletedAt);
+});
+
+test('довідник КВЕД завантажується, нормалізує код і знаходить назву', async () => {
+  await loadActivityReference();
+  assert.equal(normalizeActivityCode('1,1'), '01.10');
+  assert.equal(normalizeActivityCode('01.11'), '01.11');
+  assert.ok(findActivityByCode('kved', '1.11')?.[1]);
 });
 
 test('резервна копія шифрується, відновлюється правильним паролем і відхиляє неправильний', async () => {
@@ -476,7 +567,8 @@ test('sync gateway відхиляє невалідний UTF-8, а push діли
 
 test('CAS-клієнт не вимагає workspace_id, якого немає у відповіді RPC', () => {
   const gateway = readFileSync(new URL('../sync/supabase-gateway.ts', import.meta.url), 'utf8');
-  assert.match(gateway, /record: fromRemote\(row\)/);
+  assert.match(gateway, /const remote = fromRemote\(row\)/);
+  assert.match(gateway, /remote\.updatedAt = expected\.updatedAt/);
   assert.match(gateway, /rows\.map\(\(row\) => fromRemote\(row, profile\.workspaceId\)\)/);
 });
 
@@ -799,6 +891,15 @@ test('локальний snapshot має durable journal і не синхрон�
   assert.match(storage, /isRestoreSyncRequired[\s\S]*requestRestoreSync\(\)[\s\S]*syncManager\.start\(\)/);
 });
 
+test('локальна база зберігає базову серверну версію для тристороннього злиття', () => {
+  const migrations = readFileSync(new URL('../data/migrations.ts', import.meta.url), 'utf8');
+  const repository = readFileSync(new URL('../data/sqlite-repository.ts', import.meta.url), 'utf8');
+  assert.match(migrations, /version: 14[\s\S]*ADD COLUMN base_payload TEXT/);
+  assert.match(repository, /reconcileEquivalentConflicts/);
+  assert.match(repository, /base_payload = \?, revision = \?, change_sequence = \?/);
+  assert.match(repository, /mergeJsonPayloads\(local\[0\]\.base_payload, local\[0\]\.payload, record\.payload\)/);
+});
+
 test('спостерігач не передає локальні зміни в хмару', async () => {
   const events = [];
   const { repository, remote } = syncFixture(events);
@@ -973,7 +1074,7 @@ test('desktop CSP блокує обхід connect-src через форми, bas
   assert.doesNotMatch(csp, /script-src[^;]*'unsafe-inline'/);
 });
 
-test('EFS захищає наявні SQLite artifacts до відкриття БД і не приховує fail-open', () => {
+test('EFS захищає наявні SQLite artifacts до відкриття БД і показує діагностичне попередження', () => {
   const main = readFileSync(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
   const bootstrap = readFileSync(new URL('../bootstrap.js', import.meta.url), 'utf8');
 
@@ -983,8 +1084,9 @@ test('EFS захищає наявні SQLite artifacts до відкриття �
   assert.match(main, /fn protect\([\s\S]*encrypt\(&path\)[\s\S]*fs::read_dir\(&path\)[\s\S]*encrypt\(&file_path\)/);
   assert.match(main, /local_data_protection::initialize\(app\.handle\(\)\)/);
   assert.match(main, /STATUS\.get\(\)\.cloned\(\)/);
-  assert.match(bootstrap, /локальна база Harmony не захищена Windows EFS/);
-  assert.match(bootstrap, /showToast\([\s\S]*'error', 0\)/);
+  assert.match(bootstrap, /Локальна база не захищена EFS/);
+  assert.match(bootstrap, /«Налаштування → Діагностика»/);
+  assert.doesNotMatch(bootstrap, /локальна база Harmony не захищена Windows EFS[\s\S]*'error', 0/);
 });
 
 test('build tooling використовує exact stable Supabase CLI', () => {

@@ -11,7 +11,7 @@ import { table, empty } from './layout.js';
 import { uiState } from '../ui-state.js';
 
 function exemptionSelect(item, taxType, record) {
-  const options = exemptionOptions(uiState.taxGroup).map((opt) =>
+  const options = exemptionOptions(uiState.taxGroup, taxType.key).map((opt) =>
     `<option value="${escapeHtml(opt)}" ${record.exemption === opt ? 'selected' : ''}>${opt || '—'}</option>`,
   ).join('');
   return `<select class="tax-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(item.group)}" data-tax="${escapeHtml(taxType.key)}" data-field="exemption" aria-label="Причина звільнення: ${escapeHtml(taxType.label)}, ${escapeHtml(item.name)}">${options}</select>`;
@@ -60,7 +60,7 @@ export function renderTaxes() {
     `<button class="tab ${p.key === uiState.taxPeriod ? 'active' : ''}" data-tax-period="${p.key}">${p.label}</button>`,
   ).join('');
   const body = clients.length
-    ? table(rows, ['ПІБ', 'Податок', 'Набрано в банку', 'Дата сплати', 'Днів до дедлайну', 'Дедлайн', 'Статус', 'Причина звільнення', 'Примітка'], 'tax-table')
+    ? table(rows, ['ПІБ', 'Податок', 'Набрано в банку', 'Дата сплати', 'Залишок', 'Дедлайн', 'Статус', 'Причина звільнення', 'Примітка'], 'tax-table')
     : empty('У цій групі ще немає активних ФОП.');
 
   const hasPreviousPeriod = Boolean(previousPeriodKey(periods, uiState.taxPeriod));

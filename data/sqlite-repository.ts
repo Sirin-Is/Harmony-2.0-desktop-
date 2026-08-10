@@ -9,9 +9,10 @@ import { LEGACY_DATABASE_URL, workspaceDatabaseUrl } from './workspace-database'
 import { parseStoredObjectPayload } from './stored-payload';
 import { assertRecordPayloadIdentity } from './record-identity';
 import { validateDatabaseIdentifiers } from './identifier-validation.js';
+import { jsonValuesEqual, mergeJsonPayloads } from './three-way-merge';
 
 type Row = { id: string; payload: string };
-type SyncRow = { id: string; payload: string; created_at: string; updated_at: string; synced_at: string | null; is_deleted: number; sync_status: SyncStatus; revision: number; change_sequence: number };
+type SyncRow = { id: string; payload: string; base_payload: string | null; created_at: string; updated_at: string; synced_at: string | null; is_deleted: number; sync_status: SyncStatus; revision: number; change_sequence: number };
 type SyncLogRow = { id: string; operation: string; entity_type: string; entity_id: string; status: SyncLogEntry['status']; message: string | null; created_at: string };
 
 function withoutCalendarCompletion(value: unknown): unknown {
@@ -51,7 +52,7 @@ const SYNC_TABLES = LOCAL_TABLES.filter((table) => table !== 'audit_operations')
 
 const emptyDatabase = (): AppDatabase => ({
   clients: [], customColumns: [], monthlyPayments: {}, taxRecords: {}, incomeRecords: {}, reportRecords: {}, calendarEvents: [], hrOrders: [], hrMonthlyDocuments: [], payrollRecords: [], auditOperations: [], auditEvents: [],
-  settings: { workingYear: 2026, availableWorkingYears: [2026, 2027], minWage: 8647, monthlyDeadlines: {}, quarterlyDeadlines: { group3: {}, esv: {} }, reportDeadlines: { annual: {}, quarterly: { q1: '', half: '', '9m': '', year: '' } }, appearance: { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 } },
+  settings: { workingYear: 2026, availableWorkingYears: [2026, 2027], minWage: 8647, monthlyDeadlines: {}, quarterlyDeadlines: { group3: {}, esv: {} }, reportDeadlines: { annual: {}, quarterly: { q1: '', half: '', '9m': '', year: '' } }, payrollDates: {}, appearance: { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 }, activityReferences: {} },
 });
 
 function normalizeDatabase(raw: Partial<AppDatabase> | null | undefined): AppDatabase {
@@ -78,10 +79,15 @@ function normalizeDatabase(raw: Partial<AppDatabase> | null | undefined): AppDat
         annual: typeof settings?.reportDeadlines?.annual === 'object' && settings.reportDeadlines.annual ? settings.reportDeadlines.annual : (legacyAnnual ? { 2026: legacyAnnual } : {}),
         quarterly: settings?.reportDeadlines?.quarterly || base.settings.reportDeadlines.quarterly,
       },
+      payrollDates: settings?.payrollDates && typeof settings.payrollDates === 'object' ? settings.payrollDates : {},
       appearance: {
         fieldColor: settings?.appearance?.fieldColor || defaultAppearance.fieldColor,
         fieldRadius: settings?.appearance?.fieldRadius ?? defaultAppearance.fieldRadius,
         fieldOpacity: [0, 20, 40, 60, 80, 100].includes(Number(settings?.appearance?.fieldOpacity)) ? Number(settings?.appearance?.fieldOpacity) : defaultAppearance.fieldOpacity,
+      },
+      activityReferences: {
+        kved: Array.isArray(settings?.activityReferences?.kved) ? settings.activityReferences.kved : undefined,
+        nace: Array.isArray(settings?.activityReferences?.nace) ? settings.activityReferences.nace : undefined,
       },
     },
   };
@@ -124,6 +130,7 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
       // Wait rather than failing a user edit with SQLITE_BUSY.
       await connection.execute('PRAGMA busy_timeout = 10000');
       await this.runMigrations(connection);
+      await this.reconcileEquivalentConflicts(connection);
       await this.assertWorkspaceBinding(connection);
       await this.recoverInterruptedSave(connection);
       this.connection = connection;
@@ -189,17 +196,17 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
           );
           for (const table of LOCAL_TABLES) {
             const rows = await source.select<Array<SyncRow & { entityType?: string }>>(
-              `SELECT id, payload, created_at, updated_at, synced_at, is_deleted, sync_status, revision, change_sequence FROM ${table}`,
+              `SELECT id, payload, base_payload, created_at, updated_at, synced_at, is_deleted, sync_status, revision, change_sequence FROM ${table}`,
             );
             for (const row of rows) {
               await destination.execute(
-                `INSERT INTO ${table} (id, payload, created_at, updated_at, synced_at, is_deleted, sync_status, revision, change_sequence)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                 ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, created_at = excluded.created_at,
+                `INSERT INTO ${table} (id, payload, base_payload, created_at, updated_at, synced_at, is_deleted, sync_status, revision, change_sequence)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, base_payload = excluded.base_payload, created_at = excluded.created_at,
                    updated_at = excluded.updated_at, synced_at = excluded.synced_at,
                    is_deleted = excluded.is_deleted, sync_status = excluded.sync_status,
                    revision = excluded.revision, change_sequence = excluded.change_sequence`,
-                [row.id, row.payload, row.created_at, row.updated_at, row.synced_at, row.is_deleted, row.sync_status, row.revision, row.change_sequence],
+                [row.id, row.payload, row.base_payload, row.created_at, row.updated_at, row.synced_at, row.is_deleted, row.sync_status, row.revision, row.change_sequence],
               );
             }
           }
@@ -426,18 +433,62 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
     await database.execute(`UPDATE ${table} SET is_deleted = 1, updated_at = ?, sync_status = 'deleted' WHERE is_deleted = 0 AND ${filter}`, [timestamp, ...ids]);
   }
 
+  private async reconcileEquivalentConflicts(database: Database): Promise<void> {
+    const rows = await database.select<Array<{
+      id: string; entity_type: string; entity_id: string; local_payload: string; remote_payload: string;
+      local_is_deleted: number; remote_is_deleted: number; remote_updated_at: string;
+    }>>(`SELECT id, entity_type, entity_id, local_payload, remote_payload, local_is_deleted, remote_is_deleted, remote_updated_at
+         FROM sync_conflicts WHERE resolved_at IS NULL ORDER BY detected_at DESC`);
+    for (const conflict of rows) {
+      if (!SYNC_TABLES.includes(conflict.entity_type)) continue;
+      const localValue = parse<unknown>(conflict.local_payload);
+      const remoteValue = parse<unknown>(conflict.remote_payload);
+      const current = await database.select<Array<{ payload: string; is_deleted: number; sync_status: SyncStatus }>>(
+        `SELECT payload, is_deleted, sync_status FROM ${conflict.entity_type} WHERE id = ?`, [conflict.entity_id],
+      );
+      const currentValue = current[0] ? parse<unknown>(current[0].payload) : null;
+      if (current[0]?.sync_status === 'synced' && currentValue !== null
+          && localValue !== null && remoteValue !== null
+          && (jsonValuesEqual(currentValue, localValue) || jsonValuesEqual(currentValue, remoteValue))) {
+        await database.execute(`UPDATE sync_conflicts SET resolved_at = ?, resolution = 'superseded' WHERE id = ?`, [now(), conflict.id]);
+        continue;
+      }
+      if (localValue === null || remoteValue === null || !jsonValuesEqual(localValue, remoteValue)) continue;
+      const appendOnlyAudit = conflict.entity_type === 'audit_events';
+      const sameDeletion = Boolean(conflict.local_is_deleted) === Boolean(conflict.remote_is_deleted);
+      if (!appendOnlyAudit && !sameDeletion) continue;
+      if (current[0]?.sync_status === 'conflict' && currentValue !== null && jsonValuesEqual(currentValue, localValue)) {
+        const shouldPushActiveAudit = appendOnlyAudit && Boolean(conflict.remote_is_deleted);
+        await database.execute(
+          `UPDATE ${conflict.entity_type} SET base_payload = ?, is_deleted = ?, sync_status = ?, synced_at = ? WHERE id = ?`,
+          [conflict.remote_payload, appendOnlyAudit ? 0 : conflict.remote_is_deleted, shouldPushActiveAudit ? 'updated' : 'synced', conflict.remote_updated_at, conflict.entity_id],
+        );
+      }
+      await database.execute(
+        `UPDATE sync_conflicts SET resolved_at = ?, resolution = ? WHERE id = ?`, [now(), appendOnlyAudit ? 'append-only' : 'identical', conflict.id],
+      );
+    }
+  }
+
+  private async resolveArchivedConflicts(database: Database, entityType: string, entityId: string, resolution: string): Promise<void> {
+    await database.execute(
+      `UPDATE sync_conflicts SET resolved_at = ?, resolution = ? WHERE entity_type = ? AND entity_id = ? AND resolved_at IS NULL`,
+      [now(), resolution, entityType, entityId],
+    );
+  }
+
   async getPendingSyncRecords(limit: number): Promise<SyncRecord[]> {
     return this.serializeWrite(async () => {
       const database = await this.db();
       const rows = (await Promise.all(SYNC_TABLES.map((table) => database.select<SyncRow[]>(
-        `SELECT id, payload, created_at, updated_at, synced_at, is_deleted, sync_status, revision, change_sequence FROM ${table}
+        `SELECT id, payload, base_payload, created_at, updated_at, synced_at, is_deleted, sync_status, revision, change_sequence FROM ${table}
          WHERE sync_status IN ('created', 'updated', 'deleted') ORDER BY updated_at ASC LIMIT ?`, [limit],
       ).then((items) => items.map((item) => ({ ...item, entityType: table })))))).flat()
         .sort((a, b) => a.updated_at.localeCompare(b.updated_at)).slice(0, limit);
       return rows.map((row) => ({
         entityType: row.entityType, id: row.id, payload: row.payload,
         createdAt: row.created_at, updatedAt: row.updated_at, syncedAt: row.synced_at,
-        isDeleted: Boolean(row.is_deleted), syncStatus: row.sync_status, revision: Number(row.revision), changeSequence: Number(row.change_sequence),
+        isDeleted: Boolean(row.is_deleted), syncStatus: row.sync_status, revision: Number(row.revision), changeSequence: Number(row.change_sequence), basePayload: row.base_payload,
       }));
     });
   }
@@ -451,10 +502,11 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
           `UPDATE ${record.entityType}
               SET revision = ?,
                   change_sequence = ?,
+                  base_payload = ?,
                   sync_status = CASE WHEN updated_at = ? THEN 'synced' ELSE sync_status END,
                   synced_at = CASE WHEN updated_at = ? THEN ? ELSE synced_at END
             WHERE id = ?`,
-          [record.revision, record.changeSequence, record.updatedAt, record.updatedAt, syncedAt, record.id],
+          [record.revision, record.changeSequence, record.payload, record.updatedAt, record.updatedAt, syncedAt, record.id],
         );
       }
       } catch (error) { throw error; }
@@ -468,26 +520,64 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
       try {
       for (const record of records) {
         if (!SYNC_TABLES.includes(record.entityType)) continue;
-        const local = await database.select<Pick<SyncRow, 'payload' | 'updated_at' | 'sync_status' | 'is_deleted' | 'revision'>[]>(
-          `SELECT payload, updated_at, sync_status, is_deleted, revision FROM ${record.entityType} WHERE id = ?`, [record.id],
+        const local = await database.select<Pick<SyncRow, 'payload' | 'base_payload' | 'updated_at' | 'sync_status' | 'is_deleted' | 'revision'>[]>(
+          `SELECT payload, base_payload, updated_at, sync_status, is_deleted, revision FROM ${record.entityType} WHERE id = ?`, [record.id],
         );
         if (local[0] && Number(local[0].revision) > record.revision) continue;
         const localPending = local[0] && ['created', 'updated', 'deleted', 'conflict'].includes(local[0].sync_status);
-        const contentDiffers = local[0] && (local[0].payload !== record.payload || Boolean(local[0].is_deleted) !== record.isDeleted);
+        const localPayload = local[0] ? parse<unknown>(local[0].payload) : null;
+        const remotePayload = parse<unknown>(record.payload);
+        const payloadsEqual = localPayload !== null && remotePayload !== null && jsonValuesEqual(localPayload, remotePayload);
+        const contentDiffers = local[0] && (!payloadsEqual || Boolean(local[0].is_deleted) !== record.isDeleted);
+        if (localPending && record.entityType === 'audit_events' && payloadsEqual) {
+          const shouldPushActive = record.isDeleted;
+          await database.execute(
+            `UPDATE audit_events SET base_payload = ?, is_deleted = 0, revision = ?, change_sequence = ?, synced_at = ?, sync_status = ? WHERE id = ?`,
+            [record.payload, record.revision, record.changeSequence, record.syncedAt || record.updatedAt, shouldPushActive ? 'updated' : 'synced', record.id],
+          );
+          await this.resolveArchivedConflicts(database, record.entityType, record.id, 'append-only');
+          continue;
+        }
+        if (localPending && !contentDiffers) {
+          await database.execute(
+            `UPDATE ${record.entityType} SET base_payload = ?, revision = ?, change_sequence = ?, synced_at = ?, sync_status = 'synced' WHERE id = ?`,
+            [record.payload, record.revision, record.changeSequence, record.syncedAt || record.updatedAt, record.id],
+          );
+          await this.resolveArchivedConflicts(database, record.entityType, record.id, 'identical');
+          continue;
+        }
         if (localPending && contentDiffers) {
           const mergedCalendar = record.entityType === 'calendar_events' && !local[0].is_deleted && !record.isDeleted
             ? mergeCalendarCompletion(local[0].payload, record.payload) : null;
           if (mergedCalendar) {
             await database.execute(
-              `UPDATE calendar_events SET payload = ?, revision = ?, change_sequence = ?, updated_at = ?, sync_status = 'updated' WHERE id = ?`,
-              [mergedCalendar, record.revision, record.changeSequence, now(), record.id],
+              `UPDATE calendar_events SET payload = ?, base_payload = ?, revision = ?, change_sequence = ?, updated_at = ?, sync_status = 'updated' WHERE id = ?`,
+              [mergedCalendar, record.payload, record.revision, record.changeSequence, now(), record.id],
             );
+            await this.resolveArchivedConflicts(database, record.entityType, record.id, 'auto-merged');
             continue;
+          }
+          let conflictLocalPayload = local[0].payload;
+          let conflictRemotePayload = record.payload;
+          if (!local[0].is_deleted && !record.isDeleted && local[0].base_payload) {
+            const merge = mergeJsonPayloads(local[0].base_payload, local[0].payload, record.payload);
+            if (merge && !merge.conflictPaths.length) {
+              await database.execute(
+                `UPDATE ${record.entityType} SET payload = ?, base_payload = ?, revision = ?, change_sequence = ?, updated_at = ?, sync_status = 'updated' WHERE id = ?`,
+                [JSON.stringify(merge.merged), record.payload, record.revision, record.changeSequence, now(), record.id],
+              );
+              await this.resolveArchivedConflicts(database, record.entityType, record.id, 'auto-merged');
+              continue;
+            }
+            if (merge) {
+              conflictLocalPayload = JSON.stringify(merge.localCandidate);
+              conflictRemotePayload = JSON.stringify(merge.remoteCandidate);
+            }
           }
           const conflict: SyncConflict = {
             id: `${record.entityType}|${record.id}|${record.updatedAt}`,
             entityType: record.entityType, entityId: record.id,
-            localPayload: local[0].payload, remotePayload: record.payload,
+            localPayload: conflictLocalPayload, remotePayload: conflictRemotePayload,
             localIsDeleted: Boolean(local[0].is_deleted), remoteIsDeleted: record.isDeleted,
             localUpdatedAt: local[0].updated_at, remoteUpdatedAt: record.updatedAt,
             detectedAt: now(),
@@ -497,18 +587,18 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [conflict.id, conflict.entityType, conflict.entityId, conflict.localPayload, conflict.remotePayload, conflict.localIsDeleted ? 1 : 0, conflict.remoteIsDeleted ? 1 : 0, conflict.localUpdatedAt, conflict.remoteUpdatedAt, conflict.detectedAt],
           );
-          await database.execute(`UPDATE ${record.entityType} SET sync_status = 'conflict', revision = ?, change_sequence = ? WHERE id = ?`, [record.revision, record.changeSequence, record.id]);
+          await database.execute(`UPDATE ${record.entityType} SET payload = ?, base_payload = ?, sync_status = 'conflict', revision = ?, change_sequence = ? WHERE id = ?`, [conflictLocalPayload, record.payload, record.revision, record.changeSequence, record.id]);
           conflicts.push(conflict);
           continue;
         }
         await database.execute(
-          `INSERT INTO ${record.entityType} (id, payload, created_at, updated_at, synced_at, is_deleted, sync_status, revision, change_sequence)
-           VALUES (?, ?, ?, ?, ?, ?, 'synced', ?, ?)
-           ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, created_at = excluded.created_at,
+          `INSERT INTO ${record.entityType} (id, payload, base_payload, created_at, updated_at, synced_at, is_deleted, sync_status, revision, change_sequence)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'synced', ?, ?)
+           ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, base_payload = excluded.base_payload, created_at = excluded.created_at,
               updated_at = excluded.updated_at, synced_at = excluded.synced_at,
               is_deleted = excluded.is_deleted, sync_status = 'synced', revision = excluded.revision,
               change_sequence = excluded.change_sequence`,
-          [record.id, record.payload, record.createdAt, record.updatedAt, record.syncedAt || record.updatedAt, record.isDeleted ? 1 : 0, record.revision, record.changeSequence],
+          [record.id, record.payload, record.payload, record.createdAt, record.updatedAt, record.syncedAt || record.updatedAt, record.isDeleted ? 1 : 0, record.revision, record.changeSequence],
         );
       }
       } catch (error) { throw error; }
@@ -572,10 +662,23 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
       const conflict = rows[0];
       if (!conflict || !SYNC_TABLES.includes(conflict.entity_type)) return false;
       if (resolution === 'remote') {
-        await database.execute(
-          `UPDATE ${conflict.entity_type} SET payload = ?, updated_at = ?, synced_at = ?, is_deleted = ?, sync_status = 'synced' WHERE id = ?`,
-          [conflict.remote_payload, conflict.remote_updated_at, conflict.remote_updated_at, conflict.remote_is_deleted, conflict.entity_id],
+        const chosen = parse<unknown>(conflict.remote_payload);
+        const baseRows = await database.select<Array<{ base_payload: string | null }>>(
+          `SELECT base_payload FROM ${conflict.entity_type} WHERE id = ?`, [conflict.entity_id],
         );
+        const base = baseRows[0]?.base_payload ? parse<unknown>(baseRows[0].base_payload) : null;
+        const needsPush = chosen === null || base === null || !jsonValuesEqual(chosen, base);
+        if (needsPush) {
+          await database.execute(
+            `UPDATE ${conflict.entity_type} SET payload = ?, updated_at = ?, is_deleted = ?, sync_status = 'updated' WHERE id = ?`,
+            [conflict.remote_payload, now(), conflict.remote_is_deleted, conflict.entity_id],
+          );
+        } else {
+          await database.execute(
+            `UPDATE ${conflict.entity_type} SET payload = ?, updated_at = ?, synced_at = ?, is_deleted = ?, sync_status = 'synced' WHERE id = ?`,
+            [conflict.remote_payload, conflict.remote_updated_at, conflict.remote_updated_at, conflict.remote_is_deleted, conflict.entity_id],
+          );
+        }
       } else {
         await database.execute(
           `UPDATE ${conflict.entity_type} SET updated_at = ?, sync_status = 'updated' WHERE id = ?`,

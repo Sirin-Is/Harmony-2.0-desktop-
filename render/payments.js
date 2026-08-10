@@ -17,7 +17,7 @@ const monthsFor = (workingYear) => Array.from({ length: 12 }, (_, index) => ({
 export const STICKY_COLUMNS_WIDTH = 190 + 125;
 
 function amountInput(item, monthKey, type) {
-  const value = getMonthlyCellValue(item.id, monthKey, type) ?? '-';
+  const value = getMonthlyCellValue(item.id, monthKey, type) ?? '';
   const typeLabel = type === 'charged' ? 'Нараховано' : 'Сплачено';
   return `<td><input class="month-value" inputmode="decimal" data-client="${escapeHtml(item.id)}" data-month="${escapeHtml(monthKey)}" data-type="${escapeHtml(type)}" value="${escapeHtml(value)}" aria-label="${typeLabel}, ${escapeHtml(monthKey)}, ${escapeHtml(item.name)}"></td>`;
 }
@@ -42,7 +42,7 @@ export function renderPayments() {
   const body = rows.length
     ? rows.join('')
     : `<tr><td colspan="${2 + months.length * 2}">${empty('Додайте ФОП на сторінці «Огляд».')}</td></tr>`;
-  return `<div class="toolbar"><p class="note">Для кожного ФОП — нараховано і сплачено по місяцях ${workingYear} року. Вкажіть суму або «-». Зміни зберігаються після виходу з поля.</p></div><div class="subnav">${[1,2,3,4].map((quarter) => `<button class="tab ${quarter === uiState.paymentsQuarter ? 'active' : ''}" data-payments-quarter="${quarter}">${quarter} квартал</button>`).join('')}</div>
+  return `<div class="toolbar"><p class="note">Для кожного ФОП — нараховано і сплачено по місяцях ${workingYear} року. Порожнє поле означає, що суму ще не внесено. Зміни зберігаються після виходу з поля.</p></div><div class="subnav">${[1,2,3,4].map((quarter) => `<button class="tab ${quarter === uiState.paymentsQuarter ? 'active' : ''}" data-payments-quarter="${quarter}">${quarter} квартал</button>`).join('')}</div>
     <div class="table-wrap payments-matrix">
       <table class="table">
         <thead>

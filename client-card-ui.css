@@ -54,7 +54,8 @@
 .cc-kved-name { width: 100%; min-height: 30px !important; overflow: hidden; resize: none !important; line-height: 1.25; padding: 5px 7px !important; }
 .cc-kved-pair.is-primary .cc-kved-name, .cc-kved-pair.is-primary .cc-kved-code { font-weight: 700; }
 .cc-kved-display { min-height: 36px; display: flex; align-items: center; padding: 8px 10px; border-radius: 6px; background: #f4fbf7; color: #176b58; font-weight: 700; border: 1px solid #cfe9dc; }
-.cc-kved-add-btn, .cc-kved-import-btn, .cc-acc-import-btn { margin-top: 8px; }
+.cc-kved-add-btn, .cc-kved-import-btn, .cc-acc-import-btn { margin-top: 0; }
+.cc-inline-actions { align-items: center; }
 .cc-inline-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .cc-employees-block { margin-top: 12px; }
 .cc-employees-block > label { display: block; margin-bottom: 6px; }

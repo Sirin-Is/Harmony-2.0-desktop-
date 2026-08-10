@@ -17,15 +17,44 @@ const COMPRESSED = [
 ];
 
 let reference = { kved: [], nace: [], mapping: [] };
+let loadError = '';
+
+export function normalizeActivityCode(value) {
+  const compact = String(value || '').trim().replace(/\s+/g, '').replace(',', '.');
+  const match = compact.match(/^(\d{1,2})(?:\.(\d{1,2}))?$/);
+  if (!match) return compact.toLocaleUpperCase('uk-UA');
+  return `${match[1].padStart(2, '0')}${match[2] ? `.${match[2].padEnd(2, '0')}` : ''}`;
+}
+
+export function findActivityByCode(kind, code) {
+  const normalized = normalizeActivityCode(code);
+  return (reference[kind] || []).find((row) => normalizeActivityCode(row[0]) === normalized) || null;
+}
+
+export const getActivityReferenceStatus = () => ({ loaded: Boolean(reference.kved.length && reference.nace.length), error: loadError });
+
+export function applyActivityReferenceOverrides(overrides = {}) {
+  ['kved', 'nace'].forEach((kind) => {
+    if (Array.isArray(overrides[kind]) && overrides[kind].length) reference[kind] = overrides[kind];
+  });
+  return reference;
+}
 
 export async function loadActivityReference() {
   if (reference.kved.length || !COMPRESSED.length) return reference;
-  const encoded = COMPRESSED.join('');
-  const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-  const raw = JSON.parse(await new Response(stream).text());
-  reference = { kved: raw.k || [], nace: raw.n || [], mapping: raw.m || [] };
-  return reference;
+  try {
+    if (typeof DecompressionStream !== 'function') throw new Error('WebView не підтримує розпакування вбудованого довідника');
+    const encoded = COMPRESSED.join('');
+    const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    const raw = JSON.parse(await new Response(stream).text());
+    reference = { kved: raw.k || [], nace: raw.n || [], mapping: raw.m || [] };
+    loadError = '';
+    return reference;
+  } catch (error) {
+    loadError = error instanceof Error ? error.message : String(error);
+    throw error;
+  }
 }
 
 export const getActivityReference = () => reference;

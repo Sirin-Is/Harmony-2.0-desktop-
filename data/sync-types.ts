@@ -13,6 +13,8 @@ export interface SyncRecord {
   revision: number;
   /** Commit-ordered position of the last server change in this workspace. */
   changeSequence: number;
+  /** Last payload acknowledged by the server; used for field-level three-way merge. */
+  basePayload: string | null;
 }
 
 export interface SyncPushResult {

@@ -101,10 +101,9 @@ export function renderDashboard() {
       <div class="toolbar-actions">
         <label class="dashboard-search"><span class="visually-hidden">Швидкий пошук ФОП</span><input type="search" data-dashboard-search value="${escapeHtml(uiState.dashboardSearch || '')}" placeholder="Пошук ФОП…" autocomplete="off"></label>
         <span class="dashboard-result-count" aria-live="polite">${clients.length} із ${allClients.length}</span>
-        ${hasQuery ? `<button class="secondary compact-action" data-clear-dashboard-filters>Скинути${activeFilterCount ? ` (${activeFilterCount})` : ''}</button>` : ''}
+        ${activeFilterCount ? `<button class="secondary compact-action" data-clear-dashboard-filters>Скинути фільтри (${activeFilterCount})</button>` : ''}
         <button class="secondary" data-export-clients>Експорт</button>
         <button class="secondary" data-import-clients>Імпорт</button>
-        <button class="secondary" data-check-all-kved>Перевірити всі КВЕД</button>
         <input type="file" id="importFile" accept=".xlsx,.xls,.csv" hidden>
         <button class="primary" data-add-client>+ Додати ФОП</button>
       </div>

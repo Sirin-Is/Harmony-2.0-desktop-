@@ -16,6 +16,7 @@ import { openAppDialog } from './app-dialog.js';
 import { enhanceDateInputs } from './date-input.js';
 import { showToast } from './toast.js';
 import { validateKved, openKvedResults } from './kved-validation.js';
+import { findActivityByCode, normalizeActivityCode } from './data/activity-reference.js';
 import { validateClient } from './validation.js';
 import { readSpreadsheetRows } from './spreadsheet-security.js';
 
@@ -202,7 +203,8 @@ function readForm() {
     const index = Number(input.dataset.employeeIndex);
     // Keep the employee's persistent ID while the card is edited. Without it,
     // merely saving a card looks like deleting and recreating every employee.
-    items[index] = items[index] || { id: input.dataset.employeeId || uid(), name: '', position: '' };
+    const persistentId = input.dataset.employeeId || uid();
+    items[index] = items[index] || { ...(draft.employees || []).find((employee) => employee.id === persistentId), id: persistentId, name: '', position: '' };
     items[index][input.dataset.employeeField] = input.value.trim();
     return items;
   }, []).filter((item) => item.name || item.position);
@@ -257,6 +259,23 @@ function bindKved() {
       showToast(error.message || 'Не вдалося прочитати файл КВЕД.', 'error');
     } finally { event.target.value = ''; }
   });
+  const bindCodeLookup = (codeField, nameField) => {
+    if (!codeField || !nameField) return;
+    const updateName = () => {
+      const row = findActivityByCode('kved', codeField.value);
+      if (!row) return;
+      codeField.value = normalizeActivityCode(row[0]);
+      nameField.value = String(row[1] || '');
+      nameField.dispatchEvent(new Event('input'));
+    };
+    codeField.addEventListener('input', () => {
+      if (/^\d{2}\.\d{2}$/.test(codeField.value.trim())) updateName();
+    });
+    codeField.addEventListener('change', updateName);
+    codeField.addEventListener('blur', updateName);
+  };
+  bindCodeLookup(document.getElementById('cc_kvedMainCode'), document.getElementById('cc_kvedMainName'));
+  overlay.querySelectorAll('.cc-kved-code').forEach((codeField) => bindCodeLookup(codeField, codeField.closest('.cc-kved-pair')?.querySelector('.cc-kved-name')));
 }
 
 function bindAutoGrowingKvedNames() {

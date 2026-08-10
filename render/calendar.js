@@ -2,7 +2,8 @@ import { escapeHtml, MONTH_NAMES_UA } from '../utils';
 import { db, getCalendarEvents, getSettings } from '../state.js';
 import { uiState } from '../ui-state.js';
 import { calculatedTaxDeadline, statutoryTaxDeadline, taxPeriodsFor } from '../tax-model.ts';
-import { reportPeriodsFor, getDefaultReportDeadline, statutoryReportDeadline } from '../report-model.ts';
+import { annualPropertyIncomeDeclarationDeadline, reportPeriodsFor, getDefaultReportDeadline, statutoryReportDeadline } from '../report-model.ts';
+import { payrollDatesForPeriod } from '../payroll-model.js';
 
 const pad = (value) => String(value).padStart(2, '0');
 
@@ -20,7 +21,6 @@ function eventLabel(event) {
 }
 function isTaskComplete(event) { return event.recurring ? (event.completedDates || []).includes(event.occurrenceDate) : Boolean(event.completedAt); }
 function isSubtaskComplete(event, subtask) { return event.recurring ? (subtask.completedDates || []).includes(event.occurrenceDate) : Boolean(subtask.completedAt); }
-function previousWorkday(year, month, day) { const date = new Date(year, month - 1, day); if (date.getDay() === 6) date.setDate(date.getDate() - 1); if (date.getDay() === 0) date.setDate(date.getDate() - 2); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`; }
 function isoDate(date) { return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`; }
 function dateFromIso(value) { return /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? new Date(`${value}T00:00:00`) : null; }
 function previousWorkdayDate(date) { const adjusted = new Date(date); if (adjusted.getDay() === 6) adjusted.setDate(adjusted.getDate() - 1); if (adjusted.getDay() === 0) adjusted.setDate(adjusted.getDate() - 2); return adjusted; }
@@ -106,10 +106,16 @@ function derivedEvents(year, month) {
   reportPeriodsFor('3', year).forEach(({ key: period }) => { const deadline = getDefaultReportDeadline(db, '3', period);
     addDeadline({ id: `report-quarterly:${period}`, note: 'Квартальна звітність', source: 'report' }, statutoryReportDeadline('3', period), deadline);
   });
-  Array.from({ length: 12 }, (_, index) => index + 1).forEach((payMonth) => [7, 21].forEach((day) => {
-    const eventDate = previousWorkday(year, payMonth, day);
-    if (eventDate.startsWith(prefix)) events.push({ id: `salary:${payMonth}:${day}`, eventDate, note: 'День виплати зарплати', source: 'salary' });
-  }));
+  const propertyIncomeDeadline = annualPropertyIncomeDeclarationDeadline(year);
+  if (propertyIncomeDeadline.startsWith(prefix)) events.push({ id: `report-property-income:${year}`, eventDate: propertyIncomeDeadline, note: 'Декларація про майновий стан і доходи', source: 'report' });
+  Array.from({ length: 12 }, (_, index) => index + 1).forEach((payMonth) => {
+    const period = `${year}-${pad(payMonth)}`;
+    const dates = payrollDatesForPeriod(getSettings(), period);
+    [['secondHalf', 'Виплата зарплати за другу половину попереднього місяця'], ['firstHalf', 'Виплата зарплати за першу половину поточного місяця']].forEach(([part, note]) => {
+      const eventDate = dates[part];
+      if (eventDate?.startsWith(prefix)) events.push({ id: `salary:${period}:${part}`, eventDate, note, source: 'salary' });
+    });
+  });
   return events;
 }
 
@@ -121,7 +127,7 @@ function renderTasks(year, fallbackDate) {
   const date = uiState.calendarTaskDate || fallbackDate;
   const tasks = calendarTasksForDate(date);
   const weekday = ['Неділя', 'Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П’ятниця', 'Субота'][dateFromIso(date).getDay()];
-  return `<div class="calendar-sticky">${sectionTabs('tasks')}<div class="toolbar"><div class="toolbar-actions calendar-task-nav"><button class="secondary" data-calendar-task-prev aria-label="Попередній день">←</button><input class="calendar-task-date" type="date" value="${date}" aria-label="Обрати дату задач" data-calendar-task-date-picker><button class="secondary" data-calendar-task-next aria-label="Наступний день">→</button></div></div><p class="calendar-task-day">${weekday}</p></div>
+  return `<div class="calendar-sticky">${sectionTabs('tasks')}<div class="toolbar"><div class="toolbar-actions calendar-task-nav"><button class="secondary" data-calendar-task-prev aria-label="Попередній день">←</button><input class="calendar-task-date" type="date" value="${date}" aria-label="Обрати дату задач" data-calendar-task-date-picker><button class="secondary" data-calendar-task-next aria-label="Наступний день">→</button><button class="secondary" data-calendar-today>Сьогодні</button></div></div><p class="calendar-task-day">${weekday}</p></div>
     <div class="task-list">${tasks.length ? tasks.map((event) => {
       const completed = isTaskComplete(event);
       const subtasks = event.subtasks || [];
@@ -150,6 +156,6 @@ export function renderCalendar() {
     const weekend = new Date(year, month - 1, day).getDay() % 6 === 0;
     cells.push(`<div class="calendar-cell${date === today ? ' today' : ''}${weekend ? ' weekend' : ''}" data-calendar-day="${escapeHtml(date)}" role="button" tabindex="0"><strong>${day}</strong>${dayEvents.map((item) => { const eventId = escapeHtml(item.seriesId || item.id); return `<div class="calendar-event-row"><button class="calendar-event ${escapeHtml(item.source || 'note')}${item.transferRole ? ` deadline-${item.transferRole}` : ''}" data-calendar-event="${eventId}" data-calendar-occurrence="${escapeHtml(item.occurrenceDate || item.eventDate)}" data-calendar-target="${escapeHtml(item.target || '')}" data-transfer-id="${escapeHtml(item.transferId || '')}" data-transfer-role="${escapeHtml(item.transferRole || '')}" title="${escapeHtml(item.note)}">${item.eventTime ? `${escapeHtml(item.eventTime)} ` : ''}${item.recurring ? '↻ ' : ''}${escapeHtml(eventLabel(item))}</button>${item.source ? '' : `<button class="icon calendar-delete" data-delete-note="${eventId}" data-delete-note-recurring="${item.recurring ? 'true' : ''}" title="Видалити ${item.recurring ? 'всю серію задач' : 'задачу'}">×</button>`}</div>`; }).join('')}</div>`);
   }
-  return `<div class="calendar-sticky">${sectionTabs(section)}<div class="toolbar"><div class="toolbar-actions"><button class="secondary" data-calendar-prev>←</button><strong class="calendar-period">${MONTH_NAMES_UA[month - 1]} ${year}</strong><button class="secondary" data-calendar-next>→</button></div></div></div>
+  return `<div class="calendar-sticky">${sectionTabs(section)}<div class="toolbar"><div class="toolbar-actions"><button class="secondary" data-calendar-prev>←</button><strong class="calendar-period">${MONTH_NAMES_UA[month - 1]} ${year}</strong><button class="secondary" data-calendar-next>→</button><button class="secondary" data-calendar-today>Сьогодні</button></div></div></div>
     <div class="calendar-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Нд</span></div><div class="calendar-grid">${cells.join('')}<svg class="calendar-transfer-layer" aria-hidden="true"></svg></div>`;
 }
