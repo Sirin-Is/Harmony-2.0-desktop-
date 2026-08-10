@@ -24,7 +24,16 @@ export function showToast(message, type = 'info', duration = 4000) {
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
   toast.textContent = message;
+  toast.setAttribute('role', ['error', 'warn'].includes(type) ? 'alert' : 'status');
+  toast.setAttribute('aria-atomic', 'true');
+  toast.tabIndex = 0;
+  toast.title = 'Натисніть, щоб закрити';
   toast.addEventListener('click', () => toast.remove());
+  toast.addEventListener('keydown', (event) => {
+    if (!['Enter', ' ', 'Escape'].includes(event.key)) return;
+    event.preventDefault();
+    toast.remove();
+  });
   root.appendChild(toast);
   if (duration > 0) {
     setTimeout(() => toast.remove(), duration);

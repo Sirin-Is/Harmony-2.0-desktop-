@@ -47,6 +47,7 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, passwordPolicyError } from '.
 import { check } from '@tauri-apps/plugin-updater';
 import { getLocalStorageProtection } from './local-storage-protection.ts';
 import { assertBackupFileSize, createEncryptedBackup, decryptBackup, isEncryptedBackup, validateBackupDatabase } from './backup-crypto.js';
+import { payrollPaymentTypes } from './payroll-model.js';
 
 const TITLES = {
   overview: ['Огляд', 'Зведення зауважень по розділах'],
@@ -61,7 +62,7 @@ const TITLES = {
   audit: ['Журнал подій', 'Історія змін і відкат'],
   inactive: ['Неактивні', 'Приховані ФОП'],
   deleted: ['Видалені', 'Кошик — відновлення ФОП'],
-  settings: ['Налаштування', 'МЗП і дедлайни сплати податків'],
+  settings: ['Налаштування', 'Налаштування'],
 };
 
 const VIEWS = {
@@ -79,6 +80,7 @@ const VIEWS = {
   deleted: renderDeleted,
   settings: renderSettings,
 };
+let focusHeadingAfterRender = false;
 
 function showBootOverlay(visible) {
   const el = document.getElementById('bootOverlay');
@@ -108,8 +110,21 @@ function resetPrivateUiState() {
   uiState.pendingHighlightClientId = null;
   uiState.deletedSectionUnlocked = false;
   uiState.dashboardFilters = {};
+  uiState.dashboardSearch = '';
   uiState.dashboardFilterOpen = null;
   uiState.view = 'overview';
+}
+
+function setAuthButtonLabel(label) {
+  const button = $('#authBtn');
+  const text = String(label || 'Вийти');
+  const labelNode = button?.querySelector('.side-action-label');
+  if (labelNode) labelNode.textContent = text;
+  else if (button) button.textContent = text;
+  if (button) {
+    button.setAttribute('aria-label', text);
+    button.title = text;
+  }
 }
 
 /** Make the unauthenticated DOM an inert, data-free login surface. */
@@ -127,8 +142,9 @@ function setAuthenticatedUi(authenticated) {
   closeModal();
   clearToasts();
   $('#content').replaceChildren();
+  document.title = 'Harmony';
   $('#userIdentity').textContent = 'CRM для бухгалтера ФОП';
-  $('#authBtn').textContent = 'Вийти';
+  setAuthButtonLabel('Вийти');
   resetPrivateUiState();
   $('#authForm').reset();
   requestAnimationFrame(() => $('#authLogin')?.focus());
@@ -171,7 +187,15 @@ export function render() {
   const [crumb, title] = TITLES[uiState.view];
   $('#crumb').textContent = crumb;
   $('#title').textContent = title;
+  document.title = `${title} — Harmony`;
+  document.querySelectorAll('#nav button').forEach((item) => {
+    const current = item.dataset.view === uiState.view;
+    item.classList.toggle('active', current);
+    if (current) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
+  });
   $('#content').innerHTML = VIEWS[uiState.view]();
+  document.querySelectorAll('#content .tab').forEach((tab) => tab.setAttribute('aria-pressed', String(tab.classList.contains('active'))));
   bindCurrentView();
   enhanceDateInputs($('#content'));
   applyAppearance();
@@ -179,6 +203,12 @@ export function render() {
   requestAnimationFrame(() => {
     setupTopScrollbars();
     if (uiState.view === 'payments') positionPaymentsTable();
+    if (uiState.view === 'dashboard') positionDashboardFilterMenu();
+    if (uiState.view === 'calendar') drawCalendarDeadlineTransfers();
+    if (focusHeadingAfterRender) {
+      focusHeadingAfterRender = false;
+      $('#title')?.focus({ preventScroll: true });
+    }
     if (uiState.pendingHighlightClientId) {
       const targetId = uiState.pendingHighlightClientId;
       uiState.pendingHighlightClientId = null;
@@ -193,14 +223,47 @@ export function render() {
   });
 }
 
+function positionDashboardFilterMenu() {
+  const menu = document.querySelector('[data-dashboard-filter-menu]');
+  const trigger = document.querySelector(`[data-dashboard-filter="${CSS.escape(uiState.dashboardFilterOpen || '')}"]`);
+  if (!menu || !trigger) return;
+  const rect = trigger.getBoundingClientRect();
+  const width = menu.offsetWidth || 230;
+  menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))}px`;
+  menu.style.top = `${Math.min(rect.bottom + 5, window.innerHeight - menu.offsetHeight - 8)}px`;
+}
+
+function drawCalendarDeadlineTransfers() {
+  const grid = document.querySelector('.calendar-grid');
+  const layer = grid?.querySelector('.calendar-transfer-layer');
+  if (!grid || !layer) return;
+  const gridRect = grid.getBoundingClientRect();
+  layer.setAttribute('viewBox', `0 0 ${gridRect.width} ${gridRect.height}`);
+  layer.innerHTML = '<defs><marker id="deadline-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z"></path></marker></defs>';
+  const ids = new Set([...grid.querySelectorAll('[data-transfer-role="statutory"]')].map((item) => item.dataset.transferId));
+  ids.forEach((id) => {
+    const statutory = grid.querySelector(`[data-transfer-id="${CSS.escape(id)}"][data-transfer-role="statutory"]`)?.closest('.calendar-cell');
+    const control = grid.querySelector(`[data-transfer-id="${CSS.escape(id)}"][data-transfer-role="control"]`)?.closest('.calendar-cell');
+    if (!statutory || !control) return;
+    const from = statutory.getBoundingClientRect(); const to = control.getBoundingClientRect();
+    const x1 = from.left - gridRect.left + 8; const x2 = to.right - gridRect.left - 8;
+    const y1 = from.top - gridRect.top + 20; const y2 = to.top - gridRect.top + 20;
+    const curveY = Math.max(4, Math.min(y1, y2) - 13);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M ${x1} ${y1} C ${x1} ${curveY}, ${x2} ${curveY}, ${x2} ${y2}`);
+    path.setAttribute('marker-end', 'url(#deadline-arrow)');
+    layer.appendChild(path);
+  });
+}
+
 function applyRoleAccess() {
   const observer = uiState.currentUser?.role === 'observer';
   document.body.classList.toggle('observer-mode', observer);
   $('#quickNote').hidden = observer;
-  $('#exportBtn').hidden = observer;
   if (!observer) return;
-  document.querySelectorAll('#content input, #content select, #content textarea').forEach((field) => { field.disabled = true; });
+  document.querySelectorAll('#content input:not([data-dashboard-search]), #content select, #content textarea').forEach((field) => { field.disabled = true; });
   document.querySelectorAll('#content button.primary, #content button.danger, #content .icon, #content [data-export-clients], #content [data-import-clients]').forEach((button) => { button.disabled = true; });
+  document.querySelectorAll('#content [data-drag-handle]').forEach((handle) => { handle.tabIndex = -1; handle.setAttribute('aria-disabled', 'true'); });
 }
 
 function applyAppearance(appearance = getSettings()?.appearance || { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 }, target = document.documentElement) {
@@ -215,7 +278,7 @@ function setView(view) {
   if (!uiState.currentUser || !db) return;
   if (view === 'deleted' && !uiState.deletedSectionUnlocked) return;
   uiState.view = view;
-  document.querySelectorAll('#nav button').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
+  focusHeadingAfterRender = true;
   render();
 }
 
@@ -252,7 +315,8 @@ async function openNoteEditor(existing = null) {
     moveToPreviousWorkday: result.workdayShift === 'Перенести на попередній робочий день',
   } : undefined;
   const workdayShift = result.workdayShift === 'Перенести на попередній робочий день' ? 'previous' : result.workdayShift === 'Перенести на наступний робочий день' ? 'next' : undefined;
-  saveCalendarEvent({ eventDate: result.date, eventTime: result.time || '', title: result.title, note: result.note, clientId, recurrence: savedRecurrence, workdayShift, completedAt: existing?.completedAt || '', completedDates: existing?.completedDates || [] }, existing?.id);
+  const saved = saveCalendarEvent({ eventDate: result.date, eventTime: result.time || '', title: result.title, note: result.note, clientId, recurrence: savedRecurrence, workdayShift, completedAt: existing?.completedAt || '', completedDates: existing?.completedDates || [] }, existing?.id);
+  if (!saved) { showToast('Перевірте дату, час та діапазон повторення задачі.', 'error'); return; }
   render();
 }
 
@@ -281,15 +345,22 @@ function bindCurrentView() {
   }));
   document.querySelector('[data-calendar-prev]')?.addEventListener('click', () => { uiState.calendarMonth = uiState.calendarMonth === 1 ? 12 : uiState.calendarMonth - 1; render(); });
   document.querySelector('[data-calendar-next]')?.addEventListener('click', () => { uiState.calendarMonth = uiState.calendarMonth === 12 ? 1 : uiState.calendarMonth + 1; render(); });
-  document.querySelectorAll('[data-calendar-day]').forEach((cell) => cell.addEventListener('click', () => { uiState.calendarTaskDate = cell.dataset.calendarDay; uiState.calendarSection = 'tasks'; render(); }));
+  document.querySelectorAll('[data-calendar-day]').forEach((cell) => {
+    const openDay = () => { uiState.calendarTaskDate = cell.dataset.calendarDay; uiState.calendarSection = 'tasks'; render(); };
+    cell.addEventListener('click', openDay);
+    cell.addEventListener('keydown', (event) => {
+      if (!['Enter', ' '].includes(event.key)) return;
+      event.preventDefault();
+      openDay();
+    });
+  });
   document.querySelectorAll('[data-calendar-event]').forEach((button) => button.addEventListener('click', (event) => {
     event.stopPropagation();
     const target = button.dataset.calendarTarget;
     if (target) {
       const [, group, period] = target.split('|');
-      uiState.view = 'taxes'; uiState.taxGroup = group; uiState.taxPeriod = period;
-      document.querySelectorAll('#nav button').forEach((item) => item.classList.toggle('active', item.dataset.view === 'taxes'));
-      render(); return;
+      uiState.taxGroup = group; uiState.taxPeriod = period;
+      setView('taxes'); return;
     }
     const noteEvent = getCalendarEvents().find((item) => item.id === button.dataset.calendarEvent);
     if (noteEvent) openNoteViewer(noteEvent, button.dataset.calendarOccurrence);
@@ -348,37 +419,37 @@ function bindCurrentView() {
   document.querySelector('[data-payroll-next]')?.addEventListener('click', () => { if (uiState.payrollMonth < 12) { uiState.payrollMonth += 1; render(); } });
   document.querySelector('[data-add-payroll-client]')?.addEventListener('click', async () => {
     const clients = getVisibleClients().filter((client) => (client.employees || []).length);
-    const month = uiState.payrollMonth;
-    const monthNamesGenitive = ['січня', 'лютого', 'березня', 'квітня', 'травня', 'червня', 'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня'];
-    const previousMonth = monthNamesGenitive[month === 1 ? 11 : month - 2];
-    const currentMonth = monthNamesGenitive[month - 1];
-    const paymentTypes = [`Виплата за другу половину ${previousMonth}`, `Виплата за першу половину ${currentMonth}`, 'Звільнення', 'Відпустка', 'Лікарняні'];
+    const period = `${getSettings().workingYear}-${String(uiState.payrollMonth).padStart(2, '0')}`;
+    const paymentTypes = payrollPaymentTypes(period);
     const result = await openAppDialog({ title: 'Додати ФОП до виплати зарплати', fields: [{ key: 'client', label: 'ФОП', required: true, options: clients.map((client) => client.name) }, { key: 'paymentType', label: 'Тип виплати', type: 'select', required: true, value: paymentTypes[0], options: paymentTypes }], confirmText: 'Додати' });
     if (!result) return;
     const client = clients.find((item) => item.name === result.client);
     if (!client) { showToast('Оберіть ФОП зі списку.', 'error'); return; }
-    const period = `${getSettings().workingYear}-${String(uiState.payrollMonth).padStart(2, '0')}`;
     const added = addPayrollForClient(client.id, period, result.paymentType);
-    showToast(`Додано працівників: ${added}.`, 'success');
+    showToast(added ? `Додано працівників: ${added}.` : 'Усі працівники цього ФОП уже є у вибраній виплаті.', added ? 'success' : 'warn');
     render();
   });
   document.querySelector('[data-add-payroll-employee]')?.addEventListener('click', async () => {
     const choices = getVisibleClients().flatMap((client) => (client.employees || []).map((employee) => ({ client, employee, label: `${client.name} — ${employee.name}` })));
-    const month = uiState.payrollMonth;
-    const monthNamesGenitive = ['січня', 'лютого', 'березня', 'квітня', 'травня', 'червня', 'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня'];
-    const previousMonth = monthNamesGenitive[month === 1 ? 11 : month - 2];
-    const currentMonth = monthNamesGenitive[month - 1];
-    const paymentTypes = [`Виплата за другу половину ${previousMonth}`, `Виплата за першу половину ${currentMonth}`, 'Звільнення', 'Відпустка', 'Лікарняні'];
+    const period = `${getSettings().workingYear}-${String(uiState.payrollMonth).padStart(2, '0')}`;
+    const paymentTypes = payrollPaymentTypes(period);
     const result = await openAppDialog({ title: 'Додати працівника до виплати', fields: [{ key: 'employee', label: 'ФОП і працівник', required: true, options: choices.map((choice) => choice.label) }, { key: 'paymentType', label: 'Тип виплати', type: 'select', required: true, value: paymentTypes[0], options: paymentTypes }], confirmText: 'Додати' });
     if (!result) return;
     const choice = choices.find((item) => item.label === result.employee);
     if (!choice) { showToast('Оберіть працівника зі списку.', 'error'); return; }
-    const period = `${getSettings().workingYear}-${String(uiState.payrollMonth).padStart(2, '0')}`;
-    addPayrollEmployee(choice.client.id, choice.employee.id, period, result.paymentType);
-    showToast('Рядок працівника додано.', 'success');
+    const added = addPayrollEmployee(choice.client.id, choice.employee.id, period, result.paymentType);
+    showToast(added ? 'Рядок працівника додано.' : 'Цей працівник уже є у вибраній виплаті.', added ? 'success' : 'warn');
     render();
   });
-  document.querySelectorAll('[data-delete-payroll]').forEach((button) => button.addEventListener('click', () => {
+  document.querySelectorAll('[data-delete-payroll]').forEach((button) => button.addEventListener('click', async () => {
+    const amount = button.dataset.payrollAmount ? `\nСума виплати: ${button.dataset.payrollAmount} грн.` : '';
+    const result = await openAppDialog({
+      title: 'Видалити зарплатний рядок',
+      message: `${button.dataset.payrollEmployee || 'Працівник'}\n${button.dataset.payrollType || 'Виплата'}${amount}\n\nРядок буде видалено з обліку.`,
+      confirmText: 'Видалити',
+      danger: true,
+    });
+    if (!result) return;
     deletePayrollRecord(button.dataset.deletePayroll);
     render();
   }));
@@ -389,6 +460,7 @@ function bindCurrentView() {
     const parsed = new Date(`${iso}T00:00:00`);
     return parsed.getFullYear() === Number(`20${parts[3]}`) && parsed.getMonth() + 1 === Number(parts[2]) && parsed.getDate() === Number(parts[1]) ? iso : null;
   };
+  const invalidAmountMessage = 'Вкажіть невід’ємну суму в допустимому числовому форматі.';
   const savePayrollDate = (field, iso) => { setPayrollField(field.dataset.payrollId, 'paymentDate', iso); render(); };
   document.querySelectorAll('.payroll-date-field').forEach((field) => field.addEventListener('input', () => {
     const digitPosition = field.value.slice(0, field.selectionStart || 0).replace(/\D/g, '').length;
@@ -416,7 +488,10 @@ function bindCurrentView() {
       if (value && !iso) { showToast('Вкажіть дату у форматі дд.мм.рр.', 'error'); return; }
       value = iso;
     }
-    setPayrollField(field.dataset.payrollId, field.dataset.payrollField, value); render();
+    if (!setPayrollField(field.dataset.payrollId, field.dataset.payrollField, value)) {
+      showToast(invalidAmountMessage, 'error');
+    }
+    render();
   }));
   document.querySelectorAll('[data-activities-section]').forEach((button) => button.addEventListener('click', () => { uiState.activitiesSection = button.dataset.activitiesSection; render(); }));
   document.querySelector('#auditSearch')?.addEventListener('input', (event) => {
@@ -471,7 +546,9 @@ function bindCurrentView() {
     const clientId = clients.find((client) => client.name === result.client)?.id;
     if (!clientId) { showToast('Оберіть ФОП зі списку.', 'error'); return; }
     const period = `${getSettings().workingYear}-${String(uiState.hrDocumentsMonth || 1).padStart(2, '0')}`;
-    saveHrOrder({ ...result, clientId, period }); render();
+    const saved = saveHrOrder({ ...result, clientId, period });
+    if (!saved) { showToast('Документ із таким номером уже є для цього ФОП або містить некоректні реквізити.', 'warn'); return; }
+    render();
   });
   document.querySelectorAll('[data-delete-hr-order]').forEach((button) => button.addEventListener('click', async () => {
     const result = await openAppDialog({ title: 'Видалити наказ', message: 'Наказ буде видалено з кадрового реєстру.', confirmText: 'Видалити', danger: true });
@@ -497,6 +574,19 @@ function bindCurrentView() {
   // --- Перетягування рядків (Картки клієнтів) ---
   const clientRows = [...document.querySelectorAll('[data-client-row]')];
   document.querySelectorAll('[data-drag-handle]').forEach((handle) => {
+    handle.addEventListener('keydown', (event) => {
+      if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+      const row = handle.closest('[data-client-row]');
+      const index = clientRows.indexOf(row);
+      const target = clientRows[index + (event.key === 'ArrowUp' ? -1 : 1)];
+      if (!row?.dataset.rowId || !target?.dataset.rowId) return;
+      event.preventDefault();
+      if (!reorderClients(row.dataset.rowId, target.dataset.rowId)) return;
+      const movedId = row.dataset.rowId;
+      render();
+      requestAnimationFrame(() => [...document.querySelectorAll('[data-client-row]')]
+        .find((item) => item.dataset.rowId === movedId)?.querySelector('[data-drag-handle]')?.focus());
+    });
     handle.addEventListener('pointerdown', (event) => {
       event.preventDefault();
       const row = handle.closest('[data-client-row]');
@@ -531,20 +621,20 @@ function bindCurrentView() {
   // --- Огляд: клік по зауваженню переносить у відповідний розділ ---
   document.querySelectorAll('[data-alert-section]').forEach((button) => button.onclick = () => {
     const section = button.dataset.alertSection;
-    uiState.view = section;
     if (section === 'taxes') { uiState.taxGroup = button.dataset.alertGroup; uiState.taxPeriod = button.dataset.alertPeriod; }
     if (section === 'reports') { uiState.reportGroup = button.dataset.alertGroup; uiState.reportPeriod = button.dataset.alertPeriod; }
     if (section === 'incomes') uiState.incomeGroup = button.dataset.alertGroup;
     uiState.pendingHighlightClientId = button.dataset.alertClient;
-    document.querySelectorAll('#nav button').forEach((item) => item.classList.toggle('active', item.dataset.view === section));
-    render();
+    setView(section);
   });
 
   // --- Податки ---
   document.querySelectorAll('[data-tax-group]').forEach((b) => b.onclick = () => { uiState.taxGroup = b.dataset.taxGroup; uiState.taxPeriod = null; render(); });
   document.querySelectorAll('[data-tax-period]').forEach((b) => b.onclick = () => { uiState.taxPeriod = b.dataset.taxPeriod; render(); });
   document.querySelectorAll('.tax-field').forEach((field) => field.addEventListener('change', () => {
-    setTaxField(field.dataset.client, field.dataset.realGroup, uiState.taxPeriod, field.dataset.tax, field.dataset.field, field.value);
+    if (!setTaxField(field.dataset.client, field.dataset.realGroup, uiState.taxPeriod, field.dataset.tax, field.dataset.field, field.value)) {
+      showToast('Перевірте дату: сплата не може передувати набору в банку.', 'error');
+    }
     render();
   }));
   $('[data-copy-previous-period]')?.addEventListener('click', () => {
@@ -565,21 +655,23 @@ function bindCurrentView() {
   document.querySelectorAll('[data-report-group]').forEach((b) => b.onclick = () => { uiState.reportGroup = b.dataset.reportGroup; uiState.reportPeriod = null; render(); });
   document.querySelectorAll('[data-report-period]').forEach((b) => b.onclick = () => { uiState.reportPeriod = b.dataset.reportPeriod; render(); });
   document.querySelectorAll('.report-field').forEach((field) => field.addEventListener('change', () => {
-    setReportField(field.dataset.client, field.dataset.realGroup, uiState.reportPeriod, field.dataset.field, field.value);
+    if (!setReportField(field.dataset.client, field.dataset.realGroup, uiState.reportPeriod, field.dataset.field, field.value)) {
+      showToast('Вкажіть коректне значення звітності.', 'error');
+    }
     render();
   }));
 
   // --- Доходи ---
   document.querySelectorAll('[data-income-group]').forEach((b) => b.onclick = () => { uiState.incomeGroup = b.dataset.incomeGroup; render(); });
   document.querySelectorAll('.income-value').forEach((field) => field.addEventListener('change', () => {
-    setIncomeValue(field.dataset.client, field.dataset.month, field.value);
+    if (!setIncomeValue(field.dataset.client, field.dataset.month, field.value)) showToast(invalidAmountMessage, 'error');
     render();
   }));
 
   // --- Оплати ---
   document.querySelectorAll('[data-payments-quarter]').forEach((button) => button.addEventListener('click', () => { uiState.paymentsQuarter = Number(button.dataset.paymentsQuarter); render(); }));
   document.querySelectorAll('.month-value').forEach((field) => field.addEventListener('change', () => {
-    setMonthlyPaymentField(field.dataset.client, field.dataset.month, field.dataset.type, field.value);
+    if (!setMonthlyPaymentField(field.dataset.client, field.dataset.month, field.dataset.type, field.value)) showToast(invalidAmountMessage, 'error');
     render();
   }));
 
@@ -644,12 +736,17 @@ function bindCurrentView() {
       showToast(`Не вдалося відновити резервну копію: ${error.message || error}`, 'error', 9000);
     }
   });
-  $('#f_minWage')?.addEventListener('change', () => { setMinWage($('#f_minWage').value); render(); });
+  $('#f_minWage')?.addEventListener('change', () => {
+    if (!setMinWage($('#f_minWage').value)) showToast('МЗП має бути додатним числом.', 'error');
+    render();
+  });
   document.querySelectorAll('.settings-field').forEach((field) => field.addEventListener('change', () => {
-    if (field.dataset.scope === 'monthly') setMonthlyTaxDeadline(field.dataset.period, field.value);
-    else if (field.dataset.scope === 'quarterly') setQuarterlyTaxDeadline(field.dataset.tax, field.dataset.period, field.value);
-    else if (field.dataset.scope === 'report-annual') setReportDeadline('annual', field.dataset.period, field.value);
-    else if (field.dataset.scope === 'report-quarterly') setReportDeadline('quarterly', field.dataset.period, field.value);
+    let saved = false;
+    if (field.dataset.scope === 'monthly') saved = setMonthlyTaxDeadline(field.dataset.period, field.value);
+    else if (field.dataset.scope === 'quarterly') saved = setQuarterlyTaxDeadline(field.dataset.tax, field.dataset.period, field.value);
+    else if (field.dataset.scope === 'report-annual') saved = setReportDeadline('annual', field.dataset.period, field.value);
+    else if (field.dataset.scope === 'report-quarterly') saved = setReportDeadline('quarterly', field.dataset.period, field.value);
+    if (!saved) showToast('Вкажіть коректну дату дедлайну.', 'error');
     render();
   }));
   document.querySelectorAll('[data-settings-section]').forEach((button) => button.addEventListener('click', async () => {
@@ -763,6 +860,21 @@ function bindCurrentView() {
 
   // --- Картки клієнтів: експорт/імпорт Excel, кастомні колонки ---
   $('[data-export-clients]')?.addEventListener('click', async () => { try { await exportClientsToExcel(); showToast('Експорт успішно завершено.', 'success'); } catch (error) { showToast(`Не вдалося експортувати: ${error.message || error}`, 'error'); } });
+  $('[data-dashboard-search]')?.addEventListener('input', (event) => {
+    const caret = event.target.selectionStart;
+    uiState.dashboardSearch = event.target.value;
+    render();
+    const field = $('[data-dashboard-search]');
+    field?.focus();
+    if (caret !== null) field?.setSelectionRange(caret, caret);
+  });
+  $('[data-clear-dashboard-filters]')?.addEventListener('click', () => {
+    uiState.dashboardSearch = '';
+    uiState.dashboardFilters = {};
+    uiState.dashboardFilterOpen = null;
+    render();
+    $('[data-dashboard-search]')?.focus();
+  });
   document.querySelectorAll('[data-dashboard-filter]').forEach((button) => button.addEventListener('click', (event) => {
     event.stopPropagation();
     uiState.dashboardFilterOpen = uiState.dashboardFilterOpen === button.dataset.dashboardFilter ? null : button.dataset.dashboardFilter;
@@ -880,7 +992,7 @@ function wireGlobalControls() {
       await initDatabase(profile.workspaceId);
       setAuditActor(profile.displayName);
       setAccessRole(profile.role);
-      $('#authBtn').textContent = `Вийти (${profile.displayName})`;
+      setAuthButtonLabel(`Вийти (${profile.displayName})`);
       $('#userIdentity').textContent = profile.displayName;
       setAuthenticatedUi(true);
       setView('overview');
@@ -907,11 +1019,6 @@ function wireGlobalControls() {
   $('#modalClose').addEventListener('click', closeModal);
   $('#modalCancel').addEventListener('click', closeModal);
   $('#modal').addEventListener('click', (event) => { if (event.target === $('#modal')) closeModal(); });
-
-  $('#exportBtn').addEventListener('click', () => {
-    if (!uiState.currentUser || !db) return;
-    void downloadBackup().catch((error) => showToast(`Не вдалося створити резервну копію: ${error.message || error}`, 'error', 9000));
-  });
 
   document.addEventListener('harmony:changed', () => { if (uiState.currentUser && db) render(); });
   document.addEventListener('harmony:access-denied', () => { if (uiState.currentUser && db) { showToast('У вас є доступ лише до перегляду.', 'warn'); render(); } });
@@ -975,7 +1082,7 @@ async function boot() {
     const actor = profile.displayName || email;
     setAuditActor(actor);
     setAccessRole(profile.role);
-    $('#authBtn').textContent = `Вийти (${actor})`;
+    setAuthButtonLabel(`Вийти (${actor})`);
     $('#userIdentity').textContent = actor;
     setAuthenticatedUi(true);
     setView('overview');

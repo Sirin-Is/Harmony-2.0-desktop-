@@ -1,8 +1,8 @@
 import { escapeHtml, MONTH_NAMES_UA } from '../utils';
 import { db, getCalendarEvents, getSettings } from '../state.js';
 import { uiState } from '../ui-state.js';
-import { calculatedTaxDeadline, taxPeriodsFor } from '../tax-model.ts';
-import { reportPeriodsFor, getDefaultReportDeadline } from '../report-model.ts';
+import { calculatedTaxDeadline, statutoryTaxDeadline, taxPeriodsFor } from '../tax-model.ts';
+import { reportPeriodsFor, getDefaultReportDeadline, statutoryReportDeadline } from '../report-model.ts';
 
 const pad = (value) => String(value).padStart(2, '0');
 
@@ -85,20 +85,26 @@ export function calendarTasksForDate(date) {
 function derivedEvents(year, month) {
   const prefix = `${year}-${pad(month)}-`;
   const events = [];
+  const addDeadline = (item, statutory, control) => {
+    if (statutory === control) { if (control?.startsWith(prefix)) events.push({ ...item, eventDate: control }); return; }
+    const transferId = `deadline-transfer:${item.id}`;
+    if (control?.startsWith(prefix)) events.push({ ...item, id: `${item.id}:control`, eventDate: control, note: `Внутрішній дедлайн: ${item.note}`, transferId, transferRole: 'control' });
+    if (statutory?.startsWith(prefix)) events.push({ ...item, id: `${item.id}:statutory`, eventDate: statutory, note: `Законодавчий дедлайн: ${item.note}`, transferId, transferRole: 'statutory' });
+  };
   taxPeriodsFor('1', year).forEach(({ key: period }) => { const deadline = calculatedTaxDeadline('1', 'unified', period);
-    if (deadline?.startsWith(prefix)) events.push({ id: `tax-default:${period}`, eventDate: deadline, note: 'Останній день для сплати ЄП та ВЗ по 2 групі', source: 'tax', target: `tax|12|${period}` });
+    addDeadline({ id: `tax-default:${period}`, note: 'Останній день для сплати ЄП та ВЗ по 2 групі', source: 'tax', target: `tax|12|${period}` }, statutoryTaxDeadline('1', 'unified', period), deadline);
   });
   taxPeriodsFor('3', year).forEach(({ key: period }) => { const deadline = calculatedTaxDeadline('3', 'unified', period);
-    if (deadline?.startsWith(prefix)) events.push({ id: `tax-g3:${period}`, eventDate: deadline, note: 'Останній день для сплати ЄП та ВЗ по 3 групі', source: 'tax', target: `tax|3|${period}` });
+    addDeadline({ id: `tax-g3:${period}`, note: 'Останній день для сплати ЄП та ВЗ по 3 групі', source: 'tax', target: `tax|3|${period}` }, statutoryTaxDeadline('3', 'unified', period), deadline);
   });
   taxPeriodsFor('3', year).forEach(({ key: period }) => { const deadline = calculatedTaxDeadline('3', 'esv', period);
-    if (deadline?.startsWith(prefix)) events.push({ id: `tax-esv:${period}`, eventDate: deadline, note: 'Останній день для сплати ЄСВ', source: 'tax', target: `tax|3|${period}` });
+    addDeadline({ id: `tax-esv:${period}`, note: 'Останній день для сплати ЄСВ', source: 'tax', target: `tax|3|${period}` }, statutoryTaxDeadline('3', 'esv', period), deadline);
   });
   reportPeriodsFor('1', year).forEach(({ key: period }) => { const deadline = getDefaultReportDeadline(db, '1', period);
-    if (deadline?.startsWith(prefix)) events.push({ id: `report-annual:${period}`, eventDate: deadline, note: 'Дедлайн: річна звітність', source: 'report' });
+    addDeadline({ id: `report-annual:${period}`, note: 'Річна звітність', source: 'report' }, statutoryReportDeadline('1', period), deadline);
   });
   reportPeriodsFor('3', year).forEach(({ key: period }) => { const deadline = getDefaultReportDeadline(db, '3', period);
-    if (deadline?.startsWith(prefix)) events.push({ id: `report-quarterly:${period}`, eventDate: deadline, note: 'Дедлайн: квартальна звітність', source: 'report' });
+    addDeadline({ id: `report-quarterly:${period}`, note: 'Квартальна звітність', source: 'report' }, statutoryReportDeadline('3', period), deadline);
   });
   Array.from({ length: 12 }, (_, index) => index + 1).forEach((payMonth) => [7, 21].forEach((day) => {
     const eventDate = previousWorkday(year, payMonth, day);
@@ -142,8 +148,8 @@ export function renderCalendar() {
     const date = `${year}-${pad(month)}-${pad(day)}`;
     const dayEvents = events.filter((item) => item.eventDate === date);
     const weekend = new Date(year, month - 1, day).getDay() % 6 === 0;
-    cells.push(`<div class="calendar-cell${date === today ? ' today' : ''}${weekend ? ' weekend' : ''}" data-calendar-day="${escapeHtml(date)}" role="button" tabindex="0"><strong>${day}</strong>${dayEvents.map((item) => { const eventId = escapeHtml(item.seriesId || item.id); return `<div class="calendar-event-row"><button class="calendar-event ${escapeHtml(item.source || 'note')}" data-calendar-event="${eventId}" data-calendar-occurrence="${escapeHtml(item.occurrenceDate || item.eventDate)}" data-calendar-target="${escapeHtml(item.target || '')}" title="${escapeHtml(item.note)}">${item.eventTime ? `${escapeHtml(item.eventTime)} ` : ''}${item.recurring ? '↻ ' : ''}${escapeHtml(eventLabel(item))}</button>${item.source ? '' : `<button class="icon calendar-delete" data-delete-note="${eventId}" data-delete-note-recurring="${item.recurring ? 'true' : ''}" title="Видалити ${item.recurring ? 'всю серію задач' : 'задачу'}">×</button>`}</div>`; }).join('')}</div>`);
+    cells.push(`<div class="calendar-cell${date === today ? ' today' : ''}${weekend ? ' weekend' : ''}" data-calendar-day="${escapeHtml(date)}" role="button" tabindex="0"><strong>${day}</strong>${dayEvents.map((item) => { const eventId = escapeHtml(item.seriesId || item.id); return `<div class="calendar-event-row"><button class="calendar-event ${escapeHtml(item.source || 'note')}${item.transferRole ? ` deadline-${item.transferRole}` : ''}" data-calendar-event="${eventId}" data-calendar-occurrence="${escapeHtml(item.occurrenceDate || item.eventDate)}" data-calendar-target="${escapeHtml(item.target || '')}" data-transfer-id="${escapeHtml(item.transferId || '')}" data-transfer-role="${escapeHtml(item.transferRole || '')}" title="${escapeHtml(item.note)}">${item.eventTime ? `${escapeHtml(item.eventTime)} ` : ''}${item.recurring ? '↻ ' : ''}${escapeHtml(eventLabel(item))}</button>${item.source ? '' : `<button class="icon calendar-delete" data-delete-note="${eventId}" data-delete-note-recurring="${item.recurring ? 'true' : ''}" title="Видалити ${item.recurring ? 'всю серію задач' : 'задачу'}">×</button>`}</div>`; }).join('')}</div>`);
   }
   return `<div class="calendar-sticky">${sectionTabs(section)}<div class="toolbar"><div class="toolbar-actions"><button class="secondary" data-calendar-prev>←</button><strong class="calendar-period">${MONTH_NAMES_UA[month - 1]} ${year}</strong><button class="secondary" data-calendar-next>→</button></div></div></div>
-    <div class="calendar-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Нд</span></div><div class="calendar-grid">${cells.join('')}</div>`;
+    <div class="calendar-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Нд</span></div><div class="calendar-grid">${cells.join('')}<svg class="calendar-transfer-layer" aria-hidden="true"></svg></div>`;
 }

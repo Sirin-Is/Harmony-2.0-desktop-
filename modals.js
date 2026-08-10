@@ -4,7 +4,7 @@
 // що досі використовує спільний <dialog id="modal">.
 
 import { $, escapeHtml, fieldValue } from './utils';
-import { addCustomColumn, updateCustomColumn } from './state.js';
+import { addCustomColumn, getCustomColumns, updateCustomColumn } from './state.js';
 import { validateCustomColumn } from './validation.js';
 import { showToast } from './toast.js';
 
@@ -55,7 +55,7 @@ export function openColumnForm(existing = {}) {
   `;
   openModal(existing.id ? 'Змінити колонку' : 'Нова колонка', html, () => {
     const fields = { name: fieldValue('columnName'), type: fieldValue('columnType') };
-    const { errors } = validateCustomColumn(fields);
+    const { errors } = validateCustomColumn(fields, getCustomColumns(), existing.id || null);
     if (errors.length) return { errors, warnings: [] };
     if (existing.id) updateCustomColumn(existing.id, fields);
     else addCustomColumn(fields);

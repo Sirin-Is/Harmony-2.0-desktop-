@@ -58,7 +58,7 @@ export function renderIncomes() {
   const groupTabs = groups.map((g) => `<button class="tab ${g.key === uiState.incomeGroup ? 'active' : ''}" data-income-group="${g.key}">${g.label}</button>`).join('');
   const headCells = headings.map((h, index) => `<th class="${index === 0 ? 'fop-name' : index === 1 ? 'income-limit-cell' : ''}">${h}</th>`).join('');
   const body = clients.length
-    ? `<div class="table-wrap incomes-matrix"><table class="table"><thead><tr>${headCells}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
+    ? `<div class="table-wrap incomes-matrix"><table class="table ${uiState.incomeGroup === '3' ? 'income-group-3' : 'income-group-12'}"><thead><tr>${headCells}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
     : `<p class="empty">У цій групі ще немає активних ФОП.</p>`;
 
   return `<div class="toolbar"><p class="note">Дохід за місяць вводьте вручну. Стовпці кварталу/півріччя/9 місяців/року рахуються автоматично. «Залишок ліміту» = ліміт групи (з «Налаштувань») мінус накопичений дохід з початку року.</p></div>

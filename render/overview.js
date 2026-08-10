@@ -78,6 +78,23 @@ function serviceDebtAlertEntries() {
   return entries;
 }
 
+function invoiceAlertEntries() {
+  const workingYear = getSettings().workingYear;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const entries = [];
+  getVisibleClients().forEach((item) => {
+    for (let month = 1; month <= 12; month += 1) {
+      const monthEnd = new Date(workingYear, month, 0);
+      const daysToEnd = Math.round((monthEnd - today) / 86400000);
+      if (daysToEnd > 5) break;
+      const key = monthPeriodKey(workingYear, month);
+      const charged = Number(getMonthlyCellValue(item.id, key, 'charged')) || 0;
+      if (charged <= 0) { entries.push({ id: item.id, name: shortClientName(item.name) }); return; }
+    }
+  });
+  return entries;
+}
+
 function currentMonthsElapsed(workingYear) {
   const now = new Date();
   if (now.getFullYear() < workingYear) return 1;
@@ -138,6 +155,7 @@ export function renderOverview() {
   const taxAlerts = taxAlertEntries();
   const reportAlerts = reportAlertEntries();
   const serviceAlerts = serviceDebtAlertEntries();
+  const invoiceAlerts = invoiceAlertEntries();
   const hrMonth = hrDocumentsReminder();
   return `<div class="toolbar"><p class="note">Зведення зауважень по всіх розділах. Натисніть на ПІБ, щоб перейти до відповідного розділу й періоду.</p></div>
     ${salaryReminder() ? reminderRow('Виплата ЗП', 'Сьогодні день виплати зарплати') : ''}
@@ -146,5 +164,6 @@ export function renderOverview() {
     ${overviewRow('Доходи', incomeAlerts, 'incomes', 'Залишок ліміту менший за 3 середньомісячних доходи')}
     ${overviewRow('Податки', taxAlerts, 'taxes', 'До дедлайну ≤ 5 днів, а сплати ще не було')}
     ${overviewRow('Звітність', reportAlerts, 'reports', 'До дедлайну ≤ 5 днів, а звіт ще не подано')}
-    ${overviewRow('Оплати', serviceAlerts, 'payments', 'До кінця місяця ≤ 5 днів, а оплата послуг не закрита')}`;
+    ${overviewRow('Оплати — рахунки', invoiceAlerts, 'payments', 'До кінця місяця ≤ 5 днів, а в колонці «Нарахування» немає суми — потрібно набрати рахунок')}
+    ${overviewRow('Оплати — сплата', serviceAlerts, 'payments', 'Рахунок нараховано, але оплату послуг ще не закрито')}`;
 }

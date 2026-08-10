@@ -15,6 +15,7 @@ export const uiState = {
   incomeGroup: '12',
   paymentsQuarter: null,
   dashboardFilters: {},
+  dashboardSearch: '',
   dashboardFilterOpen: null,
   selectedClientIds: new Set(),
   pendingHighlightClientId: null,

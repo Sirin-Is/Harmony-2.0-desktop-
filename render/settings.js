@@ -3,7 +3,7 @@
 // 1-2 груп, поквартальні для 3 групи й ЄСВ, дедлайни звітності).
 
 import { escapeHtml, monthPeriodKey, MONTH_SHORT_UA } from '../utils';
-import { getAuditOperations, getSettings } from '../state.js';
+import { getAuditOperations, getSettings, getClientById } from '../state.js';
 import { uiState } from '../ui-state.js';
 
 const SETTINGS_QUARTERS = [{ key: 'q1', label: 'I кв.' }, { key: 'half', label: 'II кв.' }, { key: '9m', label: 'III кв.' }, { key: 'year', label: 'IV кв.' }];
@@ -67,11 +67,24 @@ function usersPanel() {
 
 function conflictsPanel() {
   const editable = uiState.currentUser?.role !== 'observer';
-  const rows = (uiState.syncConflicts || []).map((item) => `<article class="panel settings-panel sync-conflict-card">
-    <div class="toolbar"><div><h2>${escapeHtml(item.entityType)} · ${escapeHtml(item.entityId)}</h2><p class="note">Виявлено: ${escapeHtml(item.detectedAt)}. Автоматичний перезапис зупинено.</p></div></div>
+  const entityNames = { clients: 'Картка клієнта', custom_columns: 'Додаткова колонка', monthly_payments: 'Оплати', tax_records: 'Податки', income_records: 'Доходи', report_records: 'Звітність', calendar_events: 'Задача календаря', hr_orders: 'Кадровий документ', hr_monthly_documents: 'Кадрові документи', payroll_records: 'Виплата зарплати', audit_events: 'Запис журналу', settings: 'Налаштування' };
+  const fieldNames = { name: 'ПІБ', title: 'Назва', note: 'Примітка', eventDate: 'Дата', eventTime: 'Час', completedAt: 'Виконання', completedDates: 'Дати виконання', subtasks: 'Підзадачі', charged: 'Нарахування', paid: 'Сплата', status: 'Статус', deadline: 'Дедлайн', paymentDate: 'Дата виплати', paymentType: 'Тип виплати' };
+  const parse = (value) => { try { return JSON.parse(value); } catch { return {}; } };
+  const displayValue = (value) => value === undefined || value === null || value === '' ? '—' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+  const rows = (uiState.syncConflicts || []).map((item) => {
+    const local = parse(item.localPayload); const remote = parse(item.remotePayload);
+    const client = getClientById(local.clientId || remote.clientId || local.id || remote.id);
+    const recordName = local.name || remote.name || local.title || remote.title || local.employeeName || remote.employeeName || client?.name || '';
+    const keys = [...new Set([...Object.keys(local), ...Object.keys(remote)])].filter((key) => !['id', 'clientId', 'updatedAt', 'completionUpdatedAt'].includes(key) && JSON.stringify(local[key]) !== JSON.stringify(remote[key]));
+    const comparison = keys.slice(0, 8).map((key) => `<tr><th>${escapeHtml(fieldNames[key] || key)}</th><td>${escapeHtml(displayValue(local[key]))}</td><td>${escapeHtml(displayValue(remote[key]))}</td></tr>`).join('');
+    return `<article class="panel settings-panel sync-conflict-card">
+    <div class="toolbar"><div><h2>${escapeHtml(entityNames[item.entityType] || item.entityType)}${recordName ? ` — ${escapeHtml(recordName)}` : ''}</h2><p class="note">Виявлено: ${escapeHtml(new Intl.DateTimeFormat('uk-UA', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.detectedAt)))}. Один запис змінено у двох версіях; автоматичний перезапис зупинено.</p></div></div>
+    ${item.localIsDeleted || item.remoteIsDeleted ? `<p class="sync-conflict-warning">${item.localIsDeleted ? 'Локальну версію видалено.' : 'Віддалену версію видалено.'}</p>` : ''}
+    ${comparison ? `<div class="table-wrap sync-conflict-comparison"><table class="table"><thead><tr><th>Поле</th><th>На цьому пристрої</th><th>У хмарі</th></tr></thead><tbody>${comparison}</tbody></table></div>` : '<p class="note">Версії відрізняються службовими або вкладеними даними. Розгорніть деталі нижче.</p>'}
     <div class="sync-conflict-values"><details><summary>Локальна версія (${escapeHtml(item.localUpdatedAt)})</summary><pre>${escapeHtml(item.localPayload)}</pre></details><details><summary>Віддалена версія (${escapeHtml(item.remoteUpdatedAt)})</summary><pre>${escapeHtml(item.remotePayload)}</pre></details></div>
     ${editable ? `<div class="toolbar-actions"><button type="button" class="secondary" data-resolve-sync-conflict="${escapeHtml(item.id)}" data-resolution="local">Залишити локальну</button><button type="button" class="primary" data-resolve-sync-conflict="${escapeHtml(item.id)}" data-resolution="remote">Прийняти віддалену</button></div>` : '<p class="note">Спостерігач може переглядати конфлікти, але не вирішувати їх.</p>'}
-  </article>`).join('');
+  </article>`;
+  }).join('');
   return rows || '<div class="panel settings-panel"><h2>Конфлікти синхронізації</h2><p class="note">Відкритих конфліктів немає.</p></div>';
 }
 
@@ -127,7 +140,7 @@ export function renderSettings() {
     </div>
     <div class="panel settings-panel">
       <h2>Мінімальна заробітна плата (МЗП) — ${workingYear}</h2>
-      <label class="settings-mzp">грн/міс<input id="f_minWage" type="number" min="0" step="1" value="${settings.minWage}"></label>
+      <label class="settings-mzp">грн/міс<input id="f_minWage" type="number" min="1" step="1" value="${settings.minWage}"></label>
     </div>
     <div class="panel settings-panel">
       <h2>Автоматичні дедлайни</h2>

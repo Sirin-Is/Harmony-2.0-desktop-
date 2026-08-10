@@ -27,11 +27,14 @@ export function getReportRecord(db: Database, clientId: string, realGroup: strin
   return db.reportRecords[key] ||= {};
 }
 
-export function getDefaultReportDeadline(db: Database, realGroup: string, periodKey: string): string {
+export function statutoryReportDeadline(realGroup: string, periodKey: string): string {
   const end = realGroup === '3' ? quarterEnd(periodKey) : new Date(Number(periodKey), 11, 31);
   end.setDate(end.getDate() + (realGroup === '3' ? 40 : 60));
-  const date = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
-  return controlDeadline(date);
+  return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+}
+
+export function getDefaultReportDeadline(db: Database, realGroup: string, periodKey: string): string {
+  return controlDeadline(statutoryReportDeadline(realGroup, periodKey));
 }
 
 export function effectiveReportDeadline(db: Database, realGroup: string, periodKey: string, record: ReportRecord): string {
@@ -41,7 +44,10 @@ export function effectiveReportDeadline(db: Database, realGroup: string, periodK
 export interface ReportStatus { text: string; cls: 'ok' | 'warn' | 'late' | 'neutral' }
 
 export function reportStatus(record: ReportRecord, deadline?: string): ReportStatus {
-  if (record.submittedDate) return { text: 'Подано', cls: 'ok' };
+  if (record.submittedDate) {
+    if (deadline && record.submittedDate > deadline) return { text: 'Подано із запізненням', cls: 'late' };
+    return { text: 'Подано вчасно', cls: 'ok' };
+  }
   const days = daysUntil(deadline);
   if (days !== null && days < 0) return { text: 'Пропущено', cls: 'late' };
   if (days !== null && days <= 5) return { text: 'Скоро дедлайн', cls: 'warn' };

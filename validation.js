@@ -41,6 +41,17 @@ export function validateClient(record, existingClients, currentId) {
     else if (cost < 0) errors.push('Вартість обслуговування не може бути від’ємною.');
   }
 
+  [
+    ['pricingBase', 'Базова вартість'],
+    ['pricingStaff', 'Доплата за найманих працівників'],
+    ['pricingPrro', 'Доплата за ПРРО'],
+  ].forEach(([field, label]) => {
+    if (record[field] === '' || record[field] === undefined) return;
+    const amount = finiteNumber(record[field]);
+    if (amount === null) errors.push(`${label} має бути коректним числом.`);
+    else if (amount < 0) errors.push(`${label} не може бути від’ємною.`);
+  });
+
   if (record.kepExpiry && !isValidIsoDate(record.kepExpiry)) {
     errors.push('Дата дії КЕП некоректна.');
   }
@@ -59,9 +70,14 @@ export function validateClient(record, existingClients, currentId) {
 }
 
 /** Validate a custom-column definition from the "Нова/Змінити колонка" form. */
-export function validateCustomColumn(column) {
+export function validateCustomColumn(column, existingColumns = [], currentId = null) {
   const errors = [];
-  if (!column.name || column.name.trim().length < 1) errors.push('Вкажіть назву колонки.');
+  const name = String(column.name || '').trim();
+  if (!name) errors.push('Вкажіть назву колонки.');
+  else if (name.length > 80) errors.push('Назва колонки має містити не більше 80 символів.');
+  else if (existingColumns.some((item) => item.id !== currentId && String(item.name || '').trim().toLocaleLowerCase('uk') === name.toLocaleLowerCase('uk'))) {
+    errors.push('Колонка з такою назвою вже існує.');
+  }
   if (!['text', 'number', 'date'].includes(column.type)) errors.push('Оберіть коректний тип даних.');
   return { errors, warnings: [] };
 }

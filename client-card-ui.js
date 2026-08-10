@@ -11,11 +11,12 @@
 // поточний вигляд.
 
 import { escapeHtml, generateId } from './utils';
-import { getClientById, upsertClient, archiveClient } from './state.js';
+import { getClientById, getVisibleClients, upsertClient, archiveClient } from './state.js';
 import { openAppDialog } from './app-dialog.js';
 import { enhanceDateInputs } from './date-input.js';
 import { showToast } from './toast.js';
 import { validateKved, openKvedResults } from './kved-validation.js';
+import { validateClient } from './validation.js';
 import { readSpreadsheetRows } from './spreadsheet-security.js';
 
 const esc = escapeHtml;
@@ -44,6 +45,7 @@ const FIELD_DEFAULTS = {
 
 let draft = null;
 let isNew = false;
+let validationFeedback = null;
 
 function val(id) { return document.getElementById(id)?.value.trim() ?? ''; }
 
@@ -111,7 +113,12 @@ function bodyHtml() {
   const total = [d.pricingBase, d.pricingStaff, d.pricingPrro].reduce((s, v) => s + (Number(v) || 0), 0);
   const rateOpts = RATE_OPTIONS[d.group] || [];
   const additional = additionalKved(d.kvedAdditional);
+  const validationPanel = validationFeedback ? `<div class="cc-validation" role="alert">
+    ${validationFeedback.errors.length ? `<strong>Перевірте картку перед збереженням:</strong><ul>${validationFeedback.errors.map((message) => `<li>${esc(message)}</li>`).join('')}</ul>` : ''}
+    ${validationFeedback.warnings.length ? `<strong>Зверніть увагу:</strong><ul>${validationFeedback.warnings.map((message) => `<li>${esc(message)}</li>`).join('')}</ul>` : ''}
+  </div>` : '';
   return `
+    ${validationPanel}
     <div class="cc-top">
       <div class="cc-avatar" title="Фото (заглушка)">
         <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z"/></svg>
@@ -354,6 +361,22 @@ function paint() {
   bindAutoGrowingKvedNames();
   bindPricingTotal();
   enhanceDateInputs(overlay);
+  if (validationFeedback?.errors.length) {
+    const fieldByMessage = [
+      [/ПІБ \/ назва ФОП/, 'cc_name'],
+      [/ел\. пошта/i, 'cc_email'],
+      [/Базова вартість/, 'cc_pricingBase'],
+      [/Доплата за найманих/, 'cc_pricingStaff'],
+      [/Доплата за ПРРО/, 'cc_pricingPrro'],
+      [/Вартість обслуговування/, 'cc_pricingBase'],
+      [/Дата дії КЕП/, 'cc_kepExpiry'],
+    ];
+    validationFeedback.errors.forEach((message) => {
+      const id = fieldByMessage.find(([pattern]) => pattern.test(message))?.[1];
+      const field = id ? document.getElementById(id) : null;
+      if (field) field.setAttribute('aria-invalid', 'true');
+    });
+  }
   overlay.querySelector('.cc-body').scrollTop = scrollTop;
   overlay.querySelectorAll('[data-cc-close]').forEach((b) => b.addEventListener('click', close));
   overlay.querySelector('[data-cc-save]')?.addEventListener('click', save);
@@ -372,13 +395,31 @@ function paint() {
   });
 }
 
-function save() {
+async function save() {
   readForm();
-  if (!draft.name || draft.name.trim().length < 2) {
-    showToast('Вкажіть ПІБ / назву ФОП (мінімум 2 символи).', 'error');
+  const invalidNativeField = [...overlay.querySelectorAll('input, select, textarea')].find((field) => !field.checkValidity());
+  if (invalidNativeField) {
+    invalidNativeField.reportValidity();
     return;
   }
+  const validation = validateClient(draft, getVisibleClients(), isNew ? null : draft.id);
+  validationFeedback = validation;
+  if (validation.errors.length) {
+    paint();
+    overlay.querySelector('[aria-invalid="true"]')?.focus();
+    return;
+  }
+  if (validation.warnings.length) {
+    paint();
+    const confirmed = await openAppDialog({
+      title: 'Перевірте дані ФОП',
+      message: `${validation.warnings.join('\n')}\n\nЗберегти картку попри попередження?`,
+      confirmText: 'Зберегти',
+    });
+    if (!confirmed) return;
+  }
   upsertClient(draft, isNew ? null : draft.id);
+  validationFeedback = null;
   close();
   notifyChanged();
 }
@@ -387,6 +428,7 @@ function close() {
   overlay.classList.remove('open');
   overlay.replaceChildren();
   draft = null;
+  validationFeedback = null;
 }
 
 /** Immediately remove private draft data from the DOM and memory. */
@@ -395,6 +437,7 @@ export function closeClientCard() { close(); }
 export function openClientCard(id) {
   const existing = id ? getClientById(id) : null;
   isNew = !existing;
+  validationFeedback = null;
   draft = { ...FIELD_DEFAULTS, ...(existing || { id: uid(), form: 'ФОП', customFields: {} }) };
   draft.accounts = (draft.accounts || []).map((a) => ({ ...a }));
   draft.kvedAdditional = additionalKved(draft.kvedAdditional);
