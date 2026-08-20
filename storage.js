@@ -12,6 +12,10 @@ let saveTimer = null;
 let retryTimer = null;
 let pendingDb = null;
 let transientSaveRetries = 0;
+// Local edits are written as one compact burst after the user pauses.  The
+// network replica gets a little more time still, so typing in a table never
+// starts a cloud round-trip for every cell.
+const LOCAL_SAVE_DEBOUNCE_MS = 900;
 
 function createSyncManager(targetRepository) {
   const manager = new SyncManager(targetRepository);
@@ -147,7 +151,7 @@ export function scheduleSave(db) {
   clearTimeout(saveTimer);
   clearTimeout(retryTimer);
   transientSaveRetries = 0;
-  saveTimer = setTimeout(() => { flushSave().catch(() => {}); }, 500);
+  saveTimer = setTimeout(() => { flushSave().catch(() => {}); }, LOCAL_SAVE_DEBOUNCE_MS);
 }
 
 export async function flushSave() {

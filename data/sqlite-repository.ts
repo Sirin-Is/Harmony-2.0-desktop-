@@ -89,6 +89,11 @@ function normalizeDatabase(raw: Partial<AppDatabase> | null | undefined): AppDat
         kved: Array.isArray(settings?.activityReferences?.kved) ? settings.activityReferences.kved : undefined,
         nace: Array.isArray(settings?.activityReferences?.nace) ? settings.activityReferences.nace : undefined,
       },
+      dropdownOptions: {
+        prro: Array.isArray((settings as any)?.dropdownOptions?.prro) ? (settings as any).dropdownOptions.prro : [],
+        currency: Array.isArray((settings as any)?.dropdownOptions?.currency) ? (settings as any).dropdownOptions.currency : [],
+        kepIssuer: Array.isArray((settings as any)?.dropdownOptions?.kepIssuer) ? (settings as any).dropdownOptions.kepIssuer : [],
+      },
     },
   };
 }

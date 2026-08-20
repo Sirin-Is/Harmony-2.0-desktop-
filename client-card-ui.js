@@ -11,7 +11,7 @@
 // поточний вигляд.
 
 import { escapeHtml, generateId } from './utils';
-import { getClientById, getVisibleClients, upsertClient, archiveClient } from './state.js';
+import { getClientById, getVisibleClients, getSettings, upsertClient, archiveClient } from './state.js';
 import { openAppDialog } from './app-dialog.js';
 import { enhanceDateInputs } from './date-input.js';
 import { showToast } from './toast.js';
@@ -39,7 +39,7 @@ const FIELD_DEFAULTS = {
   contractFileName: '', agreementsText: '',
   pricingBase: '', pricingStaff: '', pricingPrro: '',
   prroName: '',
-  kepValidFrom: '', registrationAddress: '',
+  currency: '', registrationAddress: '',
   kvedMainCode: '', kvedMainName: '', kvedAdditional: [],
   additionalInfo: '', accounts: [], employees: [],
 };
@@ -132,7 +132,7 @@ function bodyHtml() {
 
     <div class="cc-grid">
       <fieldset><legend>Основна інформація</legend>
-        <label>ПІБ / назва ФОП<input id="cc_name" value="${esc(d.name)}" maxlength="200" required></label>
+        <label>ПІБ<input id="cc_name" value="${esc(d.name)}" maxlength="200" spellcheck="false" required></label>
         <label>Група ЄП<select id="cc_group"><option value="" ${d.group ? '' : 'selected'}>Оберіть групу</option>${['1', '2', '3', 'Загальна'].map((g) => `<option ${d.group === g ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
         <label>Ставка ЄП<select id="cc_rate"><option value="" ${d.rate ? '' : 'selected'}>${d.group ? 'Оберіть ставку' : 'Спочатку оберіть групу'}</option>${rateOpts.map((o) => `<option value="${o.value}" ${String(o.value) === String(d.rate) ? 'selected' : ''}>${o.label}</option>`).join('')}</select></label>
         <label>РНОКПП / ЄДРПОУ<input id="cc_rnokpp" value="${esc(d.rnokpp)}"></label>
@@ -142,7 +142,7 @@ function bodyHtml() {
       </fieldset>
 
       <fieldset><legend>Документи та вартість</legend>
-        <label>Договір — файл<input id="cc_contractFileName" value="${esc(d.contractFileName)}"></label>
+        <label>Договір<input id="cc_contractFileName" value="${esc(d.contractFileName)}"></label>
         <label>Додаткові угоди<textarea id="cc_agreementsText">${esc(d.agreementsText)}</textarea></label>
         <label>База, грн<input id="cc_pricingBase" type="number" min="0" value="${esc(d.pricingBase)}"></label>
         <label>Дод. за найманих, грн<input id="cc_pricingStaff" type="number" min="0" value="${esc(d.pricingStaff)}"></label>
@@ -153,9 +153,9 @@ function bodyHtml() {
       <fieldset><legend>Обслуговування та КЕП</legend>
         <label>Клієнт-банк(и)<textarea id="cc_banks">${esc(d.banks)}</textarea></label>
         <div class="cc-employees-block"><label>Наймані працівники</label><div class="cc-employees" id="cc_employees">${(d.employees || []).map(employeeRowHtml).join('')}</div><div class="cc-inline-actions"><button type="button" class="secondary" id="cc_addEmployee">+ Працівник</button></div></div>
-        <label>ПРРО / РРО<input id="cc_prroName" value="${esc(d.prroName)}"></label>
-        <label>Видавець КЕП<input id="cc_kepIssuer" value="${esc(d.kepIssuer)}"></label>
-        <label>КЕП дійсний з<input id="cc_kepValidFrom" type="date" value="${esc(d.kepValidFrom)}"></label>
+        <label>ПРРО / РРО<input id="cc_prroName" list="cc_prro_options" value="${esc(d.prroName)}"></label><datalist id="cc_prro_options">${dropdownList('prro')}</datalist>
+        <label>Валюта<input id="cc_currency" list="cc_currency_options" value="${esc(d.currency)}"></label><datalist id="cc_currency_options">${dropdownList('currency')}</datalist>
+        <label>Видавець КЕП<input id="cc_kepIssuer" list="cc_kep_issuer_options" value="${esc(d.kepIssuer)}"></label><datalist id="cc_kep_issuer_options">${dropdownList('kepIssuer')}</datalist>
         <label>КЕП дійсний до<input id="cc_kepExpiry" type="date" value="${esc(d.kepExpiry)}"></label>
         <label>Адреса реєстрації<textarea id="cc_registrationAddress">${esc(d.registrationAddress)}</textarea></label>
         <label>ДПІ<input id="cc_taxOffice" value="${esc(d.taxOffice)}"></label>
@@ -190,7 +190,7 @@ function bodyHtml() {
 function readForm() {
   ['name', 'phone', 'email', 'source', 'contractFileName',
     'agreementsText', 'pricingBase', 'pricingStaff', 'pricingPrro', 'banks',
-    'prroName', 'kepIssuer', 'kepValidFrom', 'kepExpiry', 'registrationAddress', 'taxOffice',
+    'prroName', 'currency', 'kepIssuer', 'kepExpiry', 'registrationAddress', 'taxOffice',
     'kvedMainCode', 'kvedMainName', 'additionalInfo', 'rnokpp']
     .forEach((k) => { draft[k] = val(`cc_${k}`); });
   draft.kvedAdditional = Array.from(overlay.querySelectorAll('[data-kved-index]')).reduce((items, input) => {
@@ -215,8 +215,12 @@ function readForm() {
   draft.serviceCost = [draft.pricingBase, draft.pricingStaff, draft.pricingPrro].reduce((s, v) => s + (Number(v) || 0), 0);
 }
 
+function dropdownList(key) {
+  return (getSettings().dropdownOptions?.[key] || []).map((item) => `<option value="${esc(item)}"></option>`).join('');
+}
+
 function employeeRowHtml(employee, index) {
-  return `<div class="cc-employee-row"><input data-employee-index="${index}" data-employee-id="${esc(employee.id || '')}" data-employee-field="name" placeholder="ПІБ працівника" value="${esc(employee.name || '')}"><input data-employee-index="${index}" data-employee-id="${esc(employee.id || '')}" data-employee-field="position" placeholder="Посада" value="${esc(employee.position || '')}"><button type="button" class="icon" data-remove-employee="${index}" title="Видалити працівника">✕</button></div>`;
+  return `<div class="cc-employee-row"><input data-employee-index="${index}" data-employee-id="${esc(employee.id || '')}" data-employee-field="name" placeholder="ПІБ працівника" spellcheck="false" value="${esc(employee.name || '')}"><input data-employee-index="${index}" data-employee-id="${esc(employee.id || '')}" data-employee-field="position" placeholder="Посада" value="${esc(employee.position || '')}"><button type="button" class="icon" data-remove-employee="${index}" title="Видалити працівника">✕</button></div>`;
 }
 
 function bindKved() {
@@ -400,7 +404,7 @@ function paint() {
   overlay.querySelectorAll('[data-cc-close]').forEach((b) => b.addEventListener('click', close));
   overlay.querySelector('[data-cc-save]')?.addEventListener('click', save);
   overlay.querySelector('[data-cc-hide]')?.addEventListener('click', async () => {
-    const result = await openAppDialog({ title: 'Деактивація ФОП', message: 'Вкажіть причину та введіть повний ПІБ для підтвердження.', fields: [{ key: 'reason', label: 'Причина деактивації', value: draft.inactiveReason || '', required: true }, { key: 'name', label: `Повний ПІБ: ${draft.name}`, required: true }], confirmText: 'Деактивувати', danger: true });
+    const result = await openAppDialog({ title: 'Деактивація ФОП', message: 'Вкажіть причину, а потім введіть повний ПІБ вручну для підтвердження.', fields: [{ key: 'reason', label: 'Причина деактивації', value: draft.inactiveReason || '', required: true }, { key: 'name', label: `Повний ПІБ: ${draft.name}`, required: true, manualEntry: true }], confirmText: 'Деактивувати', danger: true });
     if (!result) return;
     if (result.name !== draft.name) { showToast('ПІБ не збігається. Деактивацію скасовано.', 'error'); return; }
     archiveClient(draft.id, true, result.reason);

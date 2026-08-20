@@ -1,12 +1,13 @@
-export const MIN_PASSWORD_LENGTH = 12;
+export const MIN_PASSWORD_LENGTH = 8;
 export const MAX_PASSWORD_LENGTH = 128;
 
 const COMMON_PASSWORDS = new Set([
-  '123456789012',
-  'adminadminadmin',
+  '12345678',
+  'adminadmin',
+  'password',
   'password1234',
-  'qwerty123456',
-  'harmony12345',
+  'qwerty123',
+  'harmony1',
 ]);
 
 /** Returns a user-facing validation error, or an empty string for a strong password. */

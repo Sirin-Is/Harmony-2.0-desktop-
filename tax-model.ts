@@ -103,6 +103,13 @@ export function getTaxRecord(db: Database, clientId: string, realGroup: string, 
 
 /** The deadline configured in "Налаштування" for this real group/tax/period, before any per-record override. */
 export function getDefaultDeadline(db: Database, realGroup: string, taxType: string, periodKey: string): string {
+  const quarterPeriod = `${periodKey.slice(0, 4)}-${quarterKeyForPeriod(periodKey)}`;
+  const configured = taxType === 'esv'
+    ? db?.settings?.quarterlyDeadlines?.esv?.[quarterPeriod]
+    : realGroup === '3'
+      ? db?.settings?.quarterlyDeadlines?.group3?.[periodKey]
+      : db?.settings?.monthlyDeadlines?.[periodKey];
+  if (configured) return configured;
   return calculatedTaxDeadline(realGroup, taxType, periodKey);
 }
 

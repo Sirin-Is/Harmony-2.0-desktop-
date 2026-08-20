@@ -53,7 +53,7 @@ export function openBatchKvedCheck() {
     document.body.appendChild(batchDialog);
   }
   const inputRows = Array.from({ length: 10 }, (_, index) => `<tr><td><input class="batch-kved-code" data-batch-kved-code="${index}" placeholder="XX.XX" aria-label="Код КВЕД ${index + 1}"></td><td data-batch-kved-name="${index}">—</td><td data-batch-kved-status="${index}">—</td></tr>`).join('');
-  batchDialog.innerHTML = `<form method="dialog" class="app-dialog-form"><header><h2>Одночасна перевірка КВЕД</h2><button class="close" type="submit" aria-label="Закрити">×</button></header><div class="batch-kved-controls"><label>Група ЄП<select data-batch-kved-group><option value="1">1 група</option><option value="2">2 група</option><option value="3">3 група</option></select></label></div><div class="kved-result-body"><table class="table batch-kved-table"><thead><tr><th>Код</th><th>Назва</th><th>Статус</th></tr></thead><tbody>${inputRows}</tbody></table></div><footer><button class="primary" type="submit">Закрити</button></footer></form>`;
+  batchDialog.innerHTML = `<form method="dialog" class="app-dialog-form"><header><h2>Одночасна перевірка КВЕД</h2><button class="close" type="submit" aria-label="Закрити">×</button></header><div class="batch-kved-controls"><label>Група ЄП<select data-batch-kved-group><option value="1">1 група</option><option value="2">2 група</option><option value="3">3 група</option></select></label></div><div class="kved-result-body"><table class="table batch-kved-table"><thead><tr><th>Код</th><th>Назва</th><th>Статус</th></tr></thead><tbody>${inputRows}</tbody></table></div><footer><button class="secondary" type="button" data-clear-batch-kved>Очистити</button><button class="primary" type="submit">Закрити</button></footer></form>`;
   const refresh = () => {
     const group = batchDialog.querySelector('[data-batch-kved-group]').value;
     batchDialog.querySelectorAll('[data-batch-kved-code]').forEach((input) => {
@@ -65,5 +65,10 @@ export function openBatchKvedCheck() {
   };
   batchDialog.querySelector('[data-batch-kved-group]').addEventListener('change', refresh);
   batchDialog.querySelectorAll('[data-batch-kved-code]').forEach((input) => input.addEventListener('input', refresh));
+  batchDialog.querySelector('[data-clear-batch-kved]').addEventListener('click', () => {
+    batchDialog.querySelectorAll('[data-batch-kved-code]').forEach((input) => { input.value = ''; });
+    refresh();
+    batchDialog.querySelector('[data-batch-kved-code]')?.focus();
+  });
   batchDialog.showModal();
 }

@@ -116,19 +116,19 @@ function incomeAlertEntries() {
   return entries;
 }
 
-function alertNamesHtml(entries, section) {
-  if (!entries.length) return '<span class="muted">Немає зауважень.</span>';
+function alertNamesHtml(entries, section, emptyText, prefix) {
+  if (!entries.length) return `<span class="muted">${emptyText}</span>`;
   const shown = entries.slice(0, 5).map((e) =>
     `<button type="button" class="overview-link" data-alert-section="${escapeHtml(section)}" data-alert-client="${escapeHtml(e.id)}" data-alert-group="${escapeHtml(e.group || '')}" data-alert-period="${escapeHtml(e.period || '')}">${escapeHtml(e.name)}</button>`,
   ).join(', ');
   const more = entries.length > 5 ? `, та інші (${entries.length - 5})` : '';
-  return shown + more;
+  return `${prefix}${shown}${more}`;
 }
 
-function overviewRow(title, entries, section, note) {
+function overviewRow(title, entries, section, emptyText, prefix) {
   return `<div class="overview-row">
     <div class="overview-row-head"><h2>${title}</h2><span class="pill ${entries.length ? 'late' : 'ok'}">${entries.length ? entries.length : 'OK'}</span></div>
-    <div class="overview-row-body">${alertNamesHtml(entries, section)}${note ? `<span class="overview-row-note">${note}</span>` : ''}</div>
+    <div class="overview-row-body">${alertNamesHtml(entries, section, emptyText, prefix)}</div>
   </div>`;
 }
 
@@ -156,15 +156,13 @@ export function renderOverview() {
   const taxAlerts = taxAlertEntries();
   const reportAlerts = reportAlertEntries();
   const serviceAlerts = serviceDebtAlertEntries();
-  const invoiceAlerts = invoiceAlertEntries();
   const hrMonth = hrDocumentsReminder();
   return `<div class="toolbar"><p class="note">Зведення зауважень по всіх розділах. Натисніть на ПІБ, щоб перейти до відповідного розділу й періоду.</p></div>
     ${salaryReminder() ? reminderRow('Виплата ЗП', 'Сьогодні день виплати зарплати') : ''}
     ${hrMonth ? reminderRow('Кадрові документи', `Відправ клієнтам кадрові документи за ${hrMonth}`) : ''}
-    ${overviewRow('Термін дії КЕП', kepAlerts, 'dashboard', 'КЕП спливає менш ніж за 3 дні')}
-    ${overviewRow('Доходи', incomeAlerts, 'incomes', 'Залишок ліміту менший за 3 середньомісячних доходи')}
-    ${overviewRow('Податки', taxAlerts, 'taxes', 'До дедлайну ≤ 5 днів, а сплати ще не було')}
-    ${overviewRow('Звітність', reportAlerts, 'reports', 'До дедлайну ≤ 5 днів, а звіт ще не подано')}
-    ${overviewRow('Оплати — рахунки', invoiceAlerts, 'payments', 'До кінця місяця ≤ 5 днів, а в колонці «Нарахування» немає суми — потрібно набрати рахунок')}
-    ${overviewRow('Оплати — сплата', serviceAlerts, 'payments', 'Рахунок нараховано, але оплату послуг ще не закрито')}`;
+    ${overviewRow('Термін дії КЕП', kepAlerts, 'dashboard', 'Найближчим часом не спливає термін дії жодного КЕП', 'Спливає термін дії КЕП: ')}
+    ${overviewRow('Контроль лімітів', incomeAlerts, 'incomes', 'Жоден ФОП не наблизився до вичерпання ліміту', 'До вичерпання ліміту наближаються: ')}
+    ${overviewRow('Сплата податків', taxAlerts, 'taxes', 'Всі податки сплачені', 'Повинні сплатити податки: ')}
+    ${overviewRow('Подача звітів', reportAlerts, 'reports', 'Всі звіти подано', 'Треба подати звіти по ')}
+    ${overviewRow('Сплата послуг', serviceAlerts, 'payments', 'Всі сплатили наші послуги', 'Наші послуги мають ще сплатити: ')}`;
 }

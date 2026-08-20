@@ -1,9 +1,9 @@
 import { escapeHtml, MONTH_NAMES_UA } from '../utils';
-import { db, getCalendarEvents, getSettings } from '../state.js';
+import { db, getCalendarEvents, getSettings, getEffectiveTaxDeadline, getPayrollRecords, getReportField, getTaxField, getVisibleClients } from '../state.js';
 import { uiState } from '../ui-state.js';
-import { calculatedTaxDeadline, statutoryTaxDeadline, taxPeriodsFor } from '../tax-model.ts';
+import { statutoryTaxDeadline, taxPeriodsFor, TAX_TYPES } from '../tax-model.ts';
 import { annualPropertyIncomeDeclarationDeadline, reportPeriodsFor, getDefaultReportDeadline, statutoryReportDeadline } from '../report-model.ts';
-import { payrollDatesForPeriod } from '../payroll-model.js';
+import { payrollDatesForPeriod, payrollPartForPaymentType } from '../payroll-model.js';
 
 const pad = (value) => String(value).padStart(2, '0');
 
@@ -14,12 +14,14 @@ function clientLabel(id) {
   return `${parts[0]}${parts[1] ? ` ${parts[1][0]}.` : ''}${parts[2] ? ` ${parts[2][0]}.` : ''}`;
 }
 function noteTitle(event) { return event.title?.trim() || String(event.note || '').trim().split(/\r?\n/)[0] || 'Без назви'; }
+const typeClass = (type) => ({ 'Звіти': 'reports', 'Податки': 'taxes', 'Зарплата': 'salary', 'Комунікація': 'communication', 'Оперативні задачі': 'operational' }[type] || 'operational');
 function eventLabel(event) {
   if (event.source) return event.note;
   const client = clientLabel(event.clientId);
   return `${client ? `${client} ` : ''}${noteTitle(event)}`;
 }
 function isTaskComplete(event) { return event.recurring ? (event.completedDates || []).includes(event.occurrenceDate) : Boolean(event.completedAt); }
+function isCompleted(event) { return event.source ? Boolean(event.completed) : isTaskComplete(event); }
 function isSubtaskComplete(event, subtask) { return event.recurring ? (subtask.completedDates || []).includes(event.occurrenceDate) : Boolean(subtask.completedAt); }
 function isoDate(date) { return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`; }
 function dateFromIso(value) { return /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? new Date(`${value}T00:00:00`) : null; }
@@ -85,35 +87,48 @@ export function calendarTasksForDate(date) {
 function derivedEvents(year, month) {
   const prefix = `${year}-${pad(month)}-`;
   const events = [];
+  const activeClients = getVisibleClients();
+  const taxComplete = (clients, periods, taxTypes) => clients.every((client) => periods.every((period) => taxTypes.every((taxType) => {
+    const record = getTaxField(client.id, String(client.group), period, taxType);
+    return Boolean(record.exemption || record.paidDate);
+  })));
+  const reportComplete = (clients, period) => clients.every((client) => Boolean(getReportField(client.id, String(client.group), period).submittedDate));
+  const quarterMonths = (period) => {
+    const month = { q1: 1, half: 4, '9m': 7, year: 10 }[period.slice(5)] || 1;
+    return [month, month + 1, month + 2].map((value) => `${period.slice(0, 4)}-${pad(value)}`);
+  };
   const addDeadline = (item, statutory, control) => {
     if (statutory === control) { if (control?.startsWith(prefix)) events.push({ ...item, eventDate: control }); return; }
     const transferId = `deadline-transfer:${item.id}`;
     if (control?.startsWith(prefix)) events.push({ ...item, id: `${item.id}:control`, eventDate: control, note: `Внутрішній дедлайн: ${item.note}`, transferId, transferRole: 'control' });
     if (statutory?.startsWith(prefix)) events.push({ ...item, id: `${item.id}:statutory`, eventDate: statutory, note: `Законодавчий дедлайн: ${item.note}`, transferId, transferRole: 'statutory' });
   };
-  taxPeriodsFor('1', year).forEach(({ key: period }) => { const deadline = calculatedTaxDeadline('1', 'unified', period);
-    addDeadline({ id: `tax-default:${period}`, note: 'Останній день для сплати ЄП та ВЗ по 2 групі', source: 'tax', target: `tax|12|${period}` }, statutoryTaxDeadline('1', 'unified', period), deadline);
+  taxPeriodsFor('1', year).forEach(({ key: period }) => { const deadline = getEffectiveTaxDeadline('1', 'unified', period, {});
+    const clients = activeClients.filter((client) => ['1', '2'].includes(String(client.group)));
+    addDeadline({ id: `tax-default:${period}`, note: 'Останній день для сплати ЄП та ВЗ по 2 групі', source: 'tax', taskType: 'Податки', completed: taxComplete(clients, [period], ['unified', 'military']), target: `tax|12|${period}` }, statutoryTaxDeadline('1', 'unified', period), deadline);
   });
-  taxPeriodsFor('3', year).forEach(({ key: period }) => { const deadline = calculatedTaxDeadline('3', 'unified', period);
-    addDeadline({ id: `tax-g3:${period}`, note: 'Останній день для сплати ЄП та ВЗ по 3 групі', source: 'tax', target: `tax|3|${period}` }, statutoryTaxDeadline('3', 'unified', period), deadline);
-  });
-  taxPeriodsFor('3', year).forEach(({ key: period }) => { const deadline = calculatedTaxDeadline('3', 'esv', period);
-    addDeadline({ id: `tax-esv:${period}`, note: 'Останній день для сплати ЄСВ', source: 'tax', target: `tax|3|${period}` }, statutoryTaxDeadline('3', 'esv', period), deadline);
+  taxPeriodsFor('3', year).forEach(({ key: period }) => { const deadline = getEffectiveTaxDeadline('3', 'esv', period, {});
+    const clients12 = activeClients.filter((client) => ['1', '2'].includes(String(client.group)));
+    const clients3 = activeClients.filter((client) => String(client.group) === '3');
+    const completed = taxComplete(clients12, quarterMonths(period), ['esv']) && taxComplete(clients3, [period], ['esv']);
+    addDeadline({ id: `tax-esv:${period}`, note: 'Останній день для сплати ЄСВ', source: 'tax', taskType: 'Податки', completed, target: `tax|3|${period}` }, statutoryTaxDeadline('3', 'esv', period), deadline);
   });
   reportPeriodsFor('1', year).forEach(({ key: period }) => { const deadline = getDefaultReportDeadline(db, '1', period);
-    addDeadline({ id: `report-annual:${period}`, note: 'Річна звітність', source: 'report' }, statutoryReportDeadline('1', period), deadline);
+    addDeadline({ id: `report-annual:${period}`, note: 'Звітність 1-2 група', source: 'report', taskType: 'Звіти', completed: reportComplete(activeClients.filter((client) => ['1', '2'].includes(String(client.group))), period) }, statutoryReportDeadline('1', period), deadline);
   });
   reportPeriodsFor('3', year).forEach(({ key: period }) => { const deadline = getDefaultReportDeadline(db, '3', period);
-    addDeadline({ id: `report-quarterly:${period}`, note: 'Квартальна звітність', source: 'report' }, statutoryReportDeadline('3', period), deadline);
+    addDeadline({ id: `report-quarterly:${period}`, note: 'Звітність 3 група', source: 'report', taskType: 'Звіти', completed: reportComplete(activeClients.filter((client) => String(client.group) === '3'), period) }, statutoryReportDeadline('3', period), deadline);
   });
   const propertyIncomeDeadline = annualPropertyIncomeDeclarationDeadline(year);
-  if (propertyIncomeDeadline.startsWith(prefix)) events.push({ id: `report-property-income:${year}`, eventDate: propertyIncomeDeadline, note: 'Декларація про майновий стан і доходи', source: 'report' });
+  if (propertyIncomeDeadline.startsWith(prefix)) events.push({ id: `report-property-income:${year}`, eventDate: propertyIncomeDeadline, note: 'Декларація про майновий стан і доходи', source: 'report', taskType: 'Звіти' });
   Array.from({ length: 12 }, (_, index) => index + 1).forEach((payMonth) => {
     const period = `${year}-${pad(payMonth)}`;
     const dates = payrollDatesForPeriod(getSettings(), period);
-    [['secondHalf', 'Виплата зарплати за другу половину попереднього місяця'], ['firstHalf', 'Виплата зарплати за першу половину поточного місяця']].forEach(([part, note]) => {
+    [['secondHalf', 'Виплата ЗП за другу половину попереднього місяця'], ['firstHalf', 'Виплата ЗП за першу половину поточного місяця']].forEach(([part, note]) => {
       const eventDate = dates[part];
-      if (eventDate?.startsWith(prefix)) events.push({ id: `salary:${period}:${part}`, eventDate, note, source: 'salary' });
+      const records = getPayrollRecords().filter((record) => record.period === period && payrollPartForPaymentType(record.paymentType) === part);
+      const completed = records.length > 0 && records.every((record) => ['Сплачено', 'Сплачено невчасно'].includes(record.status));
+      if (eventDate?.startsWith(prefix)) events.push({ id: `salary:${period}:${part}`, eventDate, note, source: 'salary', taskType: 'Зарплата', completed });
     });
   });
   return events;
@@ -129,11 +144,11 @@ function renderTasks(year, fallbackDate) {
   const weekday = ['Неділя', 'Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П’ятниця', 'Субота'][dateFromIso(date).getDay()];
   return `<div class="calendar-sticky">${sectionTabs('tasks')}<div class="toolbar"><div class="toolbar-actions calendar-task-nav"><button class="secondary" data-calendar-task-prev aria-label="Попередній день">←</button><input class="calendar-task-date" type="date" value="${date}" aria-label="Обрати дату задач" data-calendar-task-date-picker><button class="secondary" data-calendar-task-next aria-label="Наступний день">→</button><button class="secondary" data-calendar-today>Сьогодні</button></div></div><p class="calendar-task-day">${weekday}</p></div>
     <div class="task-list">${tasks.length ? tasks.map((event) => {
-      const completed = isTaskComplete(event);
+      const completed = isCompleted(event);
       const subtasks = event.subtasks || [];
       const eventId = escapeHtml(event.seriesId || event.id);
       const occurrenceDate = escapeHtml(event.occurrenceDate || event.eventDate);
-      return `<div class="task-group"><div class="task-row${completed ? ' completed' : ''}"><button type="button" class="task-check" data-calendar-task-toggle="${eventId}" data-calendar-task-date="${occurrenceDate}" aria-label="Позначити виконання">${completed ? '✓' : ''}</button><button type="button" class="task-content" data-calendar-event="${eventId}" data-calendar-occurrence="${occurrenceDate}"><strong>${escapeHtml(noteTitle(event))}</strong><span>${event.clientId ? escapeHtml(clientName(event.clientId)) : 'Без ФОП'}${event.eventTime ? ` · ${escapeHtml(event.eventTime)}` : ''}${event.recurring ? ' · регулярна' : ' · разова'}</span>${event.note ? `<p>${escapeHtml(event.note)}</p>` : ''}</button><button type="button" class="subtask-add" data-add-subtask="${eventId}" data-add-subtask-date="${occurrenceDate}" title="Додати підзадачу">+ Підзадача</button></div>${subtasks.length ? `<div class="task-subtasks">${subtasks.map((subtask) => { const done = isSubtaskComplete(event, subtask); const subtaskId = escapeHtml(subtask.id); return `<div class="subtask-row${done ? ' completed' : ''}"><button type="button" class="subtask-check" data-calendar-subtask-toggle="${eventId}" data-calendar-subtask-id="${subtaskId}" data-calendar-subtask-date="${occurrenceDate}" aria-label="Позначити підзадачу виконаною">${done ? '✓' : ''}</button><span>${escapeHtml(subtask.title)}</span><button type="button" class="subtask-delete" data-delete-subtask="${eventId}" data-delete-subtask-id="${subtaskId}" title="Видалити підзадачу" aria-label="Видалити підзадачу">×</button></div>`; }).join('')}</div>` : ''}</div>`;
+      return `<div class="task-group"><div class="task-row${completed ? ' completed' : ''}"><button type="button" class="task-check" data-calendar-task-toggle="${eventId}" data-calendar-task-date="${occurrenceDate}" aria-label="Позначити виконання">${completed ? '✓' : ''}</button><button type="button" class="task-content" data-calendar-event="${eventId}" data-calendar-occurrence="${occurrenceDate}"><strong>${escapeHtml(noteTitle(event))}</strong><span class="task-type task-type-${typeClass(event.taskType)}">${escapeHtml(event.taskType || 'Оперативні задачі')}</span><span>${event.clientId ? escapeHtml(clientName(event.clientId)) : 'Без ФОП'}${event.eventTime ? ` · ${escapeHtml(event.eventTime)}` : ''}${event.recurring ? ' · регулярна' : ' · разова'}</span>${event.note ? `<p>${escapeHtml(event.note)}</p>` : ''}</button><button type="button" class="subtask-add" data-add-subtask="${eventId}" data-add-subtask-date="${occurrenceDate}" title="Додати підзадачу">+ Підзадача</button></div>${subtasks.length ? `<div class="task-subtasks">${subtasks.map((subtask) => { const done = isSubtaskComplete(event, subtask); const subtaskId = escapeHtml(subtask.id); return `<div class="subtask-row${done ? ' completed' : ''}"><button type="button" class="subtask-check" data-calendar-subtask-toggle="${eventId}" data-calendar-subtask-id="${subtaskId}" data-calendar-subtask-date="${occurrenceDate}" aria-label="Позначити підзадачу виконаною">${done ? '✓' : ''}</button><span>${escapeHtml(subtask.title)}</span><button type="button" class="subtask-delete" data-delete-subtask="${eventId}" data-delete-subtask-id="${subtaskId}" title="Видалити підзадачу" aria-label="Видалити підзадачу">×</button></div>`; }).join('')}</div>` : ''}</div>`;
     }).join('') : '<p class="empty">На цей день задач немає.</p>'}</div>`;
 }
 
@@ -154,7 +169,7 @@ export function renderCalendar() {
     const date = `${year}-${pad(month)}-${pad(day)}`;
     const dayEvents = events.filter((item) => item.eventDate === date);
     const weekend = new Date(year, month - 1, day).getDay() % 6 === 0;
-    cells.push(`<div class="calendar-cell${date === today ? ' today' : ''}${weekend ? ' weekend' : ''}" data-calendar-day="${escapeHtml(date)}" role="button" tabindex="0"><strong>${day}</strong>${dayEvents.map((item) => { const eventId = escapeHtml(item.seriesId || item.id); return `<div class="calendar-event-row"><button class="calendar-event ${escapeHtml(item.source || 'note')}${item.transferRole ? ` deadline-${item.transferRole}` : ''}" data-calendar-event="${eventId}" data-calendar-occurrence="${escapeHtml(item.occurrenceDate || item.eventDate)}" data-calendar-target="${escapeHtml(item.target || '')}" data-transfer-id="${escapeHtml(item.transferId || '')}" data-transfer-role="${escapeHtml(item.transferRole || '')}" title="${escapeHtml(item.note)}">${item.eventTime ? `${escapeHtml(item.eventTime)} ` : ''}${item.recurring ? '↻ ' : ''}${escapeHtml(eventLabel(item))}</button>${item.source ? '' : `<button class="icon calendar-delete" data-delete-note="${eventId}" data-delete-note-recurring="${item.recurring ? 'true' : ''}" title="Видалити ${item.recurring ? 'всю серію задач' : 'задачу'}">×</button>`}</div>`; }).join('')}</div>`);
+    cells.push(`<div class="calendar-cell${date === today ? ' today' : ''}${weekend ? ' weekend' : ''}" data-calendar-day="${escapeHtml(date)}" role="button" tabindex="0"><strong>${day}</strong>${dayEvents.map((item) => { const eventId = escapeHtml(item.seriesId || item.id); const completed = isCompleted(item); return `<div class="calendar-event-row"><button class="calendar-event task-type-${typeClass(item.taskType)} ${escapeHtml(item.source || 'note')}${completed ? ' calendar-event-completed' : ''}${item.transferRole ? ` deadline-${item.transferRole}` : ''}" data-calendar-event="${eventId}" data-calendar-occurrence="${escapeHtml(item.occurrenceDate || item.eventDate)}" data-calendar-target="${escapeHtml(item.target || '')}" data-transfer-id="${escapeHtml(item.transferId || '')}" data-transfer-role="${escapeHtml(item.transferRole || '')}" title="${escapeHtml(item.note)}">${completed ? '<span class="calendar-complete-mark" aria-label="Виконано">✓</span>' : ''}${item.eventTime ? `${escapeHtml(item.eventTime)} ` : ''}${item.recurring ? '↻ ' : ''}${escapeHtml(eventLabel(item))}</button>${item.source ? '' : `<button class="icon calendar-delete" data-delete-note="${eventId}" data-delete-note-recurring="${item.recurring ? 'true' : ''}" title="Видалити ${item.recurring ? 'всю серію задач' : 'задачу'}">×</button>`}</div>`; }).join('')}</div>`);
   }
   return `<div class="calendar-sticky">${sectionTabs(section)}<div class="toolbar"><div class="toolbar-actions"><button class="secondary" data-calendar-prev>←</button><strong class="calendar-period">${MONTH_NAMES_UA[month - 1]} ${year}</strong><button class="secondary" data-calendar-next>→</button><button class="secondary" data-calendar-today>Сьогодні</button></div></div></div>
     <div class="calendar-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Нд</span></div><div class="calendar-grid">${cells.join('')}<svg class="calendar-transfer-layer" aria-hidden="true"></svg></div>`;

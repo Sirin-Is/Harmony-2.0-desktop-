@@ -12,6 +12,7 @@ const syncEncoder = new TextEncoder();
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
 const PERIODIC_SYNC_MS = 5 * 60_000;
+const LOCAL_CHANGE_SYNC_DELAY_MS = 1_500;
 
 export function limitPushBatch(records: SyncRecord[]): SyncRecord[] {
   const selected: SyncRecord[] = [];
@@ -66,7 +67,7 @@ export class SyncManager {
     this.timer = null;
   }
 
-  requestSync(_reason = 'manual'): void {
+  requestSync(reason = 'manual'): void {
     if (this.stopped) return;
     if (!navigator.onLine) return this.emit('offline', 'Немає з’єднання');
     // A second run must not overlap the current SQLite/network transaction.
@@ -74,7 +75,10 @@ export class SyncManager {
     // replicate anything saved while it was running.
     if (this.running) { this.resyncRequested = true; return; }
     if (this.timer !== null) window.clearTimeout(this.timer);
-    this.timer = window.setTimeout(() => this.sync().catch(() => {}), 0);
+    // Coalesce neighbouring local commits.  This keeps the UI fully local
+    // while a user fills several cells, yet still syncs shortly afterwards.
+    const delay = reason === 'local-change' ? LOCAL_CHANGE_SYNC_DELAY_MS : 0;
+    this.timer = window.setTimeout(() => this.sync().catch(() => {}), delay);
   }
 
   /** Restored data must be compared with the complete remote workspace before

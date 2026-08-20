@@ -22,6 +22,7 @@ export interface Employee {
   position?: string;
   hireDate?: string;
   dismissalDate?: string;
+  salaryPaymentMethod?: 'Готівка' | 'Безготівкою';
 }
 
 export interface HrOrder {
@@ -127,6 +128,7 @@ export interface CalendarEvent {
   title?: string;
   note: string;
   kind: 'note';
+  taskType?: 'Звіти' | 'Податки' | 'Зарплата' | 'Оперативні задачі' | 'Комунікація';
   completedAt?: string;
   completedDates?: string[];
   workdayShift?: 'previous' | 'next';
@@ -164,7 +166,7 @@ export interface PayrollRecord {
   pdfo?: string;
   vz?: string;
   esv?: string;
-  status: 'Набрано' | 'Сплачено' | 'Повідомлено' | 'Сплачено невчасно';
+  status: '' | 'Набрано' | 'Сплачено' | 'Повідомлено' | 'Сплачено невчасно';
   paymentType?: string;
 }
 
@@ -214,6 +216,7 @@ export interface Settings {
   payrollDates?: Record<string, { secondHalf?: string; firstHalf?: string }>;
   appearance?: { fieldColor: string; fieldRadius: number; fieldOpacity: number };
   activityReferences?: { kved?: string[][]; nace?: string[][] };
+  dropdownOptions?: { prro?: string[]; currency?: string[]; kepIssuer?: string[] };
 }
 
 /** Точна форма того, що зараз зберігається одним JSONB-рядком у Supabase (та ж форма, що й у storage.js). */

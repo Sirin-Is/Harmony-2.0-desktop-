@@ -26,7 +26,9 @@ import { normalizeEmployeeName, validateEmployee } from './employee-model.js';
 
 export let db = null;
 let lastSnapshot = null;
+let lastBusinessSnapshot = null;
 const undoStack = [];
+const MAX_UNDO_SNAPSHOTS = 5;
 const snapshot = (value) => JSON.stringify(value);
 let currentAuditActor = 'Локальний користувач';
 let currentAccessRole = 'observer';
@@ -64,7 +66,7 @@ export async function initDatabase(workspaceId = null) {
   const suppressedAuditNoise = suppressTechnicalNestedAuditNoise(db.auditEvents || []);
   const prunedRollbackSnapshots = pruneExpiredRollbackSnapshots(db);
   const normalizedTaxExemptions = normalizeLegacyTaxExemptions(db);
-  lastSnapshot = snapshot(db); undoStack.length = 0;
+  lastSnapshot = snapshot(db); lastBusinessSnapshot = snapshot(businessSnapshot(db)); undoStack.length = 0;
   if (normalizedNestedIds || normalizedAuditLabels || suppressedAuditNoise || prunedRollbackSnapshots || normalizedTaxExemptions) storage.scheduleSave(db);
   if (clientModel.advanceScheduledDeletions(db)) save();
   return db;
@@ -73,7 +75,7 @@ export async function initDatabase(workspaceId = null) {
 /** Refresh the in-memory UI snapshot after a remote pull; local mutations remain repository-owned. */
 export async function refreshDatabaseFromSync() {
   db = await storage.reloadDatabase();
-  lastSnapshot = snapshot(db); undoStack.length = 0;
+  lastSnapshot = snapshot(db); lastBusinessSnapshot = snapshot(businessSnapshot(db)); undoStack.length = 0;
   return db;
 }
 
@@ -92,6 +94,7 @@ export async function lockDatabase() {
   } finally {
     db = null;
     lastSnapshot = null;
+    lastBusinessSnapshot = null;
     undoStack.length = 0;
     currentAuditActor = 'Локальний користувач';
     currentAccessRole = 'observer';
@@ -104,10 +107,10 @@ function save(action = 'Зміна даних', type = 'Зміна') {
     window.dispatchEvent(new CustomEvent('harmony:access-denied'));
     return false;
   }
-  const before = lastSnapshot ? JSON.parse(lastSnapshot) : null;
-  const beforeBusiness = before ? businessSnapshot(before) : null;
   const afterBusiness = businessSnapshot(db);
-  if (beforeBusiness && JSON.stringify(beforeBusiness) !== JSON.stringify(afterBusiness)) {
+  const nextBusinessSnapshot = snapshot(afterBusiness);
+  if (lastBusinessSnapshot && nextBusinessSnapshot !== lastBusinessSnapshot) {
+    const beforeBusiness = JSON.parse(lastBusinessSnapshot);
     db.auditOperations ||= []; db.auditEvents ||= [];
     const id = generateId(); const occurredAt = new Date().toISOString();
     const operation = { id, occurredAt, action, actor: currentAuditActor, status: 'active', beforeSnapshot: beforeBusiness };
@@ -117,8 +120,9 @@ function save(action = 'Зміна даних', type = 'Зміна') {
   }
   pruneExpiredRollbackSnapshots(db);
   const next = snapshot(db);
-  if (lastSnapshot && next !== lastSnapshot) { undoStack.push(lastSnapshot); if (undoStack.length > 20) undoStack.shift(); }
+  if (lastSnapshot && next !== lastSnapshot) { undoStack.push(lastSnapshot); if (undoStack.length > MAX_UNDO_SNAPSHOTS) undoStack.shift(); }
   lastSnapshot = next;
+  lastBusinessSnapshot = nextBusinessSnapshot;
   storage.scheduleSave(db);
   return true;
 }
@@ -293,7 +297,7 @@ export function rollbackChangesAfter(cutoff) {
   db.auditEvents.forEach((item) => { if (ids.has(item.operationId)) item.status = 'cancelled'; });
   db.auditOperations.push({ id: rollbackId, occurredAt: now, action: 'Відкат змін', actor: currentAuditActor, status: 'rollback' });
   db.auditEvents.push({ id: generateId(), operationId: rollbackId, occurredAt: now, actor: currentAuditActor, type: 'Відкат', description: `Скасовано операцій: ${operations.length}`, section: 'Журнал подій', clientId: '', clientName: '-', field: '-', oldValue: '-', newValue: '-', status: 'active' });
-  lastSnapshot = snapshot(db); undoStack.length = 0; storage.scheduleSave(db);
+  lastSnapshot = snapshot(db); lastBusinessSnapshot = snapshot(businessSnapshot(db)); undoStack.length = 0; storage.scheduleSave(db);
   return operations.length;
 }
 
@@ -342,6 +346,7 @@ export function undoLastAction() {
   });
   db = { ...targetBusiness, auditOperations, auditEvents };
   lastSnapshot = snapshot(db);
+  lastBusinessSnapshot = snapshot(businessSnapshot(db));
   storage.scheduleSave(db);
   return true;
 }
@@ -359,6 +364,12 @@ export const getDeletedClients = () => {
   if (clientModel.advanceScheduledDeletions(db)) save();
   return clientModel.deletedClients(db);
 };
+export function purgeDeletedTestClients() {
+  const ids = db.clients.filter((item) => item.isTestRecord && clientModel.lifecycleOf(item) === 'deleted').map((item) => item.id);
+  ids.forEach((id) => clientModel.deleteClient(db, id));
+  if (ids.length) save('Очищено тестові ФОП із видалених', 'Видалення');
+  return ids.length;
+}
 export const getClientById = (id) => clientModel.findClientById(db, id);
 export const findClientByName = (name) => clientModel.findClientByName(db, name);
 export const getClientsByGroup = (group) => getVisibleClients().filter((item) => String(item.group) === group);
@@ -479,7 +490,7 @@ export function saveEmployee(fields, id = null) {
   if (existing && existing.client.id !== client.id) return null;
   const duplicate = (client.employees || []).some((item) => item.id !== id && normalizeEmployeeName(item.name) === normalizeEmployeeName(fields.name));
   if (duplicate) return null;
-  const employee = { ...(existing?.employee || {}), id: id || generateId(), name: String(fields.name).trim(), position: String(fields.position).trim(), hireDate: fields.hireDate, dismissalDate: fields.dismissalDate || '' };
+  const employee = { ...(existing?.employee || {}), id: id || generateId(), name: String(fields.name).trim(), position: String(fields.position).trim(), hireDate: fields.hireDate, dismissalDate: fields.dismissalDate || '', salaryPaymentMethod: fields.salaryPaymentMethod === 'Готівка' ? 'Готівка' : 'Безготівкою' };
   client.employees ||= [];
   const index = client.employees.findIndex((item) => item.id === employee.id);
   if (index >= 0) client.employees[index] = employee;
@@ -553,7 +564,7 @@ export function addPayrollForClient(clientId, period, paymentType = '') {
   let added = 0;
   employees.forEach((employee) => {
     if (db.payrollRecords.some((record) => isSamePayrollSlot(record, clientId, employee.id, period, paymentType))) return;
-    db.payrollRecords.push({ id: generateId(), clientId, employeeId: employee.id, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), paymentDate: payrollDateForPaymentType(db.settings, period, paymentType), status: 'Набрано', amount: '', pdfo: '', vz: '', esv: '' });
+    db.payrollRecords.push({ id: generateId(), clientId, employeeId: employee.id, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), paymentDate: payrollDateForPaymentType(db.settings, period, paymentType), status: '', amount: '', pdfo: '', vz: '', esv: '' });
     added += 1;
   });
   if (added) save();
@@ -564,7 +575,7 @@ export function addPayrollEmployee(clientId, employeeId, period, paymentType = '
   const employee = getClientById(clientId)?.employees?.find((item) => item.id === employeeId);
   if (!employee) return null;
   if (db.payrollRecords.some((record) => isSamePayrollSlot(record, clientId, employeeId, period, paymentType))) return null;
-  const record = { id: generateId(), clientId, employeeId, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), paymentDate: payrollDateForPaymentType(db.settings, period, paymentType), status: 'Набрано', amount: '', pdfo: '', vz: '', esv: '' };
+  const record = { id: generateId(), clientId, employeeId, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), paymentDate: payrollDateForPaymentType(db.settings, period, paymentType), status: '', amount: '', pdfo: '', vz: '', esv: '' };
   db.payrollRecords.push(record); save(); return record;
 }
 
@@ -581,7 +592,7 @@ export function setPayrollField(id, field, value) {
   if (!record) return false;
   if (!['paymentDate', 'amount', 'pdfo', 'vz', 'esv', 'status'].includes(field)) return false;
   if (field === 'paymentDate' && !isValidOptionalIsoDate(value)) return false;
-  if (field === 'status' && !['Набрано', 'Сплачено', 'Повідомлено', 'Сплачено невчасно'].includes(value)) return false;
+  if (field === 'status' && !['', 'Набрано', 'Сплачено', 'Повідомлено', 'Сплачено невчасно'].includes(value)) return false;
   const numeric = ['amount', 'pdfo', 'vz', 'esv'].includes(field);
   const amount = numeric ? normalizeNonNegativeAmount(value) : null;
   if (numeric && !amount.ok) return false;
@@ -822,6 +833,23 @@ export function setMinWage(value) {
   return true;
 }
 
+/** Fill a month's invoiced-service column from the service price on every
+ * active client card, producing only one local save for the whole column. */
+export function autofillMonthlyCharges(monthKey) {
+  if (!isValidMonthPeriodKey(monthKey)) return 0;
+  let changed = 0;
+  getVisibleClients().forEach((client) => {
+    const amount = normalizeNonNegativeAmount(String(client.serviceCost ?? ''));
+    if (!amount.ok || !amount.value) return;
+    const month = (db.monthlyPayments[client.id] ||= {})[monthKey] ||= {};
+    if (month.charged === amount.value) return;
+    month.charged = amount.value;
+    changed += 1;
+  });
+  if (changed) save('Автоматично заповнено нарахування послуг', 'Оплати');
+  return changed;
+}
+
 export function setMonthlyTaxDeadline(periodKey, value) {
   if (!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(periodKey) || !isValidOptionalIsoDate(value)) return false;
   db.settings.monthlyDeadlines[periodKey] = value;
@@ -851,6 +879,15 @@ export function setAppearanceSetting(key, value) {
   save();
 }
 
+export function setDropdownOptions(key, rawValue) {
+  if (!['prro', 'currency', 'kepIssuer'].includes(key)) return false;
+  const values = String(rawValue || '').split(/[\n,;]/).map((item) => item.trim()).filter(Boolean);
+  db.settings.dropdownOptions ||= { prro: [], currency: [], kepIssuer: [] };
+  db.settings.dropdownOptions[key] = [...new Set(values)].slice(0, 100);
+  save('Змінено варіанти випадаючого списку', 'Налаштування');
+  return true;
+}
+
 export function setActivityReference(kind, rows) {
   if (!['kved', 'nace'].includes(kind) || !Array.isArray(rows) || !rows.length) return false;
   db.settings.activityReferences ||= {};
@@ -870,6 +907,6 @@ export async function replaceDatabase(newDb) {
   // old, valid backups compatible when newer optional collections are added.
   await storage.saveRestoredDatabase(newDb);
   db = await storage.reloadDatabase();
-  lastSnapshot = snapshot(db); undoStack.length = 0;
+  lastSnapshot = snapshot(db); lastBusinessSnapshot = snapshot(businessSnapshot(db)); undoStack.length = 0;
   return db;
 }

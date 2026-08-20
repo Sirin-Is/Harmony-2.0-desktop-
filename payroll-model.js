@@ -41,8 +41,8 @@ export function payrollPaymentTypes(period) {
   const previousMonth = MONTH_NAMES_GENITIVE_UA[month === 1 ? 11 : month - 2];
   const currentMonth = MONTH_NAMES_GENITIVE_UA[month - 1];
   return [
-    `Виплата зарплати за другу половину ${previousMonth}`,
-    `Виплата зарплати за першу половину ${currentMonth}`,
+    `Виплата ЗП за другу половину ${previousMonth}`,
+    `Виплата ЗП за першу половину ${currentMonth}`,
     'Звільнення', 'Відпустка', 'Лікарняні',
   ];
 }

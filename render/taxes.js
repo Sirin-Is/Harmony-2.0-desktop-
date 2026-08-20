@@ -17,15 +17,15 @@ function exemptionSelect(item, taxType, record) {
   return `<select class="tax-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(item.group)}" data-tax="${escapeHtml(taxType.key)}" data-field="exemption" aria-label="Причина звільнення: ${escapeHtml(taxType.label)}, ${escapeHtml(item.name)}">${options}</select>`;
 }
 
-function taxRow(item, taxType, index, record, deadline, isDefaultDeadline) {
-  const nameCell = index === 0 ? `<td rowspan="3" class="fop-name-cell">${escapeHtml(shortClientName(item.name))}</td>` : '';
+function taxRow(item, taxType, index, record, deadline, isDefaultDeadline, fullyExempt) {
+  const nameCell = index === 0 ? `<td rowspan="3" class="fop-name-cell${fullyExempt ? ' fop-fully-exempt' : ''}">${escapeHtml(shortClientName(item.name))}</td>` : '';
   const context = `${escapeHtml(taxType.label)}, ${escapeHtml(item.name)}`;
   return `<tr class="${record.exemption ? 'exempt-row' : ''}" data-row-id="${escapeHtml(item.id)}">
     ${nameCell}
     <td>${taxType.label}</td>
     <td><input type="date" class="tax-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(item.group)}" data-tax="${escapeHtml(taxType.key)}" data-field="queuedDate" value="${escapeHtml(record.queuedDate || '')}" aria-label="Набрано в банку: ${context}"></td>
     <td><input type="date" class="tax-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(item.group)}" data-tax="${escapeHtml(taxType.key)}" data-field="paidDate" value="${escapeHtml(record.paidDate || '')}" aria-label="Дата сплати: ${context}"></td>
-    <td class="tax-days">${daysUntilLabel(deadline, record)}</td>
+    <td class="tax-days">${record.exemption ? '-' : daysUntilLabel(deadline, record)}</td>
     <td><input type="date" class="tax-field ${isDefaultDeadline ? 'tax-field-default' : ''}" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(item.group)}" data-tax="${escapeHtml(taxType.key)}" data-field="deadline" value="${escapeHtml(deadline)}" title="${isDefaultDeadline ? 'Значення з «Налаштувань». Змініть, щоб задати виняток лише для цього ФОП.' : ''}" aria-label="Дедлайн: ${context}"></td>
     <td class="tax-status">${statusPillHtml(record, deadline)}</td>
     <td>${exemptionSelect(item, taxType, record)}</td>
@@ -45,11 +45,13 @@ export function renderTaxes() {
   const rows = [];
   clients.forEach((item) => {
     const realGroup = String(item.group);
+    const records = TAX_TYPES.map((taxType) => getTaxField(item.id, realGroup, uiState.taxPeriod, taxType.key));
+    const fullyExempt = records.every((record) => Boolean(record.exemption));
     TAX_TYPES.forEach((taxType, index) => {
-      const record = getTaxField(item.id, realGroup, uiState.taxPeriod, taxType.key);
+      const record = records[index];
       const deadline = getEffectiveTaxDeadline(realGroup, taxType.key, uiState.taxPeriod, record);
       const isDefault = !record.deadline && Boolean(deadline);
-      rows.push(taxRow(item, taxType, index, record, deadline, isDefault));
+      rows.push(taxRow(item, taxType, index, record, deadline, isDefault, fullyExempt));
     });
   });
 

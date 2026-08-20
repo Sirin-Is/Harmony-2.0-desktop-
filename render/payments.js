@@ -38,7 +38,7 @@ export function renderPayments() {
       ${monthCells}
     </tr>`;
   });
-  const monthHeadRow = months.map((month) => `<th colspan="2" class="month-head">${month.label}</th>`).join('');
+  const monthHeadRow = months.map((month) => `<th colspan="2" class="month-head">${month.label}<button type="button" class="auto-charge" data-autofill-month="${escapeHtml(month.key)}" title="Заповнити «Нарах.» за вартістю обслуговування в картках ФОП">Авто</button></th>`).join('');
   const subHeadRow = months.map(() => '<th>Нарах.</th><th>Сплач.</th>').join('');
   const body = rows.length
     ? rows.join('')

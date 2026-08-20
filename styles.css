@@ -197,7 +197,7 @@ tr.drag-over td { box-shadow: inset 0 2px 0 var(--brand); }
 /* Tax rows */
 .fop-name-cell { font-weight: 600; white-space: nowrap; }
 .exempt-row td { background: #f3f4f6; color: #98a2b3; }
-.exempt-row .fop-name-cell { color: #667085; }
+.fop-name-cell.fop-fully-exempt { color: #667085; }
 .tax-field, .report-field { border: 1px solid #d7dde5; border-radius: 5px; padding: 5px; font: 12px inherit; color: var(--ink); }
 select.tax-field { width: 150px; }
 input.tax-field[type="date"], input.report-field[type="date"] { width: 134px; }
@@ -242,6 +242,10 @@ input.tax-field-default { border-style: dashed; background: #fbfdfc; color: #4b6
 .tax-table input.tax-field[type="text"], .tax-table select.tax-field { width: 100%; min-width: 0; }
 body:has(.tax-table) { overflow: hidden; }
 #content:has(.tax-table) > .table-wrap { max-height: calc(100vh - 285px); }
+/* Large registers own their vertical scrolling; without this the page and
+   the register both show a scrollbar for the same records. */
+body:has(.activities-table), body:has(.activities-mapping-table), body:has(.audit-table) { overflow: hidden; }
+#content:has(.activities-table) > .table-wrap, #content:has(.activities-mapping-table) > .table-wrap, #content:has(.audit-table) > .table-wrap { max-height: calc(100vh - 210px); }
 
 /* ===== Misc cards / widgets kept for upcoming modules (Звітність, …) ===== */
 .client-card { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; margin-bottom: 8px; background: #fff; }
@@ -332,6 +336,8 @@ dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 
 .calendar-event { display: block; width: 100%; margin: 3px 0; padding: 4px 6px; border: 0; border-radius: 4px; background: #eef3ff; color: #243a70; font-size: 11px; line-height: 1.25; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .app-dialog textarea { width: 100%; min-height: 90px; resize: vertical; font: inherit; }
 .calendar-event.tax { background: #fff5d9; color: #795600; }.calendar-event.report { background: #feeceb; color: #9c3030; }
+.calendar-event-completed { opacity: .82; text-decoration: line-through; }
+.calendar-complete-mark { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-right: 4px; border-radius: 50%; color: #fff; background: #208354; font-weight: 900; line-height: 1; text-decoration: none; }
 .calendar-event-row { display: flex; align-items: center; gap: 2px; }.calendar-event-row .calendar-event { flex: 1; }.calendar-delete { width: 16px; min-width: 16px; min-height: 16px; height: 16px; padding: 0; border: 0; background: transparent; color: #7a8696; font-size: 16px; line-height: 1; box-shadow: none; }.calendar-delete:hover { color: var(--red); background: transparent; }
 .calendar-tabs { display: flex; gap: 6px; margin-bottom: 12px; padding: 4px; border: 1px solid #d4dce8; border-radius: 7px; background: #f3f6fa; width: fit-content; }
 .calendar-tabs button { min-height: 29px; padding: 4px 12px; border: 0; border-radius: 5px; color: #5b687a; background: transparent; box-shadow: none; }
@@ -408,10 +414,19 @@ dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 
 .payroll-table th:nth-child(8), .payroll-table td:nth-child(8) { width: 90px; }
 .payroll-table th:nth-child(9), .payroll-table td:nth-child(9) { width: 78px; }
 .payroll-table th:nth-child(10), .payroll-table td:nth-child(10), .payroll-table th:nth-child(11), .payroll-table td:nth-child(11), .payroll-table th:nth-child(12), .payroll-table td:nth-child(12) { width: 78px; }
+.payroll-table th:nth-child(4), .payroll-table td:nth-child(4), .payroll-table th:nth-child(5), .payroll-table td:nth-child(5), .payroll-table th:nth-child(6), .payroll-table td:nth-child(6), .payroll-table th:nth-child(7), .payroll-table td:nth-child(7), .payroll-table th:nth-child(8), .payroll-table td:nth-child(8) { text-align: center; }
+.payroll-table td:nth-child(4) input, .payroll-table td:nth-child(5) input, .payroll-table td:nth-child(6) input, .payroll-table td:nth-child(7) input, .payroll-table td:nth-child(8) select { text-align: center; }
 .payroll-type-row td { padding: 5px 9px !important; border-top: 1px solid #9aa7b7; border-bottom: 1px solid #d5dce6; color: #334155; background: #f5f7fa; font-size: 12px; font-weight: 700; text-align: left; }
 .payroll-type-row .payroll-batch-total { text-align: right; font-size: 11px; font-variant-numeric: tabular-nums; }
 .payroll-total-row td { padding-top: 5px; padding-bottom: 6px; color: #334155; background: #fafbfc; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
 .payroll-total-row td:nth-child(2) { text-align: left; }
+.auto-charge { margin-left: 5px; border: 0; border-radius: 4px; padding: 2px 4px; font: 600 9px inherit; color: #176b58; background: #dcf5ea; cursor: pointer; }
+.task-type { display: inline-block; width: fit-content; border-radius: 99px; padding: 2px 7px; font-size: 10px; font-weight: 700; }
+.task-type-reports { color: #a51d30; background: #ffe5e9; }
+.task-type-taxes { color: #875900; background: #fff1c7; }
+.task-type-salary { color: #6541a6; background: #eee7ff; }
+.task-type-operational { color: #17688c; background: #dff3ff; }
+.task-type-communication { color: #1d6c45; background: #def6e7; }
 .payroll-delete { width: 24px; min-width: 24px; min-height: 24px; height: 24px; margin-right: 6px; vertical-align: middle; }
 .payroll-settings-table th:first-child { min-width: 190px; text-align: left; }
 .payroll-settings-table td { min-width: 118px; }

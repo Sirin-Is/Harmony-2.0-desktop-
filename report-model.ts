@@ -40,6 +40,10 @@ export function statutoryReportDeadline(realGroup: string, periodKey: string): s
 }
 
 export function getDefaultReportDeadline(db: Database, realGroup: string, periodKey: string): string {
+  const configured = realGroup === '3'
+    ? db?.settings?.reportDeadlines?.quarterly?.[periodKey]
+    : db?.settings?.reportDeadlines?.annual?.[periodKey];
+  if (configured) return configured;
   return controlDeadline(statutoryReportDeadline(realGroup, periodKey));
 }
 

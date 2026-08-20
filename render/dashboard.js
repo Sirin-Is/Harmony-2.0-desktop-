@@ -24,7 +24,7 @@ function filterValue(item, key) {
   return {
     name: item.name || '', groupRate: `${item.group || '-'} / ${rateText(item)}`,
     currency: item.currency || '-', phone: item.phone || '', email: item.email || '',
-    bankAccess: item.bankAccess || '', prro: item.prro || '', employees: String(item.employeesCount || ''),
+    bankAccess: item.bankAccess || '', prro: item.prro || '', employees: Number(item.employeesCount) > 0 ? String(item.employeesCount) : '-',
     serviceCost: String(toNumber(item.serviceCost) || ''), kepIssuer: item.kepIssuer || '',
     kepExpiry: kepDaysLabel(item.kepExpiry),
   }[key] ?? '';
@@ -70,7 +70,7 @@ function clientRow(item, columns) {
     <td>${escapeHtml(item.email || '-')}</td>
     <td>${escapeHtml(item.bankAccess || '-')}</td>
     <td>${escapeHtml(item.prro || '-')}</td>
-    <td>${escapeHtml(item.employeesCount || '-')}</td>
+    <td>${Number(item.employeesCount) > 0 ? escapeHtml(item.employeesCount) : '-'}</td>
     <td class="right">${moneyFormat.format(toNumber(item.serviceCost))}</td>
     <td>${escapeHtml(item.kepIssuer || '-')}</td>
     <td>${kepStatusLabel(item.kepExpiry)}</td>
@@ -88,7 +88,13 @@ export function renderDashboard() {
     const values = [...FILTER_COLUMNS.map(([key]) => filterValue(item, key)), ...columns.map((column) => filterValue(item, `custom:${column.id}`))];
     return values.some((value) => String(value).toLocaleLowerCase('uk').includes(search));
   });
-  const rows = clients.map((item) => clientRow(item, columns));
+  const sortedClients = [...clients].sort((a, b) => {
+    if (uiState.dashboardSort === 'name-desc') return String(b.name).localeCompare(String(a.name), 'uk');
+    if (uiState.dashboardSort === 'cost-asc') return toNumber(a.serviceCost) - toNumber(b.serviceCost) || String(a.name).localeCompare(String(b.name), 'uk');
+    if (uiState.dashboardSort === 'cost-desc') return toNumber(b.serviceCost) - toNumber(a.serviceCost) || String(a.name).localeCompare(String(b.name), 'uk');
+    return String(a.name).localeCompare(String(b.name), 'uk');
+  });
+  const rows = sortedClients.map((item) => clientRow(item, columns));
   const openColumn = [...FILTER_COLUMNS, ...columns.map((column) => [`custom:${column.id}`, column.name])].find(([key]) => key === uiState.dashboardFilterOpen);
   const activeFilterCount = Object.keys(uiState.dashboardFilters).length;
   const hasQuery = Boolean(search || activeFilterCount);
@@ -101,6 +107,7 @@ export function renderDashboard() {
       <div class="toolbar-actions">
         <label class="dashboard-search"><span class="visually-hidden">Швидкий пошук ФОП</span><input type="search" data-dashboard-search value="${escapeHtml(uiState.dashboardSearch || '')}" placeholder="Пошук ФОП…" autocomplete="off"></label>
         <span class="dashboard-result-count" aria-live="polite">${clients.length} із ${allClients.length}</span>
+        <label class="visually-hidden" for="dashboardSort">Сортування</label><select id="dashboardSort" data-dashboard-sort><option value="name-asc" ${uiState.dashboardSort === 'name-asc' ? 'selected' : ''}>ПІБ: А–Я</option><option value="name-desc" ${uiState.dashboardSort === 'name-desc' ? 'selected' : ''}>ПІБ: Я–А</option><option value="cost-asc" ${uiState.dashboardSort === 'cost-asc' ? 'selected' : ''}>Вартість: менша–більша</option><option value="cost-desc" ${uiState.dashboardSort === 'cost-desc' ? 'selected' : ''}>Вартість: більша–менша</option></select>
         ${activeFilterCount ? `<button class="secondary compact-action" data-clear-dashboard-filters>Скинути фільтри (${activeFilterCount})</button>` : ''}
         <button class="secondary" data-export-clients>Експорт</button>
         <button class="secondary" data-import-clients>Імпорт</button>

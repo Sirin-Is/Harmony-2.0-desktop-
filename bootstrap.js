@@ -9,9 +9,9 @@
 import { $, todayIso } from './utils';
 import { uiState } from './ui-state.js';
 import {
-  db, initDatabase, lockDatabase, refreshDatabaseFromSync, prepareDatabaseSwitch, undoLastAction, setAuditActor, setAccessRole, getClientById, deleteClientPermanently, archiveClient, requestClientDeletion, setClientLifecycle, reorderClients, setCustomFieldValue, replaceDatabase,
-  setMonthlyPaymentField, setTaxField, setReportField, setIncomeValue,
-  setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, setActivityReference, getSettings,
+  db, initDatabase, lockDatabase, refreshDatabaseFromSync, prepareDatabaseSwitch, undoLastAction, setAuditActor, setAccessRole, getClientById, deleteClientPermanently, purgeDeletedTestClients, archiveClient, requestClientDeletion, setClientLifecycle, reorderClients, setCustomFieldValue, replaceDatabase,
+  setMonthlyPaymentField, autofillMonthlyCharges, setTaxField, setReportField, setIncomeValue,
+  setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, setDropdownOptions, setActivityReference, getSettings,
   deleteCustomColumn, getCustomColumns,
   copyTaxPeriodForward, getVisibleClients, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, canRollbackChanges, rollbackChangesAfter, rollbackRetentionStart, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField,
   getDatabaseRelationshipIssues,
@@ -162,7 +162,7 @@ async function downloadBackup() {
   if (!uiState.currentUser || !db) throw new Error('Потрібно авторизуватися.');
   const password = await openAppDialog({
     title: 'Зашифрувати резервну копію',
-    message: 'Створіть окремий пароль щонайменше з 12 символів. Harmony не зберігає його й не зможе відновити файл без цього пароля.',
+    message: 'Створіть окремий пароль щонайменше з 8 символів. Harmony не зберігає його й не зможе відновити файл без цього пароля.',
     fields: [
       { key: 'password', label: 'Пароль резервної копії', type: 'password', required: true },
       { key: 'confirmation', label: 'Повторіть пароль', type: 'password', required: true },
@@ -185,8 +185,32 @@ async function downloadBackup() {
   showToast('Зашифровану резервну копію завантажено. Пароль не зберігається в Harmony.', 'success', 7000);
 }
 
-export function render() {
+function captureViewport() {
+  return {
+    pageX: window.scrollX,
+    pageY: window.scrollY,
+    tables: [...document.querySelectorAll('#content .table-wrap')].map((element) => ({
+      key: `${element.querySelector('table')?.className || ''}|${element.closest('.panel')?.querySelector('h2')?.textContent || ''}`,
+      left: element.scrollLeft,
+      top: element.scrollTop,
+    })),
+  };
+}
+
+function restoreViewport(snapshot) {
+  if (!snapshot) return;
+  const byKey = new Map(snapshot.tables.map((entry) => [entry.key, entry]));
+  document.querySelectorAll('#content .table-wrap').forEach((element) => {
+    const key = `${element.querySelector('table')?.className || ''}|${element.closest('.panel')?.querySelector('h2')?.textContent || ''}`;
+    const previous = byKey.get(key);
+    if (previous) { element.scrollLeft = previous.left; element.scrollTop = previous.top; }
+  });
+  window.scrollTo(snapshot.pageX, snapshot.pageY);
+}
+
+export function render({ preserveViewport = true } = {}) {
   if (!uiState.currentUser || !db) { setAuthenticatedUi(false); return; }
+  const viewport = preserveViewport ? captureViewport() : null;
   const [crumb, title] = TITLES[uiState.view];
   $('#crumb').textContent = crumb;
   $('#title').textContent = title;
@@ -204,6 +228,7 @@ export function render() {
   applyAppearance();
   applyRoleAccess();
   requestAnimationFrame(() => {
+    let movedToHighlight = false;
     setupTopScrollbars();
     if (uiState.view === 'payments') positionPaymentsTable();
     if (uiState.view === 'dashboard') positionDashboardFilterMenu();
@@ -213,6 +238,7 @@ export function render() {
       $('#title')?.focus({ preventScroll: true });
     }
     if (uiState.pendingHighlightClientId) {
+      movedToHighlight = true;
       const targetId = uiState.pendingHighlightClientId;
       uiState.pendingHighlightClientId = null;
       const rows = [...document.querySelectorAll('tr[data-row-id]')]
@@ -223,6 +249,9 @@ export function render() {
       });
       if (rows[0]?.scrollIntoView) rows[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
+    // A data refresh replaces table DOM.  Restore the user's actual reading
+    // position afterwards, including during a background synchronization.
+    if (!movedToHighlight) restoreViewport(viewport);
   });
 }
 
@@ -282,7 +311,7 @@ function setView(view) {
   if (view === 'deleted' && !uiState.deletedSectionUnlocked) return;
   uiState.view = view;
   focusHeadingAfterRender = true;
-  render();
+  render({ preserveViewport: false });
 }
 
 function noteTitle(event) { return event?.title?.trim() || String(event?.note || '').trim().split(/\r?\n/)[0] || 'Без назви'; }
@@ -297,6 +326,7 @@ async function openNoteEditor(existing = null) {
     title: existing ? 'Змінити задачу' : 'Нова задача',
     fields: [
       { key: 'title', label: 'Назва задачі', value: existing ? noteTitle(existing) : '', required: true },
+      { key: 'taskType', label: 'Тип', type: 'select', value: existing?.taskType || 'Оперативні задачі', options: ['Звіти', 'Податки', 'Зарплата', 'Оперативні задачі', 'Комунікація'] },
       { key: 'client', label: 'ФОП (необов’язково)', value: existing ? (getClientById(existing.clientId)?.name || '') : '', options: getVisibleClients().map((item) => item.name) },
       { key: 'note', label: 'Опис задачі', type: 'textarea', value: existing?.note || '', required: true },
       { key: 'date', label: 'Дата події', type: 'date', value: existing?.eventDate || todayIso(), required: true },
@@ -318,7 +348,7 @@ async function openNoteEditor(existing = null) {
     moveToPreviousWorkday: result.workdayShift === 'Перенести на попередній робочий день',
   } : undefined;
   const workdayShift = result.workdayShift === 'Перенести на попередній робочий день' ? 'previous' : result.workdayShift === 'Перенести на наступний робочий день' ? 'next' : undefined;
-  const saved = saveCalendarEvent({ eventDate: result.date, eventTime: result.time || '', title: result.title, note: result.note, clientId, recurrence: savedRecurrence, workdayShift, completedAt: existing?.completedAt || '', completedDates: existing?.completedDates || [] }, existing?.id);
+  const saved = saveCalendarEvent({ eventDate: result.date, eventTime: result.time || '', title: result.title, taskType: result.taskType, note: result.note, clientId, recurrence: savedRecurrence, workdayShift, completedAt: existing?.completedAt || '', completedDates: existing?.completedDates || [] }, existing?.id);
   if (!saved) { showToast('Перевірте дату, час та діапазон повторення задачі.', 'error'); return; }
   render();
 }
@@ -426,7 +456,10 @@ function bindCurrentView() {
   document.querySelectorAll('[data-hr-document]').forEach((button) => button.addEventListener('click', () => {
     const next = button.textContent.trim() === 'Надіслано' ? 'Не надіслано' : 'Надіслано';
     setHrMonthlyDocumentStatus(button.dataset.hrDocument, button.dataset.hrPeriod, button.dataset.hrField, next);
-    render();
+    button.textContent = next;
+    button.classList.toggle('sent', next === 'Надіслано');
+    button.classList.toggle('pending', next !== 'Надіслано');
+    button.setAttribute('aria-pressed', String(next === 'Надіслано'));
   }));
   document.querySelector('[data-payroll-prev]')?.addEventListener('click', () => { if (uiState.payrollMonth > 1) { uiState.payrollMonth -= 1; render(); } });
   document.querySelector('[data-payroll-next]')?.addEventListener('click', () => { if (uiState.payrollMonth < 12) { uiState.payrollMonth += 1; render(); } });
@@ -474,7 +507,7 @@ function bindCurrentView() {
     return parsed.getFullYear() === Number(`20${parts[3]}`) && parsed.getMonth() + 1 === Number(parts[2]) && parsed.getDate() === Number(parts[1]) ? iso : null;
   };
   const invalidAmountMessage = 'Вкажіть невід’ємну суму в допустимому числовому форматі.';
-  const savePayrollDate = (field, iso) => { setPayrollField(field.dataset.payrollId, 'paymentDate', iso); render(); };
+  const savePayrollDate = (field, iso) => { setPayrollField(field.dataset.payrollId, 'paymentDate', iso); };
   document.querySelectorAll('.payroll-date-field').forEach((field) => field.addEventListener('input', () => {
     const digitPosition = field.value.slice(0, field.selectionStart || 0).replace(/\D/g, '').length;
     const digits = field.value.replace(/\D/g, '').slice(0, 6);
@@ -504,7 +537,6 @@ function bindCurrentView() {
     if (!setPayrollField(field.dataset.payrollId, field.dataset.payrollField, value)) {
       showToast(invalidAmountMessage, 'error');
     }
-    render();
   }));
   document.querySelectorAll('[data-activities-section]').forEach((button) => button.addEventListener('click', () => { uiState.activitiesSection = button.dataset.activitiesSection; render(); }));
   document.querySelector('#auditSearch')?.addEventListener('input', (event) => {
@@ -552,14 +584,15 @@ function bindCurrentView() {
     });
   });
   document.querySelector('[data-add-hr-order]')?.addEventListener('click', async () => {
-    const employeeNames = getVisibleClients().flatMap((client) => (client.employees || []).map((employee) => employee.name)).filter(Boolean);
     const clients = getVisibleClients();
-    const result = await openAppDialog({ title: 'Новий кадровий документ', message: 'Внесіть реквізити документа та оберіть ФОП, якому його потрібно надіслати.', fields: [{ key: 'client', label: 'ФОП', required: true, options: clients.map((client) => client.name) }, { key: 'number', label: 'Номер документа', required: true }, { key: 'date', label: 'Дата документа', type: 'date', value: todayIso(), required: true }, { key: 'subject', label: 'Суть документа', required: true }, { key: 'employeeName', label: 'ПІБ працівника (необов’язково)', options: employeeNames }, { key: 'effectiveDate', label: 'Дата початку дії', type: 'date', value: todayIso(), required: true }, { key: 'deliveryStatus', label: 'Статус надсилання', value: 'Не надіслано', required: true, options: ['Не надіслано', 'Надіслано'] }], confirmText: 'Зберегти' });
+    const choice = await openAppDialog({ title: 'Новий кадровий документ', message: 'Спочатку оберіть ФОП-роботодавця.', fields: [{ key: 'client', label: 'ФОП', type: 'select', required: true, options: clients.map((client) => client.name) }], confirmText: 'Далі' });
+    const client = clients.find((item) => item.name === choice?.client);
+    if (!client) return;
+    const employeeNames = (client.employees || []).map((employee) => employee.name).filter(Boolean);
+    const result = await openAppDialog({ title: 'Новий кадровий документ', message: `ФОП: ${client.name}`, fields: [{ key: 'number', label: 'Номер документа', required: true }, { key: 'date', label: 'Дата документа', type: 'date', value: todayIso(), required: true }, { key: 'subject', label: 'Суть документа', required: true }, { key: 'employeeName', label: 'ПІБ працівника (необов’язково)', options: employeeNames }, { key: 'effectiveDate', label: 'Дата початку дії', type: 'date', value: todayIso(), required: true }, { key: 'deliveryStatus', label: 'Статус надсилання', type: 'select', value: 'Не надіслано', required: true, options: ['Не надіслано', 'Надіслано'] }], confirmText: 'Зберегти' });
     if (!result) return;
-    const clientId = clients.find((client) => client.name === result.client)?.id;
-    if (!clientId) { showToast('Оберіть ФОП зі списку.', 'error'); return; }
     const period = `${getSettings().workingYear}-${String(uiState.hrDocumentsMonth || 1).padStart(2, '0')}`;
-    const saved = saveHrOrder({ ...result, clientId, period });
+    const saved = saveHrOrder({ ...result, clientId: client.id, period });
     if (!saved) { showToast('Документ із таким номером уже є для цього ФОП або містить некоректні реквізити.', 'warn'); return; }
     render();
   });
@@ -655,7 +688,13 @@ function bindCurrentView() {
     if (!setTaxField(field.dataset.client, field.dataset.realGroup, uiState.taxPeriod, field.dataset.tax, field.dataset.field, field.value)) {
       showToast('Перевірте дату: сплата не може передувати набору в банку.', 'error');
     }
-    render();
+    if (field.dataset.field === 'exemption') {
+      const row = field.closest('tr');
+      row?.classList.toggle('exempt-row', Boolean(field.value));
+      const rows = [...document.querySelectorAll(`.tax-table tr[data-row-id="${CSS.escape(field.dataset.client)}"]`)];
+      const fullyExempt = rows.length === 3 && rows.every((item) => Boolean(item.querySelector('[data-field="exemption"]')?.value));
+      rows[0]?.querySelector('.fop-name-cell')?.classList.toggle('fop-fully-exempt', fullyExempt);
+    }
   }));
   $('[data-copy-previous-period]')?.addEventListener('click', () => {
     const periods = taxPeriodsFor(uiState.taxGroup === '3' ? '3' : '1', getSettings().workingYear);
@@ -678,21 +717,27 @@ function bindCurrentView() {
     if (!setReportField(field.dataset.client, field.dataset.realGroup, uiState.reportPeriod, field.dataset.field, field.value)) {
       showToast('Вкажіть коректне значення звітності.', 'error');
     }
-    render();
   }));
 
   // --- Доходи ---
   document.querySelectorAll('[data-income-group]').forEach((b) => b.onclick = () => { uiState.incomeGroup = b.dataset.incomeGroup; render(); });
   document.querySelectorAll('.income-value').forEach((field) => field.addEventListener('change', () => {
     if (!setIncomeValue(field.dataset.client, field.dataset.month, field.value)) showToast(invalidAmountMessage, 'error');
-    render();
   }));
 
   // --- Оплати ---
   document.querySelectorAll('[data-payments-quarter]').forEach((button) => button.addEventListener('click', () => { uiState.paymentsQuarter = Number(button.dataset.paymentsQuarter); render(); }));
   document.querySelectorAll('.month-value').forEach((field) => field.addEventListener('change', () => {
     if (!setMonthlyPaymentField(field.dataset.client, field.dataset.month, field.dataset.type, field.value)) showToast(invalidAmountMessage, 'error');
-    render();
+  }));
+  document.querySelectorAll('[data-autofill-month]').forEach((button) => button.addEventListener('click', () => {
+    const changed = autofillMonthlyCharges(button.dataset.autofillMonth);
+    if (!changed) { showToast('У картках ФОП ще немає вартості обслуговування.', 'info'); return; }
+    document.querySelectorAll(`.month-value[data-month="${CSS.escape(button.dataset.autofillMonth)}"][data-type="charged"]`).forEach((field) => {
+      const client = getClientById(field.dataset.client);
+      field.value = String(client?.serviceCost ?? '');
+    });
+    showToast(`Автоматично заповнено нарахування: ${changed}.`, 'success');
   }));
 
   // --- Налаштування ---
@@ -767,7 +812,9 @@ function bindCurrentView() {
     else if (field.dataset.scope === 'report-annual') saved = setReportDeadline('annual', field.dataset.period, field.value);
     else if (field.dataset.scope === 'report-quarterly') saved = setReportDeadline('quarterly', field.dataset.period, field.value);
     if (!saved) showToast('Вкажіть коректну дату дедлайну.', 'error');
-    render();
+  }));
+  document.querySelectorAll('[data-dropdown-options]').forEach((field) => field.addEventListener('change', () => {
+    if (!setDropdownOptions(field.dataset.dropdownOptions, field.value)) showToast('Не вдалося зберегти список.', 'error');
   }));
   document.querySelectorAll('[data-settings-section]').forEach((button) => button.addEventListener('click', async () => {
     uiState.settingsSection = button.dataset.settingsSection;
@@ -905,7 +952,7 @@ function bindCurrentView() {
   document.querySelectorAll('[data-request-delete-client]').forEach((b) => b.onclick = async () => {
     const item = getClientById(b.dataset.requestDeleteClient);
     if (!item) return;
-    const result = await openAppDialog({ title: 'Перенести до видалених', message: 'ФОП одразу буде перенесено до розділу «Видалені». Введіть повний ПІБ і причину.', fields: [{ key: 'name', label: `Повний ПІБ: ${item.name}`, required: true }, { key: 'reason', label: 'Причина видалення', required: true }], confirmText: 'Перенести', danger: true });
+    const result = await openAppDialog({ title: 'Перенести до видалених', message: 'ФОП одразу буде перенесено до розділу «Видалені». Вкажіть причину, а потім введіть повний ПІБ вручну.', fields: [{ key: 'reason', label: 'Причина видалення', required: true }, { key: 'name', label: `Повний ПІБ: ${item.name}`, required: true, manualEntry: true }], confirmText: 'Перенести', danger: true });
     if (!result) return;
     if (result.name !== item.name) { showToast('ПІБ не збігається. Запит на видалення скасовано.', 'error'); return; }
     requestClientDeletion(item.id, result.reason);
@@ -942,6 +989,7 @@ function bindCurrentView() {
     render();
     $('[data-dashboard-search]')?.focus();
   });
+  $('[data-dashboard-sort]')?.addEventListener('change', (event) => { uiState.dashboardSort = event.target.value; render(); });
   document.querySelectorAll('[data-dashboard-filter]').forEach((button) => button.addEventListener('click', (event) => {
     event.stopPropagation();
     uiState.dashboardFilterOpen = uiState.dashboardFilterOpen === button.dataset.dashboardFilter ? null : button.dataset.dashboardFilter;
@@ -999,6 +1047,17 @@ function wireGlobalControls() {
 
   let hPresses = [];
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      const hasOpenWindow = Boolean(document.querySelector('dialog[open], .cc-overlay.open'));
+      if (hasOpenWindow) {
+        event.preventDefault();
+        closeAppDialog();
+        closeEmployeeCard();
+        closeClientCard();
+        if ($('#modal')?.open) closeModal();
+      }
+      return;
+    }
     if (!uiState.currentUser || !db) return;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
       if (undoLastAction()) { event.preventDefault(); render(); showToast('Останню дію скасовано.', 'info'); }
@@ -1057,6 +1116,8 @@ function wireGlobalControls() {
       uiState.currentUser = profile;
       showBootOverlay(true);
       await initDatabase(profile.workspaceId);
+      setAccessRole(profile.role);
+      purgeDeletedTestClients();
       setAuditActor(profile.displayName);
       setAccessRole(profile.role);
       setAuthButtonLabel(`Вийти (${profile.displayName})`);
@@ -1143,6 +1204,8 @@ async function boot() {
     }
     uiState.currentUser = profile;
     await initDatabase(profile.workspaceId);
+    setAccessRole(profile.role);
+    purgeDeletedTestClients();
     try { uiState.localStorageProtection = await getLocalStorageProtection(); }
     catch (error) { uiState.localStorageProtection = { enabled: false, detail: error.message || String(error) }; }
     try { await loadActivityReference(); }

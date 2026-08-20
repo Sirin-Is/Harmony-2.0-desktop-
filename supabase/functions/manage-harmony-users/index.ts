@@ -2,7 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2.111.0';
 import { corsHeaders } from 'npm:@supabase/supabase-js@2.111.0/cors';
 
 type Role = 'administrator' | 'accountant' | 'observer';
-const MIN_PASSWORD_LENGTH = 12;
+const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 128;
 const MAX_BODY_BYTES = 32 * 1024;
 const json = (body: unknown, status = 200, extraHeaders: Record<string, string> = {}) => new Response(JSON.stringify(body), {
@@ -40,7 +40,7 @@ const readLimitedBody = async (request: Request): Promise<string | null> => {
   }
 };
 const validLogin = (value: string) => /^[a-z0-9._-]{3,40}$/.test(value);
-const commonPasswords = new Set(['123456789012', 'adminadminadmin', 'password1234', 'qwerty123456', 'harmony12345']);
+const commonPasswords = new Set(['12345678', 'adminadmin', 'password', 'password1234', 'qwerty123', 'harmony1']);
 const passwordPolicyError = (password: string, login: string) => {
   if (password.length < MIN_PASSWORD_LENGTH) return `Пароль має містити щонайменше ${MIN_PASSWORD_LENGTH} символів.`;
   if (password.length > MAX_PASSWORD_LENGTH) return `Пароль має містити не більше ${MAX_PASSWORD_LENGTH} символів.`;

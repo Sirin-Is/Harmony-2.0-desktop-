@@ -34,6 +34,18 @@ function input(name, value, { type = 'text', required = false } = {}) {
   return node;
 }
 
+function select(name, value, options) {
+  const node = element('select');
+  node.name = name;
+  options.forEach((option) => {
+    const item = element('option', '', option);
+    item.value = option;
+    item.selected = option === value;
+    node.appendChild(item);
+  });
+  return node;
+}
+
 function ensureDialog() {
   if (dialog) return dialog;
   dialog = document.createElement('dialog');
@@ -144,6 +156,7 @@ export function openEmployeeCard(employeeId = null) {
     field('Посада', input('position', employee.position, { required: true })),
     field('Дата прийняття', input('hireDate', employee.hireDate, { type: 'date', required: true })),
     field('Дата звільнення', input('dismissalDate', employee.dismissalDate, { type: 'date' })),
+    field('Виплата ЗП', select('salaryPaymentMethod', employee.salaryPaymentMethod || 'Безготівкою', ['Безготівкою', 'Готівка'])),
   );
 
   const documentsSection = element('section', 'employee-card-documents');
@@ -165,6 +178,7 @@ export function openEmployeeCard(employeeId = null) {
   el.replaceChildren(form);
 
   enhanceDateInputs(el);
+  el.querySelector('input[name="name"]')?.setAttribute('spellcheck', 'false');
   el.querySelectorAll('[data-employee-card-close]').forEach((node) => node.addEventListener('click', close));
   const bindDocumentPanel = () => {
     documentsSection.querySelectorAll('[data-employee-order-status]').forEach((node) => node.addEventListener('click', () => {
@@ -202,6 +216,7 @@ export function openEmployeeCard(employeeId = null) {
       position: String(formData.get('position') || '').trim(),
       hireDate: String(formData.get('hireDate') || ''),
       dismissalDate: String(formData.get('dismissalDate') || ''),
+      salaryPaymentMethod: String(formData.get('salaryPaymentMethod') || 'Безготівкою'),
     };
     const validation = validateEmployee(values);
     if (!validation.ok) { showToast(validation.reason, 'error'); return; }

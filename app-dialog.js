@@ -29,7 +29,7 @@ export function openAppDialog({ title, message, fields = [], confirmText = 'Пі
     if (activeClose) activeClose();
     activeClose = close;
     const inputs = fields.map((field) => `<label>${escapeHtml(field.label)}
-      ${field.type === 'textarea' ? `<textarea data-dialog-field="${escapeHtml(field.key)}" ${field.required ? 'required' : ''}>${escapeHtml(field.value || '')}</textarea>` : field.type === 'select' ? `<select data-dialog-field="${escapeHtml(field.key)}" ${field.required ? 'required' : ''}>${(field.options || []).map((option) => `<option value="${escapeHtml(option)}" ${option === field.value ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select>` : `<input data-dialog-field="${escapeHtml(field.key)}" type="${escapeHtml(field.type || 'text')}" value="${escapeHtml(field.value || '')}" ${field.required ? 'required' : ''} ${field.min ? `min="${escapeHtml(field.min)}"` : ''} ${field.max ? `max="${escapeHtml(field.max)}"` : ''} ${field.minLength ? `minlength="${escapeHtml(field.minLength)}"` : ''} ${field.maxLength ? `maxlength="${escapeHtml(field.maxLength)}"` : ''} autocomplete="${escapeHtml(field.autocomplete || 'off')}" ${field.options ? `list="dialog-list-${escapeHtml(field.key)}"` : ''}>`}
+      ${field.type === 'textarea' ? `<textarea data-dialog-field="${escapeHtml(field.key)}" ${field.required ? 'required' : ''}>${escapeHtml(field.value || '')}</textarea>` : field.type === 'select' ? `<select data-dialog-field="${escapeHtml(field.key)}" ${field.required ? 'required' : ''}>${(field.options || []).map((option) => `<option value="${escapeHtml(option)}" ${option === field.value ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select>` : `<input data-dialog-field="${escapeHtml(field.key)}" type="${escapeHtml(field.type || 'text')}" value="${escapeHtml(field.value || '')}" ${field.required ? 'required' : ''} ${field.min ? `min="${escapeHtml(field.min)}"` : ''} ${field.max ? `max="${escapeHtml(field.max)}"` : ''} ${field.minLength ? `minlength="${escapeHtml(field.minLength)}"` : ''} ${field.maxLength ? `maxlength="${escapeHtml(field.maxLength)}"` : ''} autocomplete="${escapeHtml(field.autocomplete || 'off')}" ${field.options ? `list="dialog-list-${escapeHtml(field.key)}"` : ''} ${field.manualEntry ? 'data-manual-entry' : ''}>`}
       ${field.options ? `<datalist id="dialog-list-${escapeHtml(field.key)}">${field.options.map((option) => `<option value="${escapeHtml(option)}"></option>`).join('')}</datalist>` : ''}
     </label>`).join('');
     el.innerHTML = `<form method="dialog" class="app-dialog-form">
@@ -44,6 +44,12 @@ export function openAppDialog({ title, message, fields = [], confirmText = 'Пі
       const resize = () => { textarea.style.height = 'auto'; textarea.style.height = `${textarea.scrollHeight}px`; };
       textarea.addEventListener('input', resize); resize();
     });
+    el.querySelectorAll('[data-manual-entry]').forEach((input) => input.addEventListener('paste', (event) => {
+      event.preventDefault();
+    }));
+    el.querySelectorAll('[data-manual-entry]').forEach((input) => input.addEventListener('drop', (event) => {
+      event.preventDefault();
+    }));
     el.addEventListener('cancel', onCancel);
     el.querySelector('form').addEventListener('submit', (event) => {
       event.preventDefault();

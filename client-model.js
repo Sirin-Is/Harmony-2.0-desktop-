@@ -174,9 +174,17 @@ export function deleteClient(db, id) {
   if (!existed) return false;
   db.clients = db.clients.filter((item) => item.id !== id);
   delete db.monthlyPayments[id];
+  delete db.incomeRecords?.[id];
   Object.keys(db.taxRecords).forEach((key) => {
     if (key.startsWith(`${id}|`)) delete db.taxRecords[key];
   });
+  Object.keys(db.reportRecords || {}).forEach((key) => {
+    if (key.startsWith(`${id}|`)) delete db.reportRecords[key];
+  });
+  db.hrOrders = (db.hrOrders || []).filter((item) => item.clientId !== id);
+  db.hrMonthlyDocuments = (db.hrMonthlyDocuments || []).filter((item) => item.clientId !== id);
+  db.payrollRecords = (db.payrollRecords || []).filter((item) => item.clientId !== id);
+  db.calendarEvents = (db.calendarEvents || []).filter((item) => item.clientId !== id);
   return true;
 }
 

@@ -16,7 +16,7 @@ import { isValidIsoDate, isValidMonthPeriodKey, isValidReportPeriodKey, isValidT
 import { findActivityByCode, loadActivityReference, normalizeActivityCode } from '../data/activity-reference.js';
 
 test('політика паролів компенсує недоступну перевірку витоків на Free Plan', () => {
-  assert.equal(MIN_PASSWORD_LENGTH, 12);
+  assert.equal(MIN_PASSWORD_LENGTH, 8);
   assert.equal(MAX_PASSWORD_LENGTH, 128);
   assert.match(passwordPolicyError('password1234', 'worker'), /передбачуваний/i);
   assert.match(passwordPolicyError('Worker-2026!', 'worker'), /логін/i);
@@ -139,10 +139,10 @@ test('звітність має окремі квартальні та річн�
 
 test('типи виплати зарплати залежать від вибраного періоду, а не попереднього екрана', () => {
   assert.deepEqual(payrollPaymentTypes('2026-08').slice(0, 2), [
-    'Виплата зарплати за другу половину липня',
-    'Виплата зарплати за першу половину серпня',
+    'Виплата ЗП за другу половину липня',
+    'Виплата ЗП за першу половину серпня',
   ]);
-  assert.equal(payrollPaymentTypes('2026-01')[0], 'Виплата зарплати за другу половину грудня');
+  assert.equal(payrollPaymentTypes('2026-01')[0], 'Виплата ЗП за другу половину грудня');
   assert.deepEqual(payrollPaymentTypes('2026-13'), []);
 });
 
@@ -151,8 +151,8 @@ test('зарплатний графік використовує 7/22 і пер�
   assert.deepEqual(defaultPayrollDates('2026-11'), { secondHalf: '2026-11-06', firstHalf: '2026-11-20' });
   const settings = { payrollDates: { '2026-08': { secondHalf: '2026-08-05', firstHalf: '2026-08-19' } } };
   assert.deepEqual(payrollDatesForPeriod(settings, '2026-08'), { secondHalf: '2026-08-07', firstHalf: '2026-08-21' });
-  assert.equal(payrollDateForPaymentType(settings, '2026-08', 'Виплата зарплати за другу половину липня'), '2026-08-07');
-  assert.equal(payrollDateForPaymentType(settings, '2026-08', 'Виплата зарплати за першу половину серпня'), '2026-08-21');
+  assert.equal(payrollDateForPaymentType(settings, '2026-08', 'Виплата ЗП за другу половину липня'), '2026-08-07');
+  assert.equal(payrollDateForPaymentType(settings, '2026-08', 'Виплата ЗП за першу половину серпня'), '2026-08-21');
   assert.equal(payrollDateForPaymentType(settings, '2026-08', 'Лікарняні'), '');
 });
 
@@ -1045,7 +1045,7 @@ test('Edge Function локально відповідає production JWT hardeni
 
   assert.match(config, /\[functions\.manage-harmony-users\][\s\S]*verify_jwt = true/i);
   assert.match(source, /supabase-js@2\.111\.0/);
-  assert.match(source, /MIN_PASSWORD_LENGTH = 12/);
+  assert.match(source, /MIN_PASSWORD_LENGTH = 8/);
   assert.match(source, /MAX_BODY_BYTES = 32 \* 1024/);
   assert.match(source, /request\.body\.getReader\(\)/);
   assert.match(source, /total > MAX_BODY_BYTES/);

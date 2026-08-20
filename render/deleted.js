@@ -10,6 +10,7 @@ export function renderDeleted() {
     <td><strong>${escapeHtml(item.name)}</strong></td>
     <td>${escapeHtml(item.group || '-')}</td>
     <td>${rateText(item)}</td>
+    <td>${escapeHtml(item.inactiveReason || '-')}</td>
     <td>${escapeHtml(item.deletedAt || '-')}</td>
     <td class="right row-actions">
       <button class="secondary" data-restore-deleted-client="${escapeHtml(item.id)}">Відновити</button>
@@ -17,5 +18,5 @@ export function renderDeleted() {
     </td>
   </tr>`);
   return `<div class="toolbar"><p class="note">Кошик: ці ФОП не видалені з бази й можуть бути відновлені. Остаточне стирання доступне лише для позначених тестових записів після окремого підтвердження.</p></div>
-    ${table(rows, ['ПІБ', 'Група', 'Ставка', 'Дата видалення', 'Дії'])}`;
+    ${table(rows, ['ПІБ', 'Група', 'Ставка', 'Причина видалення', 'Дата видалення', 'Дії'])}`;
 }

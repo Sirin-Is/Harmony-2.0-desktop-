@@ -162,7 +162,13 @@ function diagnosticsPanel() {
 
 function settingsTabs() {
   const admin = uiState.currentUser?.role === 'administrator';
-  return `<div class="subnav"><button class="tab ${!['appearance', 'users', 'conflicts', 'diagnostics'].includes(uiState.settingsSection) ? 'active' : ''}" data-settings-section="general">Загальні</button><button class="tab ${uiState.settingsSection === 'appearance' ? 'active' : ''}" data-settings-section="appearance">Зовнішній вигляд</button><button class="tab ${uiState.settingsSection === 'conflicts' ? 'active' : ''}" data-settings-section="conflicts">Конфлікти</button>${admin ? `<button class="tab ${uiState.settingsSection === 'diagnostics' ? 'active' : ''}" data-settings-section="diagnostics">Діагностика</button><button class="tab ${uiState.settingsSection === 'users' ? 'active' : ''}" data-settings-section="users">Користувачі</button>` : ''}</div>`;
+  return `<div class="subnav"><button class="tab ${uiState.settingsSection === 'general' ? 'active' : ''}" data-settings-section="general">Загальні</button><button class="tab ${uiState.settingsSection === 'deadlines' ? 'active' : ''}" data-settings-section="deadlines">Автоматичні дедлайни</button><button class="tab ${uiState.settingsSection === 'dropdowns' ? 'active' : ''}" data-settings-section="dropdowns">Випадаючі списки</button><button class="tab ${uiState.settingsSection === 'appearance' ? 'active' : ''}" data-settings-section="appearance">Зовнішній вигляд</button><button class="tab ${uiState.settingsSection === 'conflicts' ? 'active' : ''}" data-settings-section="conflicts">Конфлікти</button>${admin ? `<button class="tab ${uiState.settingsSection === 'diagnostics' ? 'active' : ''}" data-settings-section="diagnostics">Діагностика</button><button class="tab ${uiState.settingsSection === 'users' ? 'active' : ''}" data-settings-section="users">Користувачі</button>` : ''}</div>`;
+}
+
+function dropdownsPanel() {
+  const options = getSettings().dropdownOptions || {};
+  const field = (key, label) => `<label>${label}<textarea class="dropdown-options" data-dropdown-options="${key}" placeholder="Один варіант у рядку">${escapeHtml((options[key] || []).join('\n'))}</textarea></label>`;
+  return `<div class="panel settings-panel"><h2>Випадаючі списки</h2><p class="note">Додайте значення по одному в рядку або розділіть комою. Вони з’являться у відповідних полях картки ФОП.</p>${field('prro', 'ПРРО / РРО')}${field('currency', 'Валюта')}${field('kepIssuer', 'Видавці КЕП')}</div>`;
 }
 
 function activityReferencesPanel() {
@@ -189,8 +195,10 @@ export function renderSettings() {
     <p class="note">До збереження зміни видно лише у зразку. Після збереження вони застосуються до всіх текстових полів, дат і списків.</p></div>`;
   const tabs = settingsTabs();
   if (uiState.settingsSection === 'appearance') return `${tabs}${appearancePanel}`;
+  if (uiState.settingsSection === 'dropdowns') return `${tabs}${dropdownsPanel()}`;
   if (uiState.settingsSection === 'conflicts') return `${tabs}${conflictsPanel()}`;
   if (uiState.settingsSection === 'diagnostics' && uiState.currentUser?.role === 'administrator') return `${tabs}${diagnosticsPanel()}`;
+  if (uiState.settingsSection === 'deadlines') return `${tabs}<div class="toolbar"><p class="note">Ці дати є спільними для всіх розділів Harmony. Зміна тут одразу застосовується до «Податків», «Звітності» та календаря; індивідуальний дедлайн ФОП залишається винятком.</p></div><div class="panel settings-panel"><h2>Податки — ${workingYear}</h2>${monthlyDeadlineBlock(workingYear)}${quarterlyDeadlineRow('group3', 'ЄП + ВЗ, 3 група', workingYear)}${quarterlyDeadlineRow('esv', 'ЄСВ, усі групи', workingYear)}</div>${reportDeadlineBlock(workingYear)}`;
   return `${tabs}<div class="toolbar"><p class="note">МЗП застосовується до ліміту доходу у формі ФОП і в «Доходах». Дедлайни розраховуються автоматично за правилами ПКУ; у таблицях «Податки» та «Звітність» можна задати виняток лише для конкретного ФОП.</p></div>
     <div class="panel settings-panel">
       <h2>Робочий період</h2>
@@ -203,11 +211,6 @@ export function renderSettings() {
     <div class="panel settings-panel">
       <h2>Мінімальна заробітна плата (МЗП) — ${workingYear}</h2>
       <label class="settings-mzp">грн/міс<input id="f_minWage" type="number" min="1" step="1" value="${settings.minWage}"></label>
-    </div>
-    <div class="panel settings-panel">
-      <h2>Автоматичні дедлайни</h2>
-      <p class="note">1-2 групи: ЄП і ВЗ — до 20 числа щомісяця; ЄСВ — до 20 числа після кварталу; річна декларація — 60 календарних днів після року. 3 група: декларація — 40, ЄП і ВЗ — 50 календарних днів після кварталу; ЄСВ — до 20 числа після кварталу.</p>
-      <p class="note">Якщо законодавчий строк припадає на суботу або неділю, для внутрішнього контролю програма показує попередню п’ятницю. Офіційні святкові перенесення за потреби задавайте як індивідуальний виняток у відповідному рядку.</p>
     </div>
     <div class="panel settings-panel">
       <h2>Видалені</h2>
