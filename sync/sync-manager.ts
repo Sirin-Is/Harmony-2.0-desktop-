@@ -180,12 +180,16 @@ export class SyncManager {
   private async pull(): Promise<number> {
     let cursor = await this.repository.getSyncCursor();
     let conflicts = 0;
+    let received = 0;
     while (true) {
       const batch = await this.remote.pullAfter(cursor, BATCH_SIZE);
-      if (!batch.length) return conflicts;
+      if (!batch.length) {
+        if (received) window.dispatchEvent(new CustomEvent('harmony:remote-sync', { detail: { count: received } }));
+        return conflicts;
+      }
       const detected = await this.repository.applyRemoteRecords(batch);
       conflicts += detected.length;
-      window.dispatchEvent(new CustomEvent('harmony:remote-sync', { detail: { count: batch.length } }));
+      received += batch.length;
       if (detected.length) window.dispatchEvent(new CustomEvent('harmony:sync-conflict', { detail: { conflicts: detected } }));
       await this.logBatch('pull', batch);
       const last = batch[batch.length - 1];

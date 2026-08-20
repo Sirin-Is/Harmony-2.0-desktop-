@@ -3,7 +3,7 @@ import { isAlreadyAppliedAddColumn, migrations } from './migrations';
 import { interpretSqliteCheck, type LocalDatabaseHealth } from './database-health';
 import type { Database as AppDatabase } from '../types';
 import { normalizeWorkingYear } from '../utils';
-import type { LocalRepository } from './repository';
+import type { LocalMutation, LocalMutationTable, LocalRepository } from './repository';
 import { parseStoredSyncCursor, type SyncConflict, type SyncCursor, type SyncLogEntry, type SyncRecord, type SyncRepository, type SyncStatus } from './sync-types';
 import { LEGACY_DATABASE_URL, workspaceDatabaseUrl } from './workspace-database';
 import { parseStoredObjectPayload } from './stored-payload';
@@ -45,10 +45,11 @@ export function mergeCalendarCompletion(localPayload: string, remotePayload: str
   } catch { return null; }
 }
 
-const LOCAL_TABLES = ['clients', 'custom_columns', 'monthly_payments', 'tax_records', 'income_records', 'report_records', 'calendar_events', 'hr_orders', 'hr_monthly_documents', 'payroll_records', 'audit_operations', 'audit_events', 'settings'];
+const LOCAL_TABLES: LocalMutationTable[] = ['clients', 'custom_columns', 'monthly_payments', 'tax_records', 'income_records', 'report_records', 'calendar_events', 'hr_orders', 'hr_monthly_documents', 'payroll_records', 'audit_operations', 'audit_events', 'settings'];
+const LOCAL_TABLE_SET = new Set<string>(LOCAL_TABLES);
 // Rollback snapshots can contain the full working database. They stay on the
 // device that made the edit; compact audit events remain available to other devices.
-const SYNC_TABLES = LOCAL_TABLES.filter((table) => table !== 'audit_operations');
+const SYNC_TABLES: string[] = LOCAL_TABLES.filter((table) => table !== 'audit_operations');
 
 const emptyDatabase = (): AppDatabase => ({
   clients: [], customColumns: [], monthlyPayments: {}, taxRecords: {}, incomeRecords: {}, reportRecords: {}, calendarEvents: [], hrOrders: [], hrMonthlyDocuments: [], payrollRecords: [], auditOperations: [], auditEvents: [],
@@ -360,6 +361,36 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
         }
         await database.execute('DELETE FROM save_journal WHERE id = 1');
       } catch (error) { throw error; }
+    });
+  }
+
+  /** Persist only rows touched by an ordinary UI edit. This is intentionally
+   * separate from save(), whose durable full-snapshot journal is reserved for
+   * imports, restores and other bulk replacements. */
+  async applyMutations(mutations: LocalMutation[]): Promise<void> {
+    if (!mutations.length) return;
+    return this.serializeWrite(async () => {
+      const database = await this.db();
+      const timestamp = now();
+      for (const mutation of mutations) {
+        if (!LOCAL_TABLE_SET.has(mutation.table)) throw new Error('Невідома локальна таблиця зміни.');
+        if (!mutation.id || typeof mutation.id !== 'string') throw new Error('Локальна зміна не має коректного ID.');
+        if (mutation.deleted) {
+          await database.execute(
+            `UPDATE ${mutation.table} SET is_deleted = 1, updated_at = ?, sync_status = 'deleted' WHERE id = ? AND is_deleted = 0`,
+            [timestamp, mutation.id],
+          );
+          continue;
+        }
+        const payload = JSON.stringify(mutation.payload);
+        await database.execute(
+          `INSERT INTO ${mutation.table} (id, payload, created_at, updated_at, synced_at, is_deleted, sync_status)
+           VALUES (?, ?, ?, ?, NULL, 0, 'created')
+           ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at,
+             is_deleted = 0, sync_status = CASE WHEN ${mutation.table}.sync_status = 'created' THEN 'created' ELSE 'updated' END`,
+          [mutation.id, payload, timestamp, timestamp],
+        );
+      }
     });
   }
 

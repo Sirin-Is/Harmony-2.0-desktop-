@@ -11,6 +11,7 @@ let activeWorkspaceId;
 let saveTimer = null;
 let retryTimer = null;
 let pendingDb = null;
+const pendingMutations = new Map();
 let transientSaveRetries = 0;
 // Local edits are written as one compact burst after the user pauses.  The
 // network replica gets a little more time still, so typing in a table never
@@ -87,7 +88,7 @@ async function activateWorkspace(workspaceId) {
 export async function prepareWorkspaceSwitch() {
   await syncManager.pauseForRestore();
   syncManager.stop();
-  if (pendingDb !== null) await flushSave();
+  if (pendingDb !== null || pendingMutations.size) await flushSave();
 }
 
 export function resumeWorkspaceSync() {
@@ -104,6 +105,7 @@ export async function closeDatabase() {
     saveTimer = null;
     retryTimer = null;
     pendingDb = null;
+    pendingMutations.clear();
     transientSaveRetries = 0;
     syncManager.stop();
     if (typeof repository.close === 'function') await repository.close().catch(() => {});
@@ -145,8 +147,34 @@ export async function reloadDatabase() {
   return repository.load();
 }
 
+export function hasPendingLocalChanges() {
+  return pendingDb !== null || pendingMutations.size > 0;
+}
+
 export function scheduleSave(db) {
   pendingDb = db;
+  // A later full snapshot already contains every earlier row mutation.
+  pendingMutations.clear();
+  setLocalStatus('saving');
+  clearTimeout(saveTimer);
+  clearTimeout(retryTimer);
+  transientSaveRetries = 0;
+  saveTimer = setTimeout(() => { flushSave().catch(() => {}); }, LOCAL_SAVE_DEBOUNCE_MS);
+}
+
+/** Queue exact row replacements produced by high-frequency table editing.
+ * Payloads are cloned now, so subsequent keystrokes cannot alter an in-flight
+ * write. Last write wins when the same row changes repeatedly before flush. */
+export function scheduleMutations(mutations) {
+  for (const mutation of mutations || []) {
+    if (!mutation?.table || !mutation?.id) continue;
+    if (pendingDb === null) {
+      const payload = mutation.deleted || mutation.payload === undefined
+        ? mutation.payload
+        : JSON.parse(JSON.stringify(mutation.payload));
+      pendingMutations.set(`${mutation.table}|${mutation.id}`, { ...mutation, payload });
+    }
+  }
   setLocalStatus('saving');
   clearTimeout(saveTimer);
   clearTimeout(retryTimer);
@@ -156,16 +184,23 @@ export function scheduleSave(db) {
 
 export async function flushSave() {
   clearTimeout(saveTimer);
-  if (pendingDb === null) return;
+  if (pendingDb === null && !pendingMutations.size) return;
   const snapshot = pendingDb;
+  const mutations = [...pendingMutations.values()];
   pendingDb = null;
+  pendingMutations.clear();
   try {
-    await repository.save(snapshot);
+    if (snapshot !== null) await repository.save(snapshot);
+    else await repository.applyMutations(mutations);
     transientSaveRetries = 0;
     setLocalStatus('saved');
     syncManager.requestSync('local-change');
   } catch (error) {
-    pendingDb = snapshot;
+    if (snapshot !== null) pendingDb = snapshot;
+    else mutations.forEach((mutation) => {
+      const key = `${mutation.table}|${mutation.id}`;
+      if (!pendingMutations.has(key)) pendingMutations.set(key, mutation);
+    });
     setLocalStatus('error', error?.message || error);
     console.error('Не вдалося зберегти дані в SQLite:', error);
     if (isTransientLocalWriteError(error) && transientSaveRetries < MAX_TRANSIENT_SAVE_RETRIES) {
@@ -183,6 +218,7 @@ export async function saveNow(db) {
   clearTimeout(retryTimer);
   transientSaveRetries = 0;
   pendingDb = db;
+  pendingMutations.clear();
   await flushSave();
 }
 
@@ -192,6 +228,7 @@ export async function saveRestoredDatabase(db) {
   await syncManager.pauseForRestore();
   clearTimeout(saveTimer);
   pendingDb = null;
+  pendingMutations.clear();
   setLocalStatus('saving');
   try {
     await repository.save(db, { requiresPull: true });
@@ -236,7 +273,7 @@ export async function resolveSyncConflict(id, resolution) {
 }
 
 function flushWhenLeaving() {
-  if (pendingDb !== null) flushSave().catch(() => {});
+  if (pendingDb !== null || pendingMutations.size) flushSave().catch(() => {});
 }
 
 // A desktop webview can be closed before beforeunload has time to complete an

@@ -386,6 +386,24 @@ test('mutation boundary перевіряє клієнта, поле, періо�
   assert.match(state, /db\.customColumns\.some\(\(column\) => column\.id === columnId\)/);
 });
 
+test('часті табличні зміни зберігають лише змінені рядки без повного snapshot diff', () => {
+  const state = readFileSync(new URL('../state.js', import.meta.url), 'utf8');
+  const storage = readFileSync(new URL('../storage.js', import.meta.url), 'utf8');
+  const repository = readFileSync(new URL('../data/sqlite-repository.ts', import.meta.url), 'utf8');
+  const syncManager = readFileSync(new URL('../sync/sync-manager.ts', import.meta.url), 'utf8');
+  const bootstrap = readFileSync(new URL('../bootstrap.js', import.meta.url), 'utf8');
+  assert.match(state, /function saveTargetedChanges[\s\S]*inverseChanges[\s\S]*storage\.scheduleMutations/);
+  assert.match(state, /setTaxField[\s\S]*saveTargetedChanges\(\[change\], 'Змінено податковий запис'/);
+  assert.match(state, /setReportField[\s\S]*saveTargetedChanges\(\[change\], 'Змінено запис звітності'/);
+  assert.match(state, /setIncomeValue[\s\S]*saveTargetedChanges\(\[change\], 'Змінено дохід'/);
+  assert.match(state, /setMonthlyPaymentField[\s\S]*saveTargetedChanges\(\[change\], 'Змінено оплату послуг'/);
+  assert.match(state, /setPayrollField[\s\S]*saveTargetedChanges\(changes, 'Змінено запис виплати зарплати'/);
+  assert.match(storage, /const pendingMutations = new Map\(\)[\s\S]*Last write wins[\s\S]*repository\.applyMutations\(mutations\)/);
+  assert.match(repository, /async applyMutations\(mutations: LocalMutation\[\]\)[\s\S]*UPDATE \$\{mutation\.table\}[\s\S]*ON CONFLICT\(id\) DO UPDATE/);
+  assert.match(syncManager, /let received = 0[\s\S]*if \(received\) window\.dispatchEvent/);
+  assert.match(bootstrap, /editing \|\| hasPendingLocalChanges\(\)[\s\S]*scheduleRemoteUiRefresh\(800\)/);
+});
+
 test('поле Telegram відкриває лише HTTPS-посилання точного домену t.me', () => {
   assert.equal(clients.safeContactHref('t.me/example'), 'https://t.me/example');
   assert.equal(clients.safeContactHref('https://t.me/example'), 'https://t.me/example');

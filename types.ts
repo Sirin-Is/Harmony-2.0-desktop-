@@ -177,6 +177,9 @@ export interface AuditOperation {
   actor: string;
   status: 'active' | 'cancelled' | 'rollback';
   beforeSnapshot?: Omit<Database, 'auditOperations' | 'auditEvents'>;
+  /** Compact inverse edits used by high-frequency table cells. Unlike
+   * beforeSnapshot this does not duplicate the complete business database. */
+  inverseChanges?: Array<{ path: string[]; value?: unknown; existed: boolean }>;
   cancelledAt?: string;
   cancelledBy?: string;
 }

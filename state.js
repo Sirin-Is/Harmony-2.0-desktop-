@@ -29,7 +29,8 @@ let lastSnapshot = null;
 let lastBusinessSnapshot = null;
 const undoStack = [];
 const MAX_UNDO_SNAPSHOTS = 5;
-const snapshot = (value) => JSON.stringify(value);
+const cloneValue = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+const valuesEqual = (left, right) => JSON.stringify(left) === JSON.stringify(right);
 let currentAuditActor = 'Локальний користувач';
 let currentAccessRole = 'observer';
 const ROLLBACK_RETENTION_DAYS = 7;
@@ -66,7 +67,7 @@ export async function initDatabase(workspaceId = null) {
   const suppressedAuditNoise = suppressTechnicalNestedAuditNoise(db.auditEvents || []);
   const prunedRollbackSnapshots = pruneExpiredRollbackSnapshots(db);
   const normalizedTaxExemptions = normalizeLegacyTaxExemptions(db);
-  lastSnapshot = snapshot(db); lastBusinessSnapshot = snapshot(businessSnapshot(db)); undoStack.length = 0;
+  lastSnapshot = cloneValue(db); lastBusinessSnapshot = businessSnapshot(db); undoStack.length = 0;
   if (normalizedNestedIds || normalizedAuditLabels || suppressedAuditNoise || prunedRollbackSnapshots || normalizedTaxExemptions) storage.scheduleSave(db);
   if (clientModel.advanceScheduledDeletions(db)) save();
   return db;
@@ -75,7 +76,7 @@ export async function initDatabase(workspaceId = null) {
 /** Refresh the in-memory UI snapshot after a remote pull; local mutations remain repository-owned. */
 export async function refreshDatabaseFromSync() {
   db = await storage.reloadDatabase();
-  lastSnapshot = snapshot(db); lastBusinessSnapshot = snapshot(businessSnapshot(db)); undoStack.length = 0;
+  lastSnapshot = cloneValue(db); lastBusinessSnapshot = businessSnapshot(db); undoStack.length = 0;
   return db;
 }
 
@@ -103,14 +104,13 @@ export async function lockDatabase() {
 
 function save(action = 'Зміна даних', type = 'Зміна') {
   if (!canEditData()) {
-    if (lastSnapshot) db = JSON.parse(lastSnapshot);
+    if (lastSnapshot) db = cloneValue(lastSnapshot);
     window.dispatchEvent(new CustomEvent('harmony:access-denied'));
     return false;
   }
   const afterBusiness = businessSnapshot(db);
-  const nextBusinessSnapshot = snapshot(afterBusiness);
-  if (lastBusinessSnapshot && nextBusinessSnapshot !== lastBusinessSnapshot) {
-    const beforeBusiness = JSON.parse(lastBusinessSnapshot);
+  if (lastBusinessSnapshot && !valuesEqual(afterBusiness, lastBusinessSnapshot)) {
+    const beforeBusiness = cloneValue(lastBusinessSnapshot);
     db.auditOperations ||= []; db.auditEvents ||= [];
     const id = generateId(); const occurredAt = new Date().toISOString();
     const operation = { id, occurredAt, action, actor: currentAuditActor, status: 'active', beforeSnapshot: beforeBusiness };
@@ -119,17 +119,17 @@ function save(action = 'Зміна даних', type = 'Зміна') {
     db.auditEvents.push(...events);
   }
   pruneExpiredRollbackSnapshots(db);
-  const next = snapshot(db);
-  if (lastSnapshot && next !== lastSnapshot) { undoStack.push(lastSnapshot); if (undoStack.length > MAX_UNDO_SNAPSHOTS) undoStack.shift(); }
+  const next = cloneValue(db);
+  if (lastSnapshot && !valuesEqual(next, lastSnapshot)) { undoStack.push({ kind: 'snapshot', value: lastSnapshot }); if (undoStack.length > MAX_UNDO_SNAPSHOTS) undoStack.shift(); }
   lastSnapshot = next;
-  lastBusinessSnapshot = nextBusinessSnapshot;
+  lastBusinessSnapshot = afterBusiness;
   storage.scheduleSave(db);
   return true;
 }
 
 function businessSnapshot(value) {
-  const { auditOperations, auditEvents, ...business } = JSON.parse(JSON.stringify(value));
-  return business;
+  const { auditOperations, auditEvents, ...business } = value;
+  return cloneValue(business);
 }
 
 /** Give card subrecords stable local IDs before any audit snapshot is taken. */
@@ -246,6 +246,120 @@ function buildAuditEvents(before, after, metadata) {
   return events.length ? events : [{ id: generateId(), ...metadata, section: '-', clientId: '', clientName: '-', field: '-', oldValue: '-', newValue: '-', status: 'active' }];
 }
 
+function applyPathValue(database, change, direction = 'after') {
+  const path = change.path || [];
+  if (!database || path.length < 2) return;
+  let target = database;
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const key = path[index];
+    if (Array.isArray(target)) {
+      target = target.find((item) => item?.id === key);
+      if (!target) return;
+    } else {
+      if (!target[key] || typeof target[key] !== 'object') target[key] = {};
+      target = target[key];
+    }
+  }
+  const key = path.at(-1);
+  const existed = direction === 'after' ? change.afterExisted !== false : change.beforeExisted !== false;
+  const value = direction === 'after' ? change.after : change.before;
+  if (Array.isArray(target)) return;
+  if (!existed) delete target[key];
+  else target[key] = cloneValue(value);
+}
+
+function mutationForPath(database, path) {
+  const [root, first, second] = path;
+  if (root === 'clients') {
+    const record = database.clients.find((item) => item.id === first);
+    return record ? { table: 'clients', id: first, payload: cloneValue(record) } : { table: 'clients', id: first, deleted: true };
+  }
+  if (root === 'monthlyPayments') return { table: 'monthly_payments', id: `${first}|${second}`, payload: { clientId: first, monthKey: second, value: cloneValue(database.monthlyPayments[first]?.[second] || {}) } };
+  if (root === 'taxRecords') return { table: 'tax_records', id: first, payload: { key: first, value: cloneValue(database.taxRecords[first] || {}) } };
+  if (root === 'incomeRecords') return { table: 'income_records', id: `${first}|${second}`, payload: { clientId: first, monthKey: second, value: database.incomeRecords[first]?.[second] || '' } };
+  if (root === 'reportRecords') return { table: 'report_records', id: first, payload: { key: first, value: cloneValue(database.reportRecords[first] || {}) } };
+  if (root === 'payrollRecords') {
+    const record = database.payrollRecords.find((item) => item.id === first);
+    return record ? { table: 'payroll_records', id: first, payload: cloneValue(record) } : { table: 'payroll_records', id: first, deleted: true };
+  }
+  if (root === 'hrMonthlyDocuments') {
+    const record = database.hrMonthlyDocuments.find((item) => item.id === first);
+    return record ? { table: 'hr_monthly_documents', id: first, payload: cloneValue(record) } : { table: 'hr_monthly_documents', id: first, deleted: true };
+  }
+  throw new Error(`Непідтримуваний точковий шлях: ${root}`);
+}
+
+function syncBaselineRow(target, source, path) {
+  if (!target) return;
+  const [root, first, second] = path;
+  if (root === 'monthlyPayments') {
+    target.monthlyPayments[first] ||= {};
+    target.monthlyPayments[first][second] = cloneValue(source.monthlyPayments[first]?.[second] || {});
+  } else if (root === 'incomeRecords') {
+    target.incomeRecords[first] ||= {};
+    target.incomeRecords[first][second] = source.incomeRecords[first]?.[second] || '';
+  } else if (['taxRecords', 'reportRecords'].includes(root)) target[root][first] = cloneValue(source[root][first] || {});
+  else if (['clients', 'payrollRecords', 'hrMonthlyDocuments'].includes(root)) {
+    const sourceRecord = source[root].find((item) => item.id === first);
+    const index = target[root].findIndex((item) => item.id === first);
+    if (!sourceRecord && index >= 0) target[root].splice(index, 1);
+    else if (sourceRecord && index >= 0) target[root][index] = cloneValue(sourceRecord);
+    else if (sourceRecord) target[root].push(cloneValue(sourceRecord));
+  }
+}
+
+function directAuditEvent(change, metadata) {
+  const root = change.path[0];
+  const clientId = change.clientId || '';
+  return {
+    id: generateId(), ...metadata, section: SECTION_NAMES[root] || '-', clientId,
+    clientName: clientId ? clientModel.findClientById(db, clientId)?.name || '-' : '-',
+    field: auditField(root, change.path), oldValue: auditValue(change.before), newValue: auditValue(change.after), status: 'active',
+  };
+}
+
+/** Fast path for ordinary table cells. It records exact inverse changes for
+ * undo/rollback and queues only the affected SQLite rows. No whole-database
+ * clone, stringify or recursive audit diff runs on the input event. */
+function saveTargetedChanges(rawChanges, action, type) {
+  const changes = rawChanges.filter((change) => !valuesEqual(change.before, change.after) || change.beforeExisted !== change.afterExisted);
+  if (!changes.length) return true;
+  const operationId = generateId();
+  const occurredAt = new Date().toISOString();
+  const inverseChanges = changes.map((change) => ({ path: [...change.path], value: cloneValue(change.before), existed: change.beforeExisted !== false }));
+  const operation = { id: operationId, occurredAt, action, actor: currentAuditActor, status: 'active', inverseChanges };
+  const metadata = { operationId, occurredAt, actor: operation.actor, type, description: action };
+  const events = changes.map((change) => directAuditEvent(change, metadata));
+  db.auditOperations ||= [];
+  db.auditEvents ||= [];
+  db.auditOperations.push(operation);
+  db.auditEvents.push(...events);
+
+  undoStack.push({ kind: 'mutations', changes: cloneValue(inverseChanges), operationId });
+  if (undoStack.length > MAX_UNDO_SNAPSHOTS) undoStack.shift();
+
+  changes.forEach((change) => {
+    syncBaselineRow(lastBusinessSnapshot, db, change.path);
+    syncBaselineRow(lastSnapshot, db, change.path);
+  });
+  if (lastSnapshot) {
+    lastSnapshot.auditOperations ||= [];
+    lastSnapshot.auditEvents ||= [];
+    lastSnapshot.auditOperations.push(cloneValue(operation));
+    lastSnapshot.auditEvents.push(...cloneValue(events));
+  }
+
+  const rowMutations = new Map();
+  changes.forEach((change) => {
+    const mutation = mutationForPath(db, change.path);
+    rowMutations.set(`${mutation.table}|${mutation.id}`, mutation);
+  });
+  rowMutations.set(`audit_operations|${operation.id}`, { table: 'audit_operations', id: operation.id, payload: cloneValue(operation) });
+  events.forEach((event) => rowMutations.set(`audit_events|${event.id}`, { table: 'audit_events', id: event.id, payload: cloneValue(event) }));
+  storage.scheduleMutations([...rowMutations.values()]);
+  return true;
+}
+
 /** Cancels legacy delete/add pairs caused only by old card saves recreating nested IDs. */
 function suppressTechnicalNestedAuditNoise(events) {
   let changed = false;
@@ -285,11 +399,16 @@ export const getDatabaseRelationshipIssues = () => collectDatabaseRelationshipIs
 export function rollbackChangesAfter(cutoff) {
   if (!canRollbackChanges()) return 0;
   const effectiveCutoff = String(cutoff || '') > rollbackRetentionStart() ? String(cutoff) : rollbackRetentionStart();
-  const operations = getAuditOperations().filter((item) => item.status === 'active' && item.occurredAt > effectiveCutoff && item.beforeSnapshot).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  const operations = getAuditOperations()
+    .filter((item) => item.status === 'active' && item.occurredAt > effectiveCutoff && (item.beforeSnapshot || item.inverseChanges?.length))
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
   if (!operations.length) return 0;
-  const target = operations[0].beforeSnapshot;
   const auditOperations = db.auditOperations; const auditEvents = db.auditEvents;
-  Object.assign(db, JSON.parse(JSON.stringify(target)));
+  operations.forEach((operation) => {
+    if (operation.inverseChanges?.length) {
+      operation.inverseChanges.forEach((inverse) => applyPathValue(db, { path: inverse.path, after: inverse.value, afterExisted: inverse.existed }, 'after'));
+    } else if (operation.beforeSnapshot) Object.assign(db, cloneValue(operation.beforeSnapshot));
+  });
   db.auditOperations = auditOperations; db.auditEvents = auditEvents;
   const rollbackId = generateId(); const now = new Date().toISOString();
   const ids = new Set(operations.map((item) => item.id));
@@ -297,7 +416,7 @@ export function rollbackChangesAfter(cutoff) {
   db.auditEvents.forEach((item) => { if (ids.has(item.operationId)) item.status = 'cancelled'; });
   db.auditOperations.push({ id: rollbackId, occurredAt: now, action: 'Відкат змін', actor: currentAuditActor, status: 'rollback' });
   db.auditEvents.push({ id: generateId(), operationId: rollbackId, occurredAt: now, actor: currentAuditActor, type: 'Відкат', description: `Скасовано операцій: ${operations.length}`, section: 'Журнал подій', clientId: '', clientName: '-', field: '-', oldValue: '-', newValue: '-', status: 'active' });
-  lastSnapshot = snapshot(db); lastBusinessSnapshot = snapshot(businessSnapshot(db)); undoStack.length = 0; storage.scheduleSave(db);
+  lastSnapshot = cloneValue(db); lastBusinessSnapshot = businessSnapshot(db); undoStack.length = 0; storage.scheduleSave(db);
   return operations.length;
 }
 
@@ -305,12 +424,19 @@ export function undoLastAction() {
   if (!canEditData()) return false;
   const previous = undoStack.pop();
   if (!previous) return false;
-  const targetSnapshot = JSON.parse(previous);
-  const targetBusiness = businessSnapshot(targetSnapshot);
   const auditOperations = db.auditOperations ||= [];
   const auditEvents = db.auditEvents ||= [];
-  const previousOperationIds = new Set((targetSnapshot.auditOperations || []).map((item) => item.id));
-  const revertedOperations = auditOperations.filter((item) => item.status === 'active' && !previousOperationIds.has(item.id));
+  let targetBusiness = null;
+  let revertedOperations;
+  if (previous.kind === 'mutations') {
+    previous.changes.forEach((inverse) => applyPathValue(db, { path: inverse.path, after: inverse.value, afterExisted: inverse.existed }, 'after'));
+    revertedOperations = auditOperations.filter((item) => item.status === 'active' && item.id === previous.operationId);
+  } else {
+    const targetSnapshot = cloneValue(previous.value);
+    targetBusiness = businessSnapshot(targetSnapshot);
+    const previousOperationIds = new Set((targetSnapshot.auditOperations || []).map((item) => item.id));
+    revertedOperations = auditOperations.filter((item) => item.status === 'active' && !previousOperationIds.has(item.id));
+  }
   const undoId = generateId();
   const occurredAt = new Date().toISOString();
   const revertedIds = new Set(revertedOperations.map((item) => item.id));
@@ -344,9 +470,9 @@ export function undoLastAction() {
     newValue: '-',
     status: 'active',
   });
-  db = { ...targetBusiness, auditOperations, auditEvents };
-  lastSnapshot = snapshot(db);
-  lastBusinessSnapshot = snapshot(businessSnapshot(db));
+  if (targetBusiness) db = { ...targetBusiness, auditOperations, auditEvents };
+  lastSnapshot = cloneValue(db);
+  lastBusinessSnapshot = businessSnapshot(db);
   storage.scheduleSave(db);
   return true;
 }
@@ -415,11 +541,13 @@ export function reorderClients(sourceId, targetId) {
 }
 
 export function setCustomFieldValue(clientId, columnId, value) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return false; }
   const item = clientModel.findClientById(db, clientId);
   if (!item || !db.customColumns.some((column) => column.id === columnId)) return false;
   item.customFields ||= {};
+  const change = { path: ['clients', clientId, 'customFields', columnId], clientId, before: cloneValue(item.customFields[columnId]), beforeExisted: Object.prototype.hasOwnProperty.call(item.customFields, columnId), after: value, afterExisted: true };
   item.customFields[columnId] = value;
-  save();
+  saveTargetedChanges([change], 'Змінено додаткове поле ФОП', 'ФОП');
   return true;
 }
 
@@ -534,17 +662,21 @@ export function deleteHrOrder(id) {
 export const getHrMonthlyDocuments = () => db.hrMonthlyDocuments || [];
 
 export function setHrMonthlyDocumentStatus(clientId, period, field, value) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return null; }
   if (!clientModel.findClientById(db, clientId) || !isValidMonthPeriodKey(period)) return null;
   if (!['timesheetStatus', 'payrollStatus', 'cashStatementStatus'].includes(field)) return null;
   if (!['Надіслано', 'Не надіслано'].includes(value)) return null;
   const id = `${clientId}|${period}`;
   let record = db.hrMonthlyDocuments.find((item) => item.id === id);
+  const created = !record;
   if (!record) {
     record = { id, clientId, period, timesheetStatus: 'Не надіслано', payrollStatus: 'Не надіслано', cashStatementStatus: 'Не надіслано' };
     db.hrMonthlyDocuments.push(record);
   }
+  const change = { path: ['hrMonthlyDocuments', id, field], clientId, before: cloneValue(record[field]), beforeExisted: Object.prototype.hasOwnProperty.call(record, field), after: value, afterExisted: true };
   record[field] = value;
-  save();
+  if (created) save('Створено кадрову відомість', 'Кадри');
+  else saveTargetedChanges([change], 'Змінено кадрову відомість', 'Кадри');
   return record;
 }
 
@@ -588,6 +720,7 @@ export function deletePayrollRecord(id) {
 }
 
 export function setPayrollField(id, field, value) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return false; }
   const record = db.payrollRecords.find((item) => item.id === id);
   if (!record) return false;
   if (!['paymentDate', 'amount', 'pdfo', 'vz', 'esv', 'status'].includes(field)) return false;
@@ -598,10 +731,16 @@ export function setPayrollField(id, field, value) {
   if (numeric && !amount.ok) return false;
   const normalized = numeric ? amount.value : value;
   const formatted = numeric && normalized ? new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 2 }).format(Number(normalized)).replace(/\u00a0/g, ' ') : normalized;
-  if (field === 'paymentDate') {
-    db.payrollRecords.filter((item) => item.clientId === record.clientId && item.period === record.period && (item.paymentType || '') === (record.paymentType || '')).forEach((item) => { item.paymentDate = value; });
-  } else record[field] = formatted;
-  save();
+  const affected = field === 'paymentDate'
+    ? db.payrollRecords.filter((item) => item.clientId === record.clientId && item.period === record.period && (item.paymentType || '') === (record.paymentType || ''))
+    : [record];
+  const changes = affected.map((item) => ({
+    path: ['payrollRecords', item.id, field], clientId: item.clientId,
+    before: cloneValue(item[field]), beforeExisted: Object.prototype.hasOwnProperty.call(item, field),
+    after: field === 'paymentDate' ? value : formatted, afterExisted: true,
+  }));
+  affected.forEach((item) => { item[field] = field === 'paymentDate' ? value : formatted; });
+  saveTargetedChanges(changes, 'Змінено запис виплати зарплати', 'Зарплата');
   return true;
 }
 
@@ -671,14 +810,17 @@ export function deleteCalendarSubtask(eventId, subtaskId) {
 }
 
 export function setMonthlyPaymentField(clientId, monthKey, type, rawValue) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return false; }
   if (!clientModel.findClientById(db, clientId) || !isValidMonthPeriodKey(monthKey) || !['charged', 'paid'].includes(type)) return false;
   const amount = normalizeNonNegativeAmount(rawValue, { allowDash: true });
   if (!amount.ok) return false;
   const normalized = amount.value;
   const clientData = db.monthlyPayments[clientId] ||= {};
   const monthData = clientData[monthKey] ||= {};
-  monthData[type] = normalized === '' ? '-' : normalized;
-  save();
+  const nextValue = normalized === '' ? '-' : normalized;
+  const change = { path: ['monthlyPayments', clientId, monthKey, type], clientId, before: cloneValue(monthData[type]), beforeExisted: Object.prototype.hasOwnProperty.call(monthData, type), after: nextValue, afterExisted: true };
+  monthData[type] = nextValue;
+  saveTargetedChanges([change], 'Змінено оплату послуг', 'Оплати');
   return true;
 }
 
@@ -704,14 +846,17 @@ export function getTaxField(clientId, realGroup, period, taxType) {
 }
 
 export function setTaxField(clientId, realGroup, period, taxType, field, value) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return false; }
   const client = clientModel.findClientById(db, clientId);
   if (!client || String(client.group) !== String(realGroup) || !isValidTaxPeriodKey(realGroup, period) || !['unified', 'military', 'esv'].includes(taxType)) return false;
   const record = getTaxRecord(db, clientId, realGroup, period, taxType);
   const validation = validateTaxRecordChange(record, field, value);
   if (!validation.ok) return false;
   if (field === 'exemption' && !exemptionOptions(String(realGroup) === '3' ? '3' : '12', taxType).includes(value)) return false;
+  const key = `${clientId}|${realGroup}|${period}|${taxType}`;
+  const change = { path: ['taxRecords', key, field], clientId, before: cloneValue(record[field]), beforeExisted: Object.prototype.hasOwnProperty.call(record, field), after: value, afterExisted: true };
   record[field] = value;
-  save('Змінено податковий запис', 'Податки');
+  saveTargetedChanges([change], 'Змінено податковий запис', 'Податки');
   return record;
 }
 
@@ -725,29 +870,40 @@ export function getDefaultTaxDeadlineFor(realGroup, taxType, period) {
 
 /** Set one field (e.g. "deadline") to the same value for every client x tax-type in a period. */
 export function bulkSetTaxField(clientIds, realGroups, period, taxTypeKeys, field, value) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return 0; }
+  const changes = [];
   clientIds.forEach((clientId, i) => {
     taxTypeKeys.forEach((taxType) => {
-      getTaxRecord(db, clientId, realGroups[i], period, taxType)[field] = value;
+      const record = getTaxRecord(db, clientId, realGroups[i], period, taxType);
+      const key = `${clientId}|${realGroups[i]}|${period}|${taxType}`;
+      changes.push({ path: ['taxRecords', key, field], clientId, before: cloneValue(record[field]), beforeExisted: Object.prototype.hasOwnProperty.call(record, field), after: value, afterExisted: true });
+      record[field] = value;
     });
   });
-  save();
-  return clientIds.length * taxTypeKeys.length;
+  saveTargetedChanges(changes, 'Масово змінено податкові записи', 'Податки');
+  return changes.length;
 }
 
 /** Carry "deadline"/"exemption" forward from the previous period into empty fields of the current one. Never touches paidDate/queuedDate/note. */
 export function copyTaxPeriodForward(clientIds, realGroups, fromPeriod, toPeriod, taxTypeKeys) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return 0; }
   let filled = 0;
+  const changes = [];
   const carryFields = ['deadline', 'exemption'];
   clientIds.forEach((clientId, i) => {
     taxTypeKeys.forEach((taxType) => {
       const source = getTaxRecord(db, clientId, realGroups[i], fromPeriod, taxType);
       const target = getTaxRecord(db, clientId, realGroups[i], toPeriod, taxType);
       carryFields.forEach((field) => {
-        if (!target[field] && source[field]) { target[field] = source[field]; filled += 1; }
+        if (!target[field] && source[field]) {
+          const key = `${clientId}|${realGroups[i]}|${toPeriod}|${taxType}`;
+          changes.push({ path: ['taxRecords', key, field], clientId, before: cloneValue(target[field]), beforeExisted: Object.prototype.hasOwnProperty.call(target, field), after: source[field], afterExisted: true });
+          target[field] = source[field]; filled += 1;
+        }
       });
     });
   });
-  if (filled) save();
+  if (filled) saveTargetedChanges(changes, 'Перенесено податкові дані з попереднього періоду', 'Податки');
   return filled;
 }
 
@@ -760,13 +916,16 @@ export function getReportField(clientId, realGroup, period) {
 }
 
 export function setReportField(clientId, realGroup, period, field, value) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return false; }
   const client = clientModel.findClientById(db, clientId);
   if (!client || String(client.group) !== String(realGroup) || !isValidReportPeriodKey(realGroup, period)) return false;
   const record = getReportRecord(db, clientId, realGroup, period);
   const validation = validateReportRecordChange(field, value);
   if (!validation.ok) return false;
+  const key = `${clientId}|${realGroup}|${period}`;
+  const change = { path: ['reportRecords', key, field], clientId, before: cloneValue(record[field]), beforeExisted: Object.prototype.hasOwnProperty.call(record, field), after: value, afterExisted: true };
   record[field] = value;
-  save('Змінено запис звітності', 'Звітність');
+  saveTargetedChanges([change], 'Змінено запис звітності', 'Звітність');
   return record;
 }
 
@@ -783,13 +942,15 @@ export function getIncomeValue(clientId, monthKey) {
 }
 
 export function setIncomeValue(clientId, monthKey, rawValue) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return false; }
   if (!clientModel.findClientById(db, clientId) || !isValidMonthPeriodKey(monthKey)) return false;
   const amount = normalizeNonNegativeAmount(rawValue);
   if (!amount.ok) return false;
   const normalized = amount.value;
   const clientData = db.incomeRecords[clientId] ||= {};
+  const change = { path: ['incomeRecords', clientId, monthKey], clientId, before: cloneValue(clientData[monthKey]), beforeExisted: Object.prototype.hasOwnProperty.call(clientData, monthKey), after: normalized, afterExisted: true };
   clientData[monthKey] = normalized;
-  save();
+  saveTargetedChanges([change], 'Змінено дохід', 'Доходи');
   return true;
 }
 
@@ -836,17 +997,20 @@ export function setMinWage(value) {
 /** Fill a month's invoiced-service column from the service price on every
  * active client card, producing only one local save for the whole column. */
 export function autofillMonthlyCharges(monthKey) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return 0; }
   if (!isValidMonthPeriodKey(monthKey)) return 0;
   let changed = 0;
+  const changes = [];
   getVisibleClients().forEach((client) => {
     const amount = normalizeNonNegativeAmount(String(client.serviceCost ?? ''));
     if (!amount.ok || !amount.value) return;
     const month = (db.monthlyPayments[client.id] ||= {})[monthKey] ||= {};
     if (month.charged === amount.value) return;
+    changes.push({ path: ['monthlyPayments', client.id, monthKey, 'charged'], clientId: client.id, before: cloneValue(month.charged), beforeExisted: Object.prototype.hasOwnProperty.call(month, 'charged'), after: amount.value, afterExisted: true });
     month.charged = amount.value;
     changed += 1;
   });
-  if (changed) save('Автоматично заповнено нарахування послуг', 'Оплати');
+  if (changed) saveTargetedChanges(changes, 'Автоматично заповнено нарахування послуг', 'Оплати');
   return changed;
 }
 
@@ -907,6 +1071,6 @@ export async function replaceDatabase(newDb) {
   // old, valid backups compatible when newer optional collections are added.
   await storage.saveRestoredDatabase(newDb);
   db = await storage.reloadDatabase();
-  lastSnapshot = snapshot(db); lastBusinessSnapshot = snapshot(businessSnapshot(db)); undoStack.length = 0;
+  lastSnapshot = cloneValue(db); lastBusinessSnapshot = businessSnapshot(db); undoStack.length = 0;
   return db;
 }

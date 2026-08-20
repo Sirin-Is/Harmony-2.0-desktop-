@@ -42,7 +42,7 @@ import { enhanceDateInputs } from './date-input.js';
 import { openBatchKvedCheck } from './kved-validation.js';
 import { signIn, signOut, signedInEmail } from './auth/session';
 import { getCurrentHarmonyUser, listAuthenticationUsers, manageHarmonyUsers } from './auth/users';
-import { checkLocalDatabase, getOpenSyncConflicts, getRecentSyncLog, requestSync, requestRestoreSync, resolveSyncConflict } from './storage.js';
+import { checkLocalDatabase, getOpenSyncConflicts, getRecentSyncLog, hasPendingLocalChanges, requestSync, requestRestoreSync, resolveSyncConflict } from './storage.js';
 import { invoke } from '@tauri-apps/api/core';
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, passwordPolicyError } from './password-policy.js';
 import { check } from '@tauri-apps/plugin-updater';
@@ -83,6 +83,26 @@ const VIEWS = {
   settings: renderSettings,
 };
 let focusHeadingAfterRender = false;
+let remoteRefreshTimer = null;
+
+function scheduleRemoteUiRefresh(delay = 600) {
+  clearTimeout(remoteRefreshTimer);
+  remoteRefreshTimer = setTimeout(async () => {
+    if (!uiState.currentUser || !db) return;
+    const active = document.activeElement;
+    const editing = active instanceof HTMLElement && active.matches('#content input, #content select, #content textarea, [contenteditable="true"]');
+    if (editing || hasPendingLocalChanges()) {
+      scheduleRemoteUiRefresh(800);
+      return;
+    }
+    try {
+      await refreshDatabaseFromSync();
+      render();
+    } catch (error) {
+      console.error('Не вдалося оновити дані після синхронізації:', error);
+    }
+  }, delay);
+}
 
 function showBootOverlay(visible) {
   const el = document.getElementById('bootOverlay');
@@ -1155,14 +1175,9 @@ function wireGlobalControls() {
     const count = Number(event.detail?.conflicts?.length || 1);
     showToast(`Виявлено конфлікт синхронізації${count > 1 ? ` (${count})` : ''}. Локальні зміни збережено; віддалені дані не перезаписано.`, 'warn', 9000);
   });
-  window.addEventListener('harmony:remote-sync', async () => {
+  window.addEventListener('harmony:remote-sync', () => {
     if (!uiState.currentUser || !db) return;
-    try {
-      await refreshDatabaseFromSync();
-      render();
-    } catch (error) {
-      console.error('Не вдалося оновити дані після синхронізації:', error);
-    }
+    scheduleRemoteUiRefresh();
   });
 
   bindTopScrollbarResize();
