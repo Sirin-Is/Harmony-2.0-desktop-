@@ -13,7 +13,7 @@ import {
   setMonthlyPaymentField, autofillMonthlyCharges, setTaxField, setReportField, setIncomeValue, autoCompleteTaxPeriod, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline,
   setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, setDropdownOptions, setActivityReference, getSettings,
   deleteCustomColumn, getCustomColumns,
-  copyTaxPeriodForward, getVisibleClients, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, canRollbackChanges, rollbackChangesAfter, rollbackRetentionStart, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField,
+  copyTaxPeriodForward, getVisibleClients, getClientsByTaxTab, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, canRollbackChanges, rollbackChangesAfter, rollbackRetentionStart, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField,
   getDatabaseRelationshipIssues,
 } from './state.js';
 import { TAX_TYPES, previousPeriodKey, taxPeriodsFor, statusPillHtml, daysUntilLabel } from './tax-model.ts';
@@ -50,6 +50,7 @@ import { check } from '@tauri-apps/plugin-updater';
 import { getLocalStorageProtection } from './local-storage-protection.ts';
 import { assertBackupFileSize, createEncryptedBackup, decryptBackup, isEncryptedBackup, validateBackupDatabase } from './backup-crypto.js';
 import { payrollPaymentTypes } from './payroll-model.js';
+import { groupAtPeriod } from './client-model.js';
 import { readSpreadsheetRows } from './spreadsheet-security.js';
 
 const TITLES = {
@@ -721,12 +722,11 @@ function bindCurrentView() {
       const rows = [...document.querySelectorAll(`.tax-table tr[data-row-id="${CSS.escape(field.dataset.client)}"]`)];
       const fullyExempt = rows.length === 3 && rows.every((item) => Boolean(item.querySelector('[data-field="exemption"]')?.value));
       rows[0]?.querySelector('.fop-name-cell')?.classList.toggle('fop-fully-exempt', fullyExempt);
+      rows.forEach((item) => item.classList.toggle('fop-all-exempt', fullyExempt && item.classList.contains('exempt-row')));
     }
   }));
   $('[data-tax-auto-ok]')?.addEventListener('click', async () => {
-    const clients = uiState.taxGroup === '3'
-      ? getVisibleClients().filter((c) => String(c.group) === '3')
-      : getVisibleClients().filter((c) => ['1', '2'].includes(String(c.group)));
+    const clients = getClientsByTaxTab(uiState.taxGroup, uiState.taxPeriod);
     const result = await openAppDialog({
       title: 'АвтоОК — податки', message: 'Оберіть ФОП. Для всіх трьох податків буде встановлено «Набрано в банку» і «Дата сплати» — 01 число поточного періоду.',
       fields: [{ key: 'clients', label: 'ФОП', type: 'checkboxes', options: clients.map((client) => ({ value: client.id, label: client.name, checked: true })) }], confirmText: 'Заповнити', cancelText: 'Закрити',
@@ -734,7 +734,7 @@ function bindCurrentView() {
     if (!result) return;
     const selected = result.clients || [];
     const selectedClients = clients.filter((client) => selected.includes(client.id));
-    const changed = autoCompleteTaxPeriod(selectedClients.map((client) => client.id), selectedClients.map((client) => String(client.group)), uiState.taxPeriod, TAX_TYPES.map((tax) => tax.key));
+    const changed = autoCompleteTaxPeriod(selectedClients.map((client) => client.id), selectedClients.map((client) => groupAtPeriod(client, uiState.taxPeriod)), uiState.taxPeriod, TAX_TYPES.map((tax) => tax.key));
     showToast(changed ? `Заповнено податки для ${selectedClients.length} ФОП.` : 'ФОП не обрано.', changed ? 'success' : 'info');
     render();
   });
@@ -861,10 +861,12 @@ function bindCurrentView() {
     if (!saved) showToast('Вкажіть коректну дату дедлайну.', 'error');
   }));
   document.querySelectorAll('[data-dropdown-options]').forEach((field) => field.addEventListener('change', () => {
-    if (!setDropdownOptions(field.dataset.dropdownOptions, field.value)) showToast('Не вдалося зберегти список.', 'error');
+    const values = [...document.querySelectorAll(`[data-dropdown-options="${CSS.escape(field.dataset.dropdownOptions)}"]`)].map((item) => item.value).filter(Boolean).join('\n');
+    if (!setDropdownOptions(field.dataset.dropdownOptions, values)) showToast('Не вдалося зберегти список.', 'error');
   }));
   document.querySelectorAll('[data-settings-section]').forEach((button) => button.addEventListener('click', async () => {
     uiState.settingsSection = button.dataset.settingsSection;
+    render();
     if (uiState.settingsSection === 'users') {
       try { uiState.managedUsers = await listAuthenticationUsers(); }
       catch (error) { showToast(error.message || String(error), 'error'); }

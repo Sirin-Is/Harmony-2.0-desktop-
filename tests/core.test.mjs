@@ -14,7 +14,7 @@ import { normalizeEmployeeName, validateEmployee } from '../employee-model.js';
 import { defaultPayrollDates, payrollDateForPaymentType, payrollDatesForPeriod, payrollPaymentTypes } from '../payroll-model.js';
 import { isValidIsoDate, isValidMonthPeriodKey, isValidReportPeriodKey, isValidTaxPeriodKey, validateCalendarEvent, validateReportRecordChange, validateTaxRecordChange } from '../workflow-validation.js';
 import { findActivityByCode, loadActivityReference, normalizeActivityCode } from '../data/activity-reference.js';
-import { birthDateFromRnokpp } from '../client-model.js';
+import { birthDateFromRnokpp, groupAtPeriod } from '../client-model.js';
 
 test('політика паролів компенсує недоступну перевірку витоків на Free Plan', () => {
   assert.equal(MIN_PASSWORD_LENGTH, 8);
@@ -241,6 +241,12 @@ test('РНОКПП визначає дату народження з перши�
   assert.equal(birthDateFromRnokpp('12345-67890'), '1933-10-19');
 });
 
+test('історія групи показує ФОП у групі, що діяла на початок періоду', () => {
+  const client = { group: '3', groupChanges: [{ previousGroup: '2', group: '3', effectiveDate: '2026-07-01' }] };
+  assert.equal(groupAtPeriod(client, '2026-06'), '2');
+  assert.equal(groupAtPeriod(client, '2026-9m'), '3');
+});
+
 test('валідація картки ФОП не пропускає критичні помилки, але попереджає про дублікати', () => {
   const invalid = validateClient({ name: 'А', email: 'not-email', serviceCost: '-1', kepExpiry: '2026-99-99' }, [], null);
   assert.equal(invalid.errors.length, 4);
@@ -405,8 +411,10 @@ test('часті табличні зміни зберігають лише зм�
   assert.match(state, /setIncomeValue[\s\S]*saveTargetedChanges\(\[change\], 'Змінено дохід'/);
   assert.match(state, /setMonthlyPaymentField[\s\S]*saveTargetedChanges\(\[change\], 'Змінено оплату послуг'/);
   assert.match(state, /setPayrollField[\s\S]*saveTargetedChanges\(changes, 'Змінено запис виплати зарплати'/);
+  assert.match(state, /upsertClient\(fields, existingId\)[\s\S]*saveTargetedEntity\('clients'/);
+  assert.match(state, /saveCalendarEvent[\s\S]*saveTargetedEntity\('calendarEvents'/);
   assert.match(storage, /const pendingMutations = new Map\(\)[\s\S]*Last write wins[\s\S]*repository\.applyMutations\(mutations\)/);
-  assert.match(repository, /async applyMutations\(mutations: LocalMutation\[\]\)[\s\S]*UPDATE \$\{mutation\.table\}[\s\S]*ON CONFLICT\(id\) DO UPDATE/);
+  assert.match(repository, /async applyMutations\(mutations: LocalMutation\[\]\)[\s\S]*grouped = new Map[\s\S]*UPDATE \$\{table\}[\s\S]*VALUES \$\{values\}[\s\S]*ON CONFLICT\(id\) DO UPDATE/);
   assert.match(syncManager, /let received = 0[\s\S]*if \(received\) window\.dispatchEvent/);
   assert.match(bootstrap, /editing \|\| hasPendingLocalChanges\(\)[\s\S]*scheduleRemoteUiRefresh\(800\)/);
 });

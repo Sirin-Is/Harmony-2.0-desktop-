@@ -16,7 +16,7 @@ let transientSaveRetries = 0;
 // Local edits are written as one compact burst after the user pauses.  The
 // network replica gets a little more time still, so typing in a table never
 // starts a cloud round-trip for every cell.
-const LOCAL_SAVE_DEBOUNCE_MS = 900;
+const LOCAL_SAVE_DEBOUNCE_MS = 250;
 
 function createSyncManager(targetRepository) {
   const manager = new SyncManager(targetRepository);
@@ -44,6 +44,7 @@ function setLocalStatus(status, detail = '') {
   if (!el) return;
   const labels = {
     loading: '⏳ Відкриття локальної бази…',
+    queued: '✓ Зміни прийнято',
     saving: '⏳ Збереження локально…',
     saved: '✓ Збережено локально',
     syncing: '⟳ Синхронізація…',
@@ -155,7 +156,7 @@ export function scheduleSave(db) {
   pendingDb = db;
   // A later full snapshot already contains every earlier row mutation.
   pendingMutations.clear();
-  setLocalStatus('saving');
+  setLocalStatus('queued');
   clearTimeout(saveTimer);
   clearTimeout(retryTimer);
   transientSaveRetries = 0;
@@ -175,7 +176,7 @@ export function scheduleMutations(mutations) {
       pendingMutations.set(`${mutation.table}|${mutation.id}`, { ...mutation, payload });
     }
   }
-  setLocalStatus('saving');
+  setLocalStatus('queued');
   clearTimeout(saveTimer);
   clearTimeout(retryTimer);
   transientSaveRetries = 0;
@@ -189,11 +190,12 @@ export async function flushSave() {
   const mutations = [...pendingMutations.values()];
   pendingDb = null;
   pendingMutations.clear();
+  setLocalStatus('saving');
   try {
     if (snapshot !== null) await repository.save(snapshot);
     else await repository.applyMutations(mutations);
     transientSaveRetries = 0;
-    setLocalStatus('saved');
+    setLocalStatus(pendingDb !== null || pendingMutations.size ? 'queued' : 'saved');
     syncManager.requestSync('local-change');
   } catch (error) {
     if (snapshot !== null) pendingDb = snapshot;

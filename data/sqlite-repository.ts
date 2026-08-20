@@ -372,24 +372,35 @@ export class SqliteRepository implements LocalRepository, SyncRepository {
     return this.serializeWrite(async () => {
       const database = await this.db();
       const timestamp = now();
+      const grouped = new Map<LocalMutationTable, LocalMutation[]>();
       for (const mutation of mutations) {
         if (!LOCAL_TABLE_SET.has(mutation.table)) throw new Error('Невідома локальна таблиця зміни.');
         if (!mutation.id || typeof mutation.id !== 'string') throw new Error('Локальна зміна не має коректного ID.');
-        if (mutation.deleted) {
+        const group = grouped.get(mutation.table) || [];
+        group.push(mutation); grouped.set(mutation.table, group);
+      }
+      for (const [table, tableMutations] of grouped) {
+        const deleted = tableMutations.filter((mutation) => mutation.deleted);
+        for (let offset = 0; offset < deleted.length; offset += 150) {
+          const chunk = deleted.slice(offset, offset + 150);
           await database.execute(
-            `UPDATE ${mutation.table} SET is_deleted = 1, updated_at = ?, sync_status = 'deleted' WHERE id = ? AND is_deleted = 0`,
-            [timestamp, mutation.id],
+            `UPDATE ${table} SET is_deleted = 1, updated_at = ?, sync_status = 'deleted' WHERE id IN (${chunk.map(() => '?').join(', ')}) AND is_deleted = 0`,
+            [timestamp, ...chunk.map((mutation) => mutation.id)],
           );
-          continue;
         }
-        const payload = JSON.stringify(mutation.payload);
-        await database.execute(
-          `INSERT INTO ${mutation.table} (id, payload, created_at, updated_at, synced_at, is_deleted, sync_status)
-           VALUES (?, ?, ?, ?, NULL, 0, 'created')
-           ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at,
-             is_deleted = 0, sync_status = CASE WHEN ${mutation.table}.sync_status = 'created' THEN 'created' ELSE 'updated' END`,
-          [mutation.id, payload, timestamp, timestamp],
-        );
+        const upserts = tableMutations.filter((mutation) => !mutation.deleted);
+        for (let offset = 0; offset < upserts.length; offset += 150) {
+          const chunk = upserts.slice(offset, offset + 150);
+          const values = chunk.map(() => '(?, ?, ?, ?, NULL, 0, \'created\')').join(', ');
+          const parameters = chunk.flatMap((mutation) => [mutation.id, JSON.stringify(mutation.payload), timestamp, timestamp]);
+          await database.execute(
+            `INSERT INTO ${table} (id, payload, created_at, updated_at, synced_at, is_deleted, sync_status)
+             VALUES ${values}
+             ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at,
+               is_deleted = 0, sync_status = CASE WHEN ${table}.sync_status = 'created' THEN 'created' ELSE 'updated' END`,
+            parameters,
+          );
+        }
       }
     });
   }

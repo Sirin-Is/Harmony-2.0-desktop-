@@ -11,7 +11,7 @@
 // поточний вигляд.
 
 import { escapeHtml, generateId } from './utils';
-import { getClientById, getVisibleClients, getSettings, upsertClient, archiveClient } from './state.js';
+import { getClientById, getVisibleClients, getSettings, upsertClient, archiveClient, changeClientGroup } from './state.js';
 import { openAppDialog } from './app-dialog.js';
 import { enhanceDateInputs } from './date-input.js';
 import { showToast } from './toast.js';
@@ -129,6 +129,7 @@ function bodyHtml() {
         <div class="cc-name">${esc(d.name || 'Новий клієнт')}</div>
         <div class="cc-sub">${esc(d.group || '-')} група${d.rate ? ' / ' + (Number(d.rate) * 100) + '%' : ''}</div>
       </div>
+      ${!isNew ? '<button type="button" class="secondary" data-change-group>Зміна групи</button>' : ''}
     </div>
 
     <div class="cc-grid">
@@ -423,6 +424,12 @@ function paint() {
     input.value = input.value.replace(/\D/g, '').slice(0, 10);
     const birthDate = birthDateFromRnokpp(input.value);
     if (birthDate) document.getElementById('cc_birthDate').value = birthDate;
+  });
+  overlay.querySelector('[data-change-group]')?.addEventListener('click', async () => {
+    const result = await openAppDialog({ title: 'Зміна групи ФОП', message: 'Старі податки та звіти залишаться у попередній групі, а нові — з дати переходу в новій.', fields: [{ key: 'effectiveDate', label: 'Дата зміни групи', type: 'date', required: true }, { key: 'group', label: 'Нова група', type: 'select', value: draft.group, options: ['1', '2', '3', 'Загальна'] }], confirmText: 'Змінити' });
+    if (!result) return;
+    if (!changeClientGroup(draft.id, result.group, result.effectiveDate)) { showToast('Перевірте дату та нову групу.', 'error'); return; }
+    draft.group = result.group; paint(); notifyChanged();
   });
 }
 

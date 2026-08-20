@@ -6,7 +6,7 @@
 import { escapeHtml } from '../utils';
 import { getTaxField, getClientsByTaxTab, getEffectiveTaxDeadline, getSettings } from '../state.js';
 import { TAX_TYPES, TAX_GROUPS, taxPeriodsFor, exemptionOptions, statusPillHtml, daysUntilLabel, previousPeriodKey } from '../tax-model.ts';
-import { shortClientName } from '../client-model.js';
+import { shortClientName, groupAtPeriod } from '../client-model.js';
 import { table, empty } from './layout.js';
 import { uiState } from '../ui-state.js';
 
@@ -20,7 +20,7 @@ function exemptionSelect(item, taxType, record) {
 function taxRow(item, taxType, index, record, deadline, isDefaultDeadline, fullyExempt) {
   const nameCell = index === 0 ? `<td rowspan="3" class="fop-name-cell${fullyExempt ? ' fop-fully-exempt' : ''}">${escapeHtml(shortClientName(item.name))}</td>` : '';
   const context = `${escapeHtml(taxType.label)}, ${escapeHtml(item.name)}`;
-  return `<tr class="${record.exemption ? 'exempt-row' : ''}" data-row-id="${escapeHtml(item.id)}">
+  return `<tr class="${record.exemption ? `exempt-row${fullyExempt ? ' fop-all-exempt' : ''}` : ''}" data-row-id="${escapeHtml(item.id)}">
     ${nameCell}
     <td>${taxType.label}</td>
     <td><input type="date" class="tax-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(item.group)}" data-tax="${escapeHtml(taxType.key)}" data-field="queuedDate" value="${escapeHtml(record.queuedDate || '')}" aria-label="Набрано в банку: ${context}"></td>
@@ -38,13 +38,13 @@ export function renderTaxes() {
   const periods = taxPeriodsFor(uiState.taxGroup === '3' ? '3' : '1', getSettings().workingYear);
   if (!uiState.taxPeriod || !periods.some((p) => p.key === uiState.taxPeriod)) {
     const now = new Date(); const current = now.getFullYear() === getSettings().workingYear ? now.getMonth() : 0;
-    uiState.taxPeriod = uiState.taxGroup === '3' ? periods[Math.floor(current / 3)].key : periods[current].key;
+    uiState.taxPeriod = uiState.taxGroup === '3' ? periods[Math.max(0, Math.floor(current / 3) - 1)].key : periods[current].key;
   }
 
-  const clients = getClientsByTaxTab(uiState.taxGroup);
+  const clients = getClientsByTaxTab(uiState.taxGroup, uiState.taxPeriod);
   const rows = [];
   clients.forEach((item) => {
-    const realGroup = String(item.group);
+    const realGroup = groupAtPeriod(item, uiState.taxPeriod);
     const records = TAX_TYPES.map((taxType) => getTaxField(item.id, realGroup, uiState.taxPeriod, taxType.key));
     const fullyExempt = records.every((record) => Boolean(record.exemption));
     TAX_TYPES.forEach((taxType, index) => {
@@ -67,14 +67,8 @@ export function renderTaxes() {
 
   const hasPreviousPeriod = Boolean(previousPeriodKey(periods, uiState.taxPeriod));
 
-  return `<div class="toolbar">
-      <p class="note">Дедлайни підставляються автоматично з «Налаштувань» (пунктирна рамка). Змініть дедлайн вручну для конкретного ФОП, щоб задати виняток. Якщо у ФОП є причина звільнення, рядок стає сірим і статус не показується.</p>
-      <div class="toolbar-actions">
-        <button class="secondary" data-tax-auto-ok${clients.length ? '' : ' disabled'} title="Заповнює дати набору в банку та сплати першим числом поточного періоду.">АвтоОК</button>
-        <button class="secondary" data-copy-previous-period${hasPreviousPeriod && clients.length ? '' : ' disabled'} title="Переносить дедлайн і причину звільнення з попереднього періоду, тільки в порожні поля. Дати сплати ніколи не копіюються.">Скопіювати з попереднього періоду</button>
-      </div>
-    </div>
-    <div class="subnav">${groupTabs}</div>
+  return `<p class="note">Дедлайни підставляються автоматично з «Налаштувань» (пунктирна рамка). Рядки та ПІБ сірі лише коли ФОП звільнений від усіх податків.</p>
+    <div class="subnav tax-main-nav"><div>${groupTabs}</div><div class="toolbar-actions"><button class="secondary" data-tax-auto-ok${clients.length ? '' : ' disabled'} title="Заповнює лише порожні дати в усіх періодах до поточного.">АвтоОК</button><button class="secondary" data-copy-previous-period${hasPreviousPeriod && clients.length ? '' : ' disabled'}>Скопіювати з попереднього періоду</button></div></div>
     <div class="subnav periods">${periodTabs}</div>
     ${body}`;
 }

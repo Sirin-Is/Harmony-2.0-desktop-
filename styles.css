@@ -93,7 +93,7 @@ nav button:disabled { color: #719092; cursor: not-allowed; }
 .nav-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-note { margin: 6px 10px 0; font-size: 11px; color: #9eb6b6; }
 .sync-status { margin: 6px 0; font-size: 11px; }
-.sync-saved { color: #7fd8b8; }
+.sync-saved, .sync-queued { color: #7fd8b8; }
 .sync-saving, .sync-loading { color: #d8c87f; }
 .sync-error { color: #f0989e; }
 .boot-overlay { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: var(--bg); }
@@ -196,7 +196,8 @@ tr.drag-over td { box-shadow: inset 0 2px 0 var(--brand); }
 
 /* Tax rows */
 .fop-name-cell { font-weight: 600; white-space: nowrap; }
-.exempt-row td { background: #f3f4f6; color: #98a2b3; }
+.exempt-row td { color: #98a2b3; }
+.exempt-row.fop-all-exempt td { background: #f3f4f6; }
 .fop-name-cell.fop-fully-exempt { color: #667085; }
 .tax-field, .report-field { border: 1px solid #d7dde5; border-radius: 5px; padding: 5px; font: 12px inherit; color: var(--ink); }
 select.tax-field { width: 150px; }
@@ -350,8 +351,10 @@ dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 
 .calendar-sticky { position: sticky; top: 78px; z-index: 8; margin: -2px -2px 10px; padding: 2px 2px 8px; background: var(--bg); }
 .calendar-sticky .calendar-tabs { margin-bottom: 8px; }
 .calendar-sticky .toolbar { margin: 0; }
-.calendar-task-nav { display: grid; grid-template-columns: auto 180px auto; align-items: center; gap: 5px; }
-.calendar-task-nav .generic-date-control, .calendar-task-date { width: 180px; }
+.calendar-navigation { display: grid; grid-template-columns: 38px 180px 38px auto; align-items: center; gap: 5px; }
+.calendar-navigation .generic-date-control, .calendar-task-date { width: 180px; }
+.calendar-navigation > button:not(.calendar-today) { width: 38px; min-width: 38px; height: 34px; }
+.tax-main-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .calendar-task-day { width: min(840px, 100%); margin: 9px 0 0; text-align: center; color: var(--brand); font-size: 15px; font-weight: 800; letter-spacing: .01em; }
 .task-list { display: grid; gap: 7px; max-width: 840px; }
 .task-row { display: flex; align-items: stretch; border: 1px solid #dce3ec; border-radius: 6px; background: #fff; overflow: hidden; }
@@ -409,18 +412,20 @@ dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 
 .payroll-check.ok { background: #e4f7ed; color: #187344; }
 .payroll-check.warn { background: #fff1d6; color: #895900; }
 .payroll-table th, .payroll-table td { white-space: nowrap; }
-.payroll-table { min-width: 1100px; }
+.payroll-table { min-width: 1010px; }
 .payroll-table th, .payroll-table td { padding: 5px 6px; }
 .payroll-table th { font-size: 10px; }
 .payroll-table th:nth-child(1), .payroll-table td:nth-child(1) { width: 100px; }
 .payroll-table th:nth-child(2), .payroll-table td:nth-child(2) { width: 160px; overflow: visible; text-overflow: clip; }
-.payroll-table th:nth-child(3), .payroll-table td:nth-child(3) { width: 210px; overflow: visible; text-overflow: clip; }
+.payroll-table th:nth-child(3), .payroll-table td:nth-child(3) { width: 180px; overflow: visible; text-overflow: clip; }
 .payroll-table th:nth-child(4), .payroll-table td:nth-child(4), .payroll-table th:nth-child(5), .payroll-table td:nth-child(5), .payroll-table th:nth-child(6), .payroll-table td:nth-child(6), .payroll-table th:nth-child(7), .payroll-table td:nth-child(7) { width: 76px; }
-.payroll-table th:nth-child(8), .payroll-table td:nth-child(8) { width: 90px; }
+.payroll-table th:nth-child(8), .payroll-table td:nth-child(8) { width: 112px; }
 .payroll-table th:nth-child(9), .payroll-table td:nth-child(9) { width: 78px; }
 .payroll-table th:nth-child(10), .payroll-table td:nth-child(10), .payroll-table th:nth-child(11), .payroll-table td:nth-child(11), .payroll-table th:nth-child(12), .payroll-table td:nth-child(12) { width: 78px; }
 .payroll-table th:nth-child(4), .payroll-table td:nth-child(4), .payroll-table th:nth-child(5), .payroll-table td:nth-child(5), .payroll-table th:nth-child(6), .payroll-table td:nth-child(6), .payroll-table th:nth-child(7), .payroll-table td:nth-child(7), .payroll-table th:nth-child(8), .payroll-table td:nth-child(8) { text-align: center; }
 .payroll-table td:nth-child(4) input, .payroll-table td:nth-child(5) input, .payroll-table td:nth-child(6) input, .payroll-table td:nth-child(7) input, .payroll-table td:nth-child(8) select { text-align: center; }
+.payroll-table th:nth-child(9), .payroll-table td:nth-child(9) { text-align: center; font-variant-numeric: tabular-nums; }
+.dropdown-settings-list { margin: 16px 0; }.dropdown-settings-list h3 { font-size: 13px; margin: 0 0 6px; }.dropdown-settings-list > div { display: grid; gap: 5px; max-width: 430px; }.dropdown-settings-list input { width: 100%; }
 .payroll-type-row td { padding: 5px 9px !important; border-top: 1px solid #9aa7b7; border-bottom: 1px solid #d5dce6; color: #334155; background: #f5f7fa; font-size: 12px; font-weight: 700; text-align: left; }
 .payroll-type-row .payroll-batch-total { text-align: right; font-size: 11px; font-variant-numeric: tabular-nums; }
 .payroll-total-row td { padding-top: 5px; padding-bottom: 6px; color: #334155; background: #fafbfc; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }

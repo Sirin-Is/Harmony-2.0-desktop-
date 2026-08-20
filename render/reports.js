@@ -8,7 +8,7 @@ import { getReportField, getClientsByTaxTab, getEffectiveReportDeadline, getSett
 import { REPORT_GROUPS, reportPeriodsFor, reportStatusPillHtml, reportDaysUntilLabel } from '../report-model.ts';
 import { table, empty } from './layout.js';
 import { uiState } from '../ui-state.js';
-import { shortClientName } from '../client-model.js';
+import { shortClientName, groupAtPeriod } from '../client-model.js';
 
 function reportRow(item, realGroup, record, deadline, isDefaultDeadline) {
   const clientName = escapeHtml(item.name);
@@ -27,12 +27,12 @@ export function renderReports() {
   const periods = reportPeriodsFor(uiState.reportGroup, getSettings().workingYear);
   if (!uiState.reportPeriod || !periods.some((p) => p.key === uiState.reportPeriod)) {
     const now = new Date(); const current = now.getFullYear() === getSettings().workingYear ? now.getMonth() : 0;
-    uiState.reportPeriod = uiState.reportGroup === '3' ? periods[Math.floor(current / 3)].key : periods[0].key;
+    uiState.reportPeriod = uiState.reportGroup === '3' ? periods[Math.max(0, Math.floor(current / 3) - 1)].key : periods[0].key;
   }
 
-  const clients = getClientsByTaxTab(uiState.reportGroup);
+  const clients = getClientsByTaxTab(uiState.reportGroup, uiState.reportPeriod);
   const rows = clients.map((item) => {
-    const realGroup = String(item.group);
+    const realGroup = groupAtPeriod(item, uiState.reportPeriod);
     const record = getReportField(item.id, realGroup, uiState.reportPeriod);
     const deadline = getEffectiveReportDeadline(realGroup, uiState.reportPeriod, record);
     const isDefault = !record.deadline && Boolean(deadline);

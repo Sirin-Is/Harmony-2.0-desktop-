@@ -34,8 +34,10 @@ function filterMenu(label, key, clients) {
   if (uiState.dashboardFilterOpen !== key) return '';
   const options = [...new Set(clients.map((item) => filterValue(item, key)))].sort((a, b) => String(a).localeCompare(String(b), 'uk'));
   const selected = new Set(uiState.dashboardFilters[key] || options);
+  const sorting = key === 'name' ? `<label class="filter-sort">Сортування<select data-dashboard-sort><option value="name-asc" ${uiState.dashboardSort === 'name-asc' ? 'selected' : ''}>А–Я</option><option value="name-desc" ${uiState.dashboardSort === 'name-desc' ? 'selected' : ''}>Я–А</option></select></label>` : key === 'serviceCost' ? `<label class="filter-sort">Сортування<select data-dashboard-sort><option value="cost-asc" ${uiState.dashboardSort === 'cost-asc' ? 'selected' : ''}>Менша–більша</option><option value="cost-desc" ${uiState.dashboardSort === 'cost-desc' ? 'selected' : ''}>Більша–менша</option></select></label>` : '';
   return `<div class="dashboard-filter-menu" data-dashboard-filter-menu data-filter-key="${escapeHtml(key)}">
     <div class="filter-menu-title">Фільтр: ${escapeHtml(label)}</div>
+    ${sorting}
     <label class="filter-select-all"><input type="checkbox" data-filter-select-all ${options.every((value) => selected.has(value)) ? 'checked' : ''}> Обрати все</label>
     <div class="filter-options">${options.map((value) => `<label><input type="checkbox" data-filter-option value="${escapeHtml(value)}" ${selected.has(value) ? 'checked' : ''}> ${escapeHtml(value || '-')}</label>`).join('') || '<span class="muted">Немає значень</span>'}</div>
     <div class="filter-menu-actions"><button type="button" class="secondary" data-close-dashboard-filter>Скасувати</button><button type="button" class="primary" data-apply-dashboard-filter>Застосувати</button></div>
@@ -107,7 +109,6 @@ export function renderDashboard() {
       <div class="toolbar-actions">
         <label class="dashboard-search"><span class="visually-hidden">Швидкий пошук ФОП</span><input type="search" data-dashboard-search value="${escapeHtml(uiState.dashboardSearch || '')}" placeholder="Пошук ФОП…" autocomplete="off"></label>
         <span class="dashboard-result-count" aria-live="polite">${clients.length} із ${allClients.length}</span>
-        <label class="visually-hidden" for="dashboardSort">Сортування</label><select id="dashboardSort" data-dashboard-sort><option value="name-asc" ${uiState.dashboardSort === 'name-asc' ? 'selected' : ''}>ПІБ: А–Я</option><option value="name-desc" ${uiState.dashboardSort === 'name-desc' ? 'selected' : ''}>ПІБ: Я–А</option><option value="cost-asc" ${uiState.dashboardSort === 'cost-asc' ? 'selected' : ''}>Вартість: менша–більша</option><option value="cost-desc" ${uiState.dashboardSort === 'cost-desc' ? 'selected' : ''}>Вартість: більша–менша</option></select>
         ${activeFilterCount ? `<button class="secondary compact-action" data-clear-dashboard-filters>Скинути фільтри (${activeFilterCount})</button>` : ''}
         <button class="secondary" data-export-clients>Експорт</button>
         <button class="secondary" data-import-clients>Імпорт</button>

@@ -131,6 +131,15 @@ function birthdayRow() {
   return `<div class="overview-row"><div class="overview-row-head"><span class="overview-status ${entries.length ? 'warn' : 'ok'}">${entries.length ? '!' : '✓'}</span><h2>Дні народження</h2></div><div class="overview-row-body">${text}</div></div>`;
 }
 
+function hrDocumentsAlertEntries() {
+  const period = monthPeriodKey(getSettings().workingYear, new Date().getMonth() + 1);
+  const records = new Map(getHrMonthlyDocuments().filter((item) => item.period === period).map((item) => [item.clientId, item]));
+  return getVisibleClients().filter((client) => (client.employees || []).length).filter((client) => {
+    const record = records.get(client.id);
+    return !record || record.timesheetStatus !== 'Надіслано' || record.payrollStatus !== 'Надіслано' || record.cashStatementStatus !== 'Надіслано';
+  }).map((client) => ({ id: client.id, name: shortClientName(client.name) }));
+}
+
 function todayIso() { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; }
 function salaryReminder() {
   const today = todayIso(); const year = getSettings().workingYear;
@@ -151,14 +160,14 @@ export function renderOverview() {
   const taxAlerts = taxAlertEntries();
   const reportAlerts = reportAlertEntries();
   const serviceAlerts = serviceDebtAlertEntries();
-  const hrMonth = hrDocumentsReminder();
-  return `<p class="note overview-intro">Зведення зауважень по всіх розділах. Натисніть на ПІБ, щоб перейти до відповідного розділу й періоду.</p>
+  const hrAlerts = hrDocumentsAlertEntries();
+  return `<p class="note overview-intro">Контроль ситуації</p>
     ${salaryReminder() ? reminderRow('Виплата ЗП', 'Сьогодні день виплати зарплати') : ''}
-    ${hrMonth ? reminderRow('Кадрові документи', `Відправ клієнтам кадрові документи за ${hrMonth}`) : ''}
-    ${birthdayRow()}
     ${overviewRow('Термін дії КЕП', kepAlerts, 'dashboard', 'Найближчим часом не спливає термін дії жодного КЕП', 'Спливає термін дії КЕП: ')}
-    ${overviewRow('Контроль лімітів', incomeAlerts, 'incomes', 'Жоден ФОП не наблизився до вичерпання ліміту', 'До вичерпання ліміту наближаються: ')}
+    ${overviewRow('Сплата послуг', serviceAlerts, 'payments', 'Всі сплатили наші послуги', 'Наші послуги мають ще сплатити: ')}
     ${overviewRow('Сплата податків', taxAlerts, 'taxes', 'Всі податки сплачені', 'Повинні сплатити податки: ')}
+    ${overviewRow('Контроль лімітів', incomeAlerts, 'incomes', 'Жоден ФОП не наблизився до вичерпання ліміту', 'До вичерпання ліміту наближаються: ')}
     ${overviewRow('Подача звітів', reportAlerts, 'reports', 'Всі звіти подано', 'Треба подати звіти по ')}
-    ${overviewRow('Сплата послуг', serviceAlerts, 'payments', 'Всі сплатили наші послуги', 'Наші послуги мають ще сплатити: ')}`;
+    ${overviewRow('Кадрові документи', hrAlerts, 'hr', 'Всі кадрові документи надіслані', 'Треба надіслати кадрові документи ')}
+    ${birthdayRow()}`;
 }

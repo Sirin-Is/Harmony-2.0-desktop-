@@ -12,7 +12,7 @@
 
 import * as storage from './storage.js';
 import * as clientModel from './client-model';
-import { getTaxRecord, effectiveDeadline as effectiveTaxDeadline, getDefaultDeadline as getDefaultTaxDeadline, exemptionOptions } from './tax-model.ts';
+import { getTaxRecord, effectiveDeadline as effectiveTaxDeadline, getDefaultDeadline as getDefaultTaxDeadline, exemptionOptions, taxPeriodsFor } from './tax-model.ts';
 import { getReportRecord, effectiveReportDeadline } from './report-model.ts';
 import { toNumber, generateId } from './utils';
 import { normalizeNonNegativeAmount } from './money-validation.js';
@@ -249,6 +249,16 @@ function buildAuditEvents(before, after, metadata) {
 function applyPathValue(database, change, direction = 'after') {
   const path = change.path || [];
   if (!database || path.length < 2) return;
+  const existed = direction === 'after' ? change.afterExisted !== false : change.beforeExisted !== false;
+  const value = direction === 'after' ? change.after : change.before;
+  if (path.length === 2 && Array.isArray(database[path[0]])) {
+    const collection = database[path[0]];
+    const index = collection.findIndex((item) => item?.id === path[1]);
+    if (!existed && index >= 0) collection.splice(index, 1);
+    else if (existed && index >= 0) collection[index] = cloneValue(value);
+    else if (existed) collection.push(cloneValue(value));
+    return;
+  }
   let target = database;
   for (let index = 0; index < path.length - 1; index += 1) {
     const key = path[index];
@@ -261,8 +271,6 @@ function applyPathValue(database, change, direction = 'after') {
     }
   }
   const key = path.at(-1);
-  const existed = direction === 'after' ? change.afterExisted !== false : change.beforeExisted !== false;
-  const value = direction === 'after' ? change.after : change.before;
   if (Array.isArray(target)) return;
   if (!existed) delete target[key];
   else target[key] = cloneValue(value);
@@ -270,22 +278,15 @@ function applyPathValue(database, change, direction = 'after') {
 
 function mutationForPath(database, path) {
   const [root, first, second] = path;
-  if (root === 'clients') {
-    const record = database.clients.find((item) => item.id === first);
-    return record ? { table: 'clients', id: first, payload: cloneValue(record) } : { table: 'clients', id: first, deleted: true };
+  const entityTables = { clients: 'clients', customColumns: 'custom_columns', calendarEvents: 'calendar_events', hrOrders: 'hr_orders', payrollRecords: 'payroll_records', hrMonthlyDocuments: 'hr_monthly_documents' };
+  if (entityTables[root]) {
+    const record = database[root].find((item) => item.id === first);
+    return record ? { table: entityTables[root], id: first, payload: cloneValue(record) } : { table: entityTables[root], id: first, deleted: true };
   }
   if (root === 'monthlyPayments') return { table: 'monthly_payments', id: `${first}|${second}`, payload: { clientId: first, monthKey: second, value: cloneValue(database.monthlyPayments[first]?.[second] || {}) } };
   if (root === 'taxRecords') return { table: 'tax_records', id: first, payload: { key: first, value: cloneValue(database.taxRecords[first] || {}) } };
   if (root === 'incomeRecords') return { table: 'income_records', id: `${first}|${second}`, payload: { clientId: first, monthKey: second, value: database.incomeRecords[first]?.[second] || '' } };
   if (root === 'reportRecords') return { table: 'report_records', id: first, payload: { key: first, value: cloneValue(database.reportRecords[first] || {}) } };
-  if (root === 'payrollRecords') {
-    const record = database.payrollRecords.find((item) => item.id === first);
-    return record ? { table: 'payroll_records', id: first, payload: cloneValue(record) } : { table: 'payroll_records', id: first, deleted: true };
-  }
-  if (root === 'hrMonthlyDocuments') {
-    const record = database.hrMonthlyDocuments.find((item) => item.id === first);
-    return record ? { table: 'hr_monthly_documents', id: first, payload: cloneValue(record) } : { table: 'hr_monthly_documents', id: first, deleted: true };
-  }
   if (root === 'settings') return { table: 'settings', id: 'default', payload: cloneValue(database.settings) };
   throw new Error(`Непідтримуваний точковий шлях: ${root}`);
 }
@@ -301,13 +302,27 @@ function syncBaselineRow(target, source, path) {
     target.incomeRecords[first][second] = source.incomeRecords[first]?.[second] || '';
   } else if (['taxRecords', 'reportRecords'].includes(root)) target[root][first] = cloneValue(source[root][first] || {});
   else if (root === 'settings') target.settings = cloneValue(source.settings);
-  else if (['clients', 'payrollRecords', 'hrMonthlyDocuments'].includes(root)) {
+  else if (['clients', 'customColumns', 'calendarEvents', 'hrOrders', 'payrollRecords', 'hrMonthlyDocuments'].includes(root)) {
     const sourceRecord = source[root].find((item) => item.id === first);
     const index = target[root].findIndex((item) => item.id === first);
     if (!sourceRecord && index >= 0) target[root].splice(index, 1);
     else if (sourceRecord && index >= 0) target[root][index] = cloneValue(sourceRecord);
     else if (sourceRecord) target[root].push(cloneValue(sourceRecord));
   }
+}
+
+function entityChanges(root, id, before, after, clientId = '') {
+  if (!before || !after) return [{ path: [root, id], clientId, before: cloneValue(before), beforeExisted: Boolean(before), after: cloneValue(after), afterExisted: Boolean(after) }];
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  return [...keys].filter((key) => key !== 'id').map((key) => ({
+    path: [root, id, key], clientId,
+    before: cloneValue(before[key]), beforeExisted: Object.prototype.hasOwnProperty.call(before, key),
+    after: cloneValue(after[key]), afterExisted: Object.prototype.hasOwnProperty.call(after, key),
+  }));
+}
+
+function saveTargetedEntity(root, id, before, after, action, type, clientId = '') {
+  return saveTargetedChanges(entityChanges(root, id, before, after, clientId), action, type);
 }
 
 function directAuditEvent(change, metadata) {
@@ -502,19 +517,37 @@ export const getClientById = (id) => clientModel.findClientById(db, id);
 export const findClientByName = (name) => clientModel.findClientByName(db, name);
 export const getClientsByGroup = (group) => getVisibleClients().filter((item) => String(item.group) === group);
 /** '12' groups real groups '1' and '2' together — matches the tax/report tab grouping. */
-export const getClientsByTaxTab = (tabKey) => getVisibleClients().filter((item) => (
-  tabKey === '3' ? String(item.group) === '3' : ['1', '2'].includes(String(item.group))
+export const getClientsByTaxTab = (tabKey, period = '') => getVisibleClients().filter((item) => (
+  tabKey === '3' ? clientModel.groupAtPeriod(item, period) === '3' : ['1', '2'].includes(clientModel.groupAtPeriod(item, period))
 ));
 
+export function changeClientGroup(id, group, effectiveDate) {
+  const client = getClientById(id);
+  if (!client || !['1', '2', '3', 'Загальна'].includes(group) || !isValidOptionalIsoDate(effectiveDate) || group === client.group) return null;
+  const before = cloneValue(client);
+  client.groupChanges ||= [];
+  client.groupChanges.push({ previousGroup: client.group, group, effectiveDate });
+  client.groupChanges.sort((a, b) => String(a.effectiveDate).localeCompare(String(b.effectiveDate)));
+  client.group = group;
+  saveTargetedEntity('clients', id, before, client, 'Змінено групу ФОП', 'ФОП', id);
+  return client;
+}
+
 export function upsertClient(fields, existingId) {
+  const before = existingId ? cloneValue(clientModel.findClientById(db, existingId)) : null;
   const result = clientModel.upsertClient(db, fields, existingId);
-  save(existingId ? 'Змінено картку ФОП' : 'Створено ФОП', existingId ? 'ФОП' : 'Створення');
+  saveTargetedEntity('clients', result.record.id, before, result.record, existingId ? 'Змінено картку ФОП' : 'Створено ФОП', existingId ? 'ФОП' : 'Створення', result.record.id);
+  if (!existingId) {
+    if (lastSnapshot) { lastSnapshot.monthlyPayments ||= {}; lastSnapshot.monthlyPayments[result.record.id] = {}; }
+    if (lastBusinessSnapshot) { lastBusinessSnapshot.monthlyPayments ||= {}; lastBusinessSnapshot.monthlyPayments[result.record.id] = {}; }
+  }
   return result;
 }
 
 export function setClientLifecycle(id, status, reason = '') {
+  const before = cloneValue(clientModel.findClientById(db, id));
   const item = clientModel.setLifecycleStatus(db, id, status, reason);
-  if (item) save(status === 'inactive' ? 'Перенесено ФОП до неактивних' : 'Відновлено ФОП', 'Статус ФОП');
+  if (item) saveTargetedEntity('clients', id, before, item, status === 'inactive' ? 'Перенесено ФОП до неактивних' : 'Відновлено ФОП', 'Статус ФОП', id);
   return item;
 }
 
@@ -523,8 +556,9 @@ export function archiveClient(id, archived, reason = '') {
 }
 
 export function requestClientDeletion(id, reason) {
+  const before = cloneValue(clientModel.findClientById(db, id));
   const item = clientModel.requestDeletion(db, id, reason);
-  if (item) save('Подано запит на видалення ФОП', 'Видалення');
+  if (item) saveTargetedEntity('clients', id, before, item, 'Подано запит на видалення ФОП', 'Видалення', id);
   return item;
 }
 
@@ -563,15 +597,16 @@ export function addCustomColumn(fields) {
   if (validateCustomColumn(fields, db.customColumns).errors.length) return null;
   const column = { id: generateId(), name: fields.name.trim(), type: fields.type };
   db.customColumns.push(column);
-  save();
+  saveTargetedEntity('customColumns', column.id, null, column, 'Створено додаткову колонку', 'ФОП');
   return column;
 }
 
 export function updateCustomColumn(id, fields) {
   const column = db.customColumns.find((item) => item.id === id);
   if (!column || validateCustomColumn(fields, db.customColumns, id).errors.length) return null;
+  const before = cloneValue(column);
   Object.assign(column, { ...fields, name: fields.name.trim() });
-  save();
+  saveTargetedEntity('customColumns', id, before, column, 'Змінено додаткову колонку', 'ФОП');
   return column;
 }
 
@@ -595,9 +630,10 @@ export function saveCalendarEvent(fields, id = null) {
   if (!validation.ok) return null;
   const event = { id: id || generateId(), kind: 'note', ...fields };
   const index = db.calendarEvents.findIndex((item) => item.id === event.id);
+  const before = index >= 0 ? cloneValue(db.calendarEvents[index]) : null;
   if (index >= 0) db.calendarEvents[index] = event;
   else db.calendarEvents.push(event);
-  save(id ? 'Змінено задачу' : 'Створено задачу', 'Задача');
+  saveTargetedEntity('calendarEvents', event.id, before, event, id ? 'Змінено задачу' : 'Створено задачу', 'Задача', event.clientId || '');
   return event;
 }
 
@@ -620,6 +656,9 @@ export function saveEmployee(fields, id = null) {
   if (existing && existing.client.id !== client.id) return null;
   const duplicate = (client.employees || []).some((item) => item.id !== id && normalizeEmployeeName(item.name) === normalizeEmployeeName(fields.name));
   if (duplicate) return null;
+  const beforeClient = cloneValue(client);
+  const beforeOrders = new Map((db.hrOrders || []).map((item) => [item.id, cloneValue(item)]));
+  const beforePayroll = new Map((db.payrollRecords || []).map((item) => [item.id, cloneValue(item)]));
   const employee = { ...(existing?.employee || {}), id: id || generateId(), name: String(fields.name).trim(), position: String(fields.position).trim(), hireDate: fields.hireDate, dismissalDate: fields.dismissalDate || '', salaryPaymentMethod: fields.salaryPaymentMethod === 'Готівка' ? 'Готівка' : 'Безготівкою' };
   client.employees ||= [];
   const index = client.employees.findIndex((item) => item.id === employee.id);
@@ -632,7 +671,10 @@ export function saveEmployee(fields, id = null) {
     if (order.employeeId === employee.id || legacyMatch) { order.employeeId = employee.id; order.employeeName = employee.name; }
   });
   (db.payrollRecords || []).filter((record) => record.employeeId === employee.id).forEach((record) => { record.employeeName = employee.name; });
-  save(id ? 'Змінено картку працівника' : 'Створено картку працівника', 'Кадри');
+  const changes = entityChanges('clients', client.id, beforeClient, client, client.id);
+  (db.hrOrders || []).filter((item) => !valuesEqual(item, beforeOrders.get(item.id))).forEach((item) => changes.push(...entityChanges('hrOrders', item.id, beforeOrders.get(item.id), item, item.clientId || '')));
+  (db.payrollRecords || []).filter((item) => !valuesEqual(item, beforePayroll.get(item.id))).forEach((item) => changes.push(...entityChanges('payrollRecords', item.id, beforePayroll.get(item.id), item, item.clientId || '')));
+  saveTargetedChanges(changes, id ? 'Змінено картку працівника' : 'Створено картку працівника', 'Кадри');
   return employee;
 }
 
@@ -647,17 +689,19 @@ export function saveHrOrder(fields, id = null) {
     : (client?.employees || []).find((employee) => normalizeEmployeeName(employee.name) === normalizeEmployeeName(fields.employeeName));
   const order = { id: id || generateId(), ...fields, employeeId: linkedEmployee?.id || '', employeeName: linkedEmployee?.name || String(fields.employeeName || '').trim() };
   const index = db.hrOrders.findIndex((item) => item.id === order.id);
+  const before = index >= 0 ? cloneValue(db.hrOrders[index]) : null;
   if (index >= 0) db.hrOrders[index] = order;
   else db.hrOrders.push(order);
-  save(id ? 'Змінено кадровий документ' : 'Створено кадровий документ', 'Кадри');
+  saveTargetedEntity('hrOrders', order.id, before, order, id ? 'Змінено кадровий документ' : 'Створено кадровий документ', 'Кадри', order.clientId || '');
   return order;
 }
 
 export function deleteHrOrder(id) {
+  const record = cloneValue(db.hrOrders.find((item) => item.id === id));
   const before = db.hrOrders.length;
   db.hrOrders = db.hrOrders.filter((item) => item.id !== id);
   const removed = db.hrOrders.length !== before;
-  if (removed) save('Видалено кадровий документ', 'Кадри');
+  if (removed) saveTargetedEntity('hrOrders', id, record, null, 'Видалено кадровий документ', 'Кадри', record?.clientId || '');
   return removed;
 }
 
@@ -677,7 +721,7 @@ export function setHrMonthlyDocumentStatus(clientId, period, field, value) {
   }
   const change = { path: ['hrMonthlyDocuments', id, field], clientId, before: cloneValue(record[field]), beforeExisted: Object.prototype.hasOwnProperty.call(record, field), after: value, afterExisted: true };
   record[field] = value;
-  if (created) save('Створено кадрову відомість', 'Кадри');
+  if (created) saveTargetedEntity('hrMonthlyDocuments', id, null, record, 'Створено кадрову відомість', 'Кадри', clientId);
   else saveTargetedChanges([change], 'Змінено кадрову відомість', 'Кадри');
   return record;
 }
@@ -696,12 +740,14 @@ export function addPayrollForClient(clientId, period, paymentType = '') {
   if (!client) return 0;
   const employees = client.employees || [];
   let added = 0;
+  const created = [];
   employees.forEach((employee) => {
     if (db.payrollRecords.some((record) => isSamePayrollSlot(record, clientId, employee.id, period, paymentType))) return;
-    db.payrollRecords.push({ id: generateId(), clientId, employeeId: employee.id, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), paymentDate: payrollDateForPaymentType(db.settings, period, paymentType), status: '', amount: '', pdfo: '', vz: '', esv: '' });
+    const record = { id: generateId(), clientId, employeeId: employee.id, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), paymentDate: payrollDateForPaymentType(db.settings, period, paymentType), status: '', amount: '', pdfo: '', vz: '', esv: '' };
+    db.payrollRecords.push(record); created.push(record);
     added += 1;
   });
-  if (added) save();
+  if (added) saveTargetedChanges(created.flatMap((record) => entityChanges('payrollRecords', record.id, null, record, clientId)), 'Створено записи виплати зарплати', 'Зарплата');
   return added;
 }
 
@@ -710,14 +756,15 @@ export function addPayrollEmployee(clientId, employeeId, period, paymentType = '
   if (!employee) return null;
   if (db.payrollRecords.some((record) => isSamePayrollSlot(record, clientId, employeeId, period, paymentType))) return null;
   const record = { id: generateId(), clientId, employeeId, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), paymentDate: payrollDateForPaymentType(db.settings, period, paymentType), status: '', amount: '', pdfo: '', vz: '', esv: '' };
-  db.payrollRecords.push(record); save(); return record;
+  db.payrollRecords.push(record); saveTargetedEntity('payrollRecords', record.id, null, record, 'Створено запис виплати зарплати', 'Зарплата', clientId); return record;
 }
 
 export function deletePayrollRecord(id) {
+  const record = cloneValue(db.payrollRecords.find((item) => item.id === id));
   const before = db.payrollRecords.length;
   db.payrollRecords = db.payrollRecords.filter((item) => item.id !== id);
   const removed = db.payrollRecords.length !== before;
-  if (removed) save('Видалено зарплатний рядок', 'Зарплата');
+  if (removed) saveTargetedEntity('payrollRecords', id, record, null, 'Видалено зарплатний рядок', 'Зарплата', record?.clientId || '');
   return removed;
 }
 
@@ -747,20 +794,22 @@ export function setPayrollField(id, field, value) {
 }
 
 export function deleteCalendarEvent(id) {
+  const record = cloneValue(db.calendarEvents.find((item) => item.id === id));
   const before = db.calendarEvents.length;
   db.calendarEvents = db.calendarEvents.filter((item) => item.id !== id);
-  if (db.calendarEvents.length !== before) save();
+  if (db.calendarEvents.length !== before) saveTargetedEntity('calendarEvents', id, record, null, 'Видалено задачу', 'Задача', record?.clientId || '');
 }
 
 /** Позначає одну записку або одну дату повторюваної записки як виконану. */
 export function toggleCalendarTask(id, occurrenceDate = '') {
   const event = db.calendarEvents.find((item) => item.id === id);
   if (!event) return null;
+  const before = cloneValue(event);
   const occurrenceKey = event.recurrence?.frequency ? occurrenceDate : '';
   const completed = occurrenceKey ? !(event.completedDates || []).includes(occurrenceKey) : !event.completedAt;
   setTaskCompleted(event, occurrenceKey, completed);
   (event.subtasks || []).forEach((subtask) => setTaskCompleted(subtask, occurrenceKey, completed));
-  save();
+  saveTargetedEntity('calendarEvents', id, before, event, 'Змінено стан виконання задачі', 'Задача', event.clientId || '');
   return event;
 }
 
@@ -780,12 +829,13 @@ function taskIsCompleted(item, occurrenceDate) {
 export function addCalendarSubtask(eventId, title, occurrenceDate = '') {
   const event = db.calendarEvents.find((item) => item.id === eventId);
   if (!event || !title?.trim()) return null;
+  const before = cloneValue(event);
   const subtask = { id: generateId(), title: title.trim(), completedAt: '', completedDates: [] };
   const occurrenceKey = event.recurrence?.frequency ? occurrenceDate : '';
   if (taskIsCompleted(event, occurrenceKey)) setTaskCompleted(subtask, occurrenceKey, true);
   event.subtasks ||= [];
   event.subtasks.push(subtask);
-  save();
+  saveTargetedEntity('calendarEvents', eventId, before, event, 'Додано підзадачу', 'Задача', event.clientId || '');
   return subtask;
 }
 
@@ -793,21 +843,23 @@ export function toggleCalendarSubtask(eventId, subtaskId, occurrenceDate = '') {
   const event = db.calendarEvents.find((item) => item.id === eventId);
   const subtask = event?.subtasks?.find((item) => item.id === subtaskId);
   if (!event || !subtask) return null;
+  const before = cloneValue(event);
   const occurrenceKey = event.recurrence?.frequency ? occurrenceDate : '';
   setTaskCompleted(subtask, occurrenceKey, !taskIsCompleted(subtask, occurrenceKey));
   const allCompleted = event.subtasks.length > 0 && event.subtasks.every((item) => taskIsCompleted(item, occurrenceKey));
   setTaskCompleted(event, occurrenceKey, allCompleted);
-  save();
+  saveTargetedEntity('calendarEvents', eventId, before, event, 'Змінено стан підзадачі', 'Задача', event.clientId || '');
   return subtask;
 }
 
 export function deleteCalendarSubtask(eventId, subtaskId) {
   const event = db.calendarEvents.find((item) => item.id === eventId);
   if (!event?.subtasks) return false;
+  const beforeEvent = cloneValue(event);
   const before = event.subtasks.length;
   event.subtasks = event.subtasks.filter((item) => item.id !== subtaskId);
   if (event.subtasks.length === before) return false;
-  save();
+  saveTargetedEntity('calendarEvents', eventId, beforeEvent, event, 'Видалено підзадачу', 'Задача', event.clientId || '');
   return true;
 }
 
@@ -934,19 +986,17 @@ export function setReportField(clientId, realGroup, period, field, value) {
 /** Marks selected clients' tax payments as queued and paid on the first day of the active period. */
 export function autoCompleteTaxPeriod(clientIds, realGroups, period, taxTypeKeys) {
   if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return 0; }
-  const year = String(period).slice(0, 4);
-  const suffix = String(period).slice(5);
-  const month = /^\d{2}$/.test(suffix) ? suffix : ({ q1: '01', half: '04', '9m': '07', year: '10' }[suffix] || '01');
-  const date = `${year}-${month}-01`;
   const changes = [];
-  clientIds.forEach((clientId, index) => taxTypeKeys.forEach((taxType) => {
-    const realGroup = realGroups[index]; const record = getTaxRecord(db, clientId, realGroup, period, taxType);
-    const key = `${clientId}|${realGroup}|${period}|${taxType}`;
-    ['queuedDate', 'paidDate'].forEach((field) => {
-      changes.push({ path: ['taxRecords', key, field], clientId, before: cloneValue(record[field]), beforeExisted: Object.prototype.hasOwnProperty.call(record, field), after: date, afterExisted: true });
-      record[field] = date;
-    });
-  }));
+  const currentStart = /^\d{4}-\d{2}$/.test(period) ? `${period}-01` : `${period.slice(0, 4)}-${({ q1: '01', half: '04', '9m': '07', year: '10' })[period.slice(5)] || '01'}-01`;
+  const periods = taxPeriodsFor(String(realGroups[0]) === '3' ? '3' : '1', Number(String(period).slice(0, 4))).filter((entry) => {
+    const start = /^\d{4}-\d{2}$/.test(entry.key) ? `${entry.key}-01` : `${entry.key.slice(0, 4)}-${({ q1: '01', half: '04', '9m': '07', year: '10' })[entry.key.slice(5)]}-01`;
+    return start < currentStart;
+  });
+  clientIds.forEach((clientId, index) => periods.forEach((entry) => taxTypeKeys.forEach((taxType) => {
+    const realGroup = realGroups[index]; const record = getTaxRecord(db, clientId, realGroup, entry.key, taxType);
+    const key = `${clientId}|${realGroup}|${entry.key}|${taxType}`; const date = /^\d{4}-\d{2}$/.test(entry.key) ? `${entry.key}-01` : `${entry.key.slice(0, 4)}-${({ q1: '01', half: '04', '9m': '07', year: '10' })[entry.key.slice(5)]}-01`;
+    ['queuedDate', 'paidDate'].forEach((field) => { if (!record[field]) { changes.push({ path: ['taxRecords', key, field], clientId, before: '', beforeExisted: false, after: date, afterExisted: true }); record[field] = date; } });
+  })));
   saveTargetedChanges(changes, 'Автоматично заповнено податки', 'Податки');
   return changes.length / 2;
 }
@@ -989,21 +1039,32 @@ export function incomeSum(clientId, monthIndexes, paymentYear) {
 
 export const getSettings = () => db.settings;
 
+function changeSetting(path, value, action = 'Змінено налаштування') {
+  let target = db.settings;
+  for (let index = 0; index < path.length - 1; index += 1) target = target[path[index]] ||= {};
+  const field = path.at(-1);
+  const change = { path: ['settings', ...path], before: cloneValue(target[field]), beforeExisted: Object.prototype.hasOwnProperty.call(target, field), after: cloneValue(value), afterExisted: true };
+  target[field] = cloneValue(value);
+  saveTargetedChanges([change], action, 'Налаштування');
+}
+
 export function setWorkingYear(value) {
   const year = Number(value);
   if (!db.settings.availableWorkingYears.includes(year)) return false;
-  db.settings.workingYear = year;
-  save();
+  changeSetting(['workingYear'], year, 'Змінено робочий рік');
   return true;
 }
 
 export function createWorkingYear(value) {
   const year = Number(value);
   if (!Number.isInteger(year) || year < 2026 || year > 2100 || db.settings.availableWorkingYears.includes(year)) return false;
-  db.settings.availableWorkingYears.push(year);
-  db.settings.availableWorkingYears.sort((a, b) => a - b);
-  db.settings.workingYear = year;
-  save();
+  const beforeYears = cloneValue(db.settings.availableWorkingYears);
+  const beforeYear = db.settings.workingYear;
+  db.settings.availableWorkingYears.push(year); db.settings.availableWorkingYears.sort((a, b) => a - b); db.settings.workingYear = year;
+  saveTargetedChanges([
+    { path: ['settings', 'availableWorkingYears'], before: beforeYears, beforeExisted: true, after: cloneValue(db.settings.availableWorkingYears), afterExisted: true },
+    { path: ['settings', 'workingYear'], before: beforeYear, beforeExisted: true, after: year, afterExisted: true },
+  ], 'Створено робочий рік', 'Налаштування');
   return true;
 }
 
@@ -1011,8 +1072,7 @@ export function setMinWage(value) {
   const amount = normalizeNonNegativeAmount(value);
   const normalized = amount.ok ? Number(amount.value) : NaN;
   if (!Number.isFinite(normalized) || normalized <= 0) return false;
-  db.settings.minWage = normalized;
-  save('Змінено мінімальну заробітну плату', 'Налаштування');
+  changeSetting(['minWage'], normalized, 'Змінено мінімальну заробітну плату');
   return true;
 }
 
@@ -1038,47 +1098,41 @@ export function autofillMonthlyCharges(monthKey) {
 
 export function setMonthlyTaxDeadline(periodKey, value) {
   if (!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(periodKey) || !isValidOptionalIsoDate(value)) return false;
-  db.settings.monthlyDeadlines[periodKey] = value;
-  save('Змінено місячний податковий дедлайн', 'Налаштування');
+  changeSetting(['monthlyDeadlines', periodKey], value, 'Змінено місячний податковий дедлайн');
   return true;
 }
 
 export function setQuarterlyTaxDeadline(taxKey, periodKey, value) {
   if (!['group3', 'esv'].includes(taxKey) || !/^\d{4}-(?:q1|half|9m|year)$/.test(periodKey) || !isValidOptionalIsoDate(value)) return false;
-  db.settings.quarterlyDeadlines[taxKey][periodKey] = value;
-  save('Змінено квартальний податковий дедлайн', 'Налаштування');
+  changeSetting(['quarterlyDeadlines', taxKey, periodKey], value, 'Змінено квартальний податковий дедлайн');
   return true;
 }
 
 export function setReportDeadline(scope, periodKeyOrNull, value) {
   const validKey = scope === 'annual' ? /^\d{4}$/.test(periodKeyOrNull) : /^\d{4}-(?:q1|half|9m|year)$/.test(periodKeyOrNull);
   if (!['annual', 'quarterly'].includes(scope) || !validKey || !isValidOptionalIsoDate(value)) return false;
-  if (scope === 'annual') db.settings.reportDeadlines.annual[periodKeyOrNull] = value;
-  else db.settings.reportDeadlines.quarterly[periodKeyOrNull] = value;
-  save('Змінено дедлайн звітності', 'Налаштування');
+  changeSetting(['reportDeadlines', scope, periodKeyOrNull], value, 'Змінено дедлайн звітності');
   return true;
 }
 
 export function setAppearanceSetting(key, value) {
   db.settings.appearance ||= { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 };
-  db.settings.appearance[key] = value;
-  save();
+  changeSetting(['appearance', key], value, 'Змінено вигляд полів');
 }
 
 export function setDropdownOptions(key, rawValue) {
   if (!['prro', 'currency', 'kepIssuer'].includes(key)) return false;
   const values = String(rawValue || '').split(/[\n,;]/).map((item) => item.trim()).filter(Boolean);
   db.settings.dropdownOptions ||= { prro: [], currency: [], kepIssuer: [] };
-  db.settings.dropdownOptions[key] = [...new Set(values)].slice(0, 100);
-  save('Змінено варіанти випадаючого списку', 'Налаштування');
+  changeSetting(['dropdownOptions', key], [...new Set(values)].slice(0, 100), 'Змінено варіанти випадаючого списку');
   return true;
 }
 
 export function setActivityReference(kind, rows) {
   if (!['kved', 'nace'].includes(kind) || !Array.isArray(rows) || !rows.length) return false;
   db.settings.activityReferences ||= {};
-  db.settings.activityReferences[kind] = rows;
-  return save(`Оновлено довідник ${kind === 'kved' ? 'КВЕД' : 'NACE'}`, 'Налаштування') !== false;
+  changeSetting(['activityReferences', kind], rows, `Оновлено довідник ${kind === 'kved' ? 'КВЕД' : 'NACE'}`);
+  return true;
 }
 
 // ---------------------------------------------------------------------------

@@ -102,6 +102,15 @@ export function shortClientName(name) {
   return String(name || '').trim().split(/\s+/).slice(0, 2).join(' ');
 }
 
+/** Group that was effective at the beginning of a tax/report period. */
+export function groupAtPeriod(item, period = '') {
+  const changes = [...(item?.groupChanges || [])].filter((change) => change?.effectiveDate && change?.group).sort((a, b) => String(a.effectiveDate).localeCompare(String(b.effectiveDate)));
+  if (!changes.length) return String(item?.group || '');
+  const start = /^\d{4}-\d{2}$/.test(period) ? `${period}-01` : /^\d{4}-(q1|half|9m|year)$/.test(period) ? `${period.slice(0, 4)}-${({ q1: '01', half: '04', '9m': '07', year: '10' })[period.slice(5)]}-01` : `${period}-01-01`;
+  const applied = changes.filter((change) => String(change.effectiveDate) <= start).at(-1);
+  return String(applied?.group || changes[0]?.previousGroup || item?.group || '');
+}
+
 export const deletedClients = (db) => db.clients.filter((item) => lifecycleOf(item) === 'deleted');
 
 export function setLifecycleStatus(db, id, status, reason = '') {

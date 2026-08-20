@@ -167,8 +167,8 @@ function settingsTabs() {
 
 function dropdownsPanel() {
   const options = getSettings().dropdownOptions || {};
-  const field = (key, label) => `<label>${label}<textarea class="dropdown-options" data-dropdown-options="${key}" placeholder="Один варіант у рядку">${escapeHtml((options[key] || []).join('\n'))}</textarea></label>`;
-  return `<div class="panel settings-panel"><h2>Випадаючі списки</h2><p class="note">Додайте значення по одному в рядку або розділіть комою. Вони з’являться у відповідних полях картки ФОП.</p>${field('prro', 'ПРРО / РРО')}${field('currency', 'Валюта')}${field('kepIssuer', 'Видавці КЕП')}</div>`;
+  const field = (key, label) => `<section class="dropdown-settings-list"><h3>${label}</h3><div>${[...(options[key] || []), ''].map((value) => `<input class="dropdown-options" data-dropdown-options="${key}" value="${escapeHtml(value)}" placeholder="Новий варіант">`).join('')}</div></section>`;
+  return `<div class="panel settings-panel"><h2>Випадаючі списки</h2><p class="note">Кожен варіант — в окремому полі. Порожнє останнє поле призначене для нового значення.</p>${field('prro', 'ПРРО / РРО')}${field('currency', 'Валюта')}${field('kepIssuer', 'Видавці КЕП')}</div>`;
 }
 
 function activityReferencesPanel() {
