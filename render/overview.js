@@ -62,35 +62,13 @@ function reportAlertEntries() {
 
 function serviceDebtAlertEntries() {
   const workingYear = getSettings().workingYear;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
   const entries = [];
   getVisibleClients().forEach((item) => {
     for (let m = 0; m < 12; m++) {
-      const monthEnd = new Date(workingYear, m + 1, 0);
-      const daysToEnd = Math.round((monthEnd - today) / 86400000);
-      if (daysToEnd > 5) break; // months are chronological — later months are even further away
       const key = monthPeriodKey(workingYear, m + 1);
       const charged = Number(getMonthlyCellValue(item.id, key, 'charged')) || 0;
       const paid = Number(getMonthlyCellValue(item.id, key, 'paid')) || 0;
       if (charged - paid > 0) { entries.push({ id: item.id, name: shortClientName(item.name) }); return; }
-    }
-  });
-  return entries;
-}
-
-function invoiceAlertEntries() {
-  const workingYear = getSettings().workingYear;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const entries = [];
-  getVisibleClients().forEach((item) => {
-    for (let month = 1; month <= 12; month += 1) {
-      const monthEnd = new Date(workingYear, month, 0);
-      const daysToEnd = Math.round((monthEnd - today) / 86400000);
-      if (daysToEnd > 5) break;
-      const key = monthPeriodKey(workingYear, month);
-      const charged = Number(getMonthlyCellValue(item.id, key, 'charged')) || 0;
-      if (charged <= 0) { entries.push({ id: item.id, name: shortClientName(item.name) }); return; }
     }
   });
   return entries;
@@ -127,13 +105,30 @@ function alertNamesHtml(entries, section, emptyText, prefix) {
 
 function overviewRow(title, entries, section, emptyText, prefix) {
   return `<div class="overview-row">
-    <div class="overview-row-head"><h2>${title}</h2><span class="pill ${entries.length ? 'late' : 'ok'}">${entries.length ? entries.length : 'OK'}</span></div>
+    <div class="overview-row-head"><span class="overview-status ${entries.length ? 'warn' : 'ok'}" aria-label="${entries.length ? 'Є зауваження' : 'Все виконано'}">${entries.length ? '!' : '✓'}</span><h2>${title}</h2></div>
     <div class="overview-row-body">${alertNamesHtml(entries, section, emptyText, prefix)}</div>
   </div>`;
 }
 
 function reminderRow(title, message) {
-  return `<div class="overview-row"><div class="overview-row-head"><h2>${title}</h2><span class="pill warn">!</span></div><div class="overview-row-body">${message}</div></div>`;
+  return `<div class="overview-row"><div class="overview-row-head"><span class="overview-status warn" aria-label="Є зауваження">!</span><h2>${title}</h2></div><div class="overview-row-body">${message}</div></div>`;
+}
+
+function birthdayRow() {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const matches = getVisibleClients().map((item) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(item.birthDate || '')) return null;
+    const month = Number(item.birthDate.slice(5, 7)) - 1; const day = Number(item.birthDate.slice(8, 10));
+    let next = new Date(today.getFullYear(), month, day);
+    if (next < today) next = new Date(today.getFullYear() + 1, month, day);
+    return { id: item.id, name: item.name, days: Math.round((next - today) / 86400000) };
+  }).filter((item) => item && item.days <= 5);
+  const todays = matches.filter((item) => item.days === 0);
+  const entries = todays.length ? todays : matches;
+  const names = entries.map((item) => `<button type="button" class="overview-link" data-alert-section="dashboard" data-alert-client="${escapeHtml(item.id)}">${escapeHtml(item.name)}</button>`).join(', ');
+  const plural = entries.length > 1 ? 'дні народження' : 'день народження';
+  const text = !entries.length ? 'Найближчим часом іменинників немає' : todays.length ? `Сьогодні у ${names} ${plural}, не забудь привітати` : `Скоро у ${names} ${plural}, не забудь привітати`;
+  return `<div class="overview-row"><div class="overview-row-head"><span class="overview-status ${entries.length ? 'warn' : 'ok'}">${entries.length ? '!' : '✓'}</span><h2>Дні народження</h2></div><div class="overview-row-body">${text}</div></div>`;
 }
 
 function todayIso() { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; }
@@ -157,9 +152,10 @@ export function renderOverview() {
   const reportAlerts = reportAlertEntries();
   const serviceAlerts = serviceDebtAlertEntries();
   const hrMonth = hrDocumentsReminder();
-  return `<div class="toolbar"><p class="note">Зведення зауважень по всіх розділах. Натисніть на ПІБ, щоб перейти до відповідного розділу й періоду.</p></div>
+  return `<p class="note overview-intro">Зведення зауважень по всіх розділах. Натисніть на ПІБ, щоб перейти до відповідного розділу й періоду.</p>
     ${salaryReminder() ? reminderRow('Виплата ЗП', 'Сьогодні день виплати зарплати') : ''}
     ${hrMonth ? reminderRow('Кадрові документи', `Відправ клієнтам кадрові документи за ${hrMonth}`) : ''}
+    ${birthdayRow()}
     ${overviewRow('Термін дії КЕП', kepAlerts, 'dashboard', 'Найближчим часом не спливає термін дії жодного КЕП', 'Спливає термін дії КЕП: ')}
     ${overviewRow('Контроль лімітів', incomeAlerts, 'incomes', 'Жоден ФОП не наблизився до вичерпання ліміту', 'До вичерпання ліміту наближаються: ')}
     ${overviewRow('Сплата податків', taxAlerts, 'taxes', 'Всі податки сплачені', 'Повинні сплатити податки: ')}

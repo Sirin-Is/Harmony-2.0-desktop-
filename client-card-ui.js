@@ -18,6 +18,7 @@ import { showToast } from './toast.js';
 import { validateKved, openKvedResults } from './kved-validation.js';
 import { findActivityByCode, normalizeActivityCode } from './data/activity-reference.js';
 import { validateClient } from './validation.js';
+import { birthDateFromRnokpp } from './client-model.js';
 import { readSpreadsheetRows } from './spreadsheet-security.js';
 
 const esc = escapeHtml;
@@ -35,7 +36,7 @@ const RATE_OPTIONS = {
 };
 
 const FIELD_DEFAULTS = {
-  rnokpp: '', source: '',
+  rnokpp: '', birthDate: '', source: '',
   contractFileName: '', agreementsText: '',
   pricingBase: '', pricingStaff: '', pricingPrro: '',
   prroName: '',
@@ -135,7 +136,8 @@ function bodyHtml() {
         <label>ПІБ<input id="cc_name" value="${esc(d.name)}" maxlength="200" spellcheck="false" required></label>
         <label>Група ЄП<select id="cc_group"><option value="" ${d.group ? '' : 'selected'}>Оберіть групу</option>${['1', '2', '3', 'Загальна'].map((g) => `<option ${d.group === g ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
         <label>Ставка ЄП<select id="cc_rate"><option value="" ${d.rate ? '' : 'selected'}>${d.group ? 'Оберіть ставку' : 'Спочатку оберіть групу'}</option>${rateOpts.map((o) => `<option value="${o.value}" ${String(o.value) === String(d.rate) ? 'selected' : ''}>${o.label}</option>`).join('')}</select></label>
-        <label>РНОКПП / ЄДРПОУ<input id="cc_rnokpp" value="${esc(d.rnokpp)}"></label>
+        <label>РНОКПП<input id="cc_rnokpp" value="${esc(d.rnokpp)}" inputmode="numeric" maxlength="10" pattern="[0-9]{10}"></label>
+        <label>Дата народження<input id="cc_birthDate" type="date" value="${esc(d.birthDate)}"></label>
         <label>Телефон<input id="cc_phone" value="${esc(d.phone)}"></label>
         <label>Ел. пошта<input id="cc_email" type="email" maxlength="320" value="${esc(d.email)}"></label>
         <label>Джерело залучення<input id="cc_source" value="${esc(d.source)}"></label>
@@ -191,7 +193,7 @@ function readForm() {
   ['name', 'phone', 'email', 'source', 'contractFileName',
     'agreementsText', 'pricingBase', 'pricingStaff', 'pricingPrro', 'banks',
     'prroName', 'currency', 'kepIssuer', 'kepExpiry', 'registrationAddress', 'taxOffice',
-    'kvedMainCode', 'kvedMainName', 'additionalInfo', 'rnokpp']
+    'kvedMainCode', 'kvedMainName', 'additionalInfo', 'rnokpp', 'birthDate']
     .forEach((k) => { draft[k] = val(`cc_${k}`); });
   draft.kvedAdditional = Array.from(overlay.querySelectorAll('[data-kved-index]')).reduce((items, input) => {
     const index = Number(input.dataset.kvedIndex);
@@ -415,6 +417,12 @@ function paint() {
     readForm();
     draft.rate = '';
     paint();
+  });
+  document.getElementById('cc_rnokpp')?.addEventListener('input', (event) => {
+    const input = event.currentTarget;
+    input.value = input.value.replace(/\D/g, '').slice(0, 10);
+    const birthDate = birthDateFromRnokpp(input.value);
+    if (birthDate) document.getElementById('cc_birthDate').value = birthDate;
   });
 }
 

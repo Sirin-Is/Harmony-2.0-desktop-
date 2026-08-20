@@ -15,6 +15,14 @@ export function groupLimitAmount(group, minWage) {
   return multiplier ? multiplier * (Number(minWage) || 0) : 0;
 }
 
+/** First five digits of a 10-digit РНОКПП are the number of days after 31.12.1899. */
+export function birthDateFromRnokpp(value) {
+  const rnokpp = String(value || '').replace(/\D/g, '');
+  if (!/^\d{10}$/.test(rnokpp)) return '';
+  const date = new Date(Date.UTC(1899, 11, 31) + Number(rnokpp.slice(0, 5)) * 86400000);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
 export function groupLimitLabel(group, money, year = PAYMENT_YEAR) {
   const info = getYearConfig(year).groupLimits[group];
   return info ? `${money.format(info.amount)} (${info.minWages} МЗП)` : 'Не застосовується';

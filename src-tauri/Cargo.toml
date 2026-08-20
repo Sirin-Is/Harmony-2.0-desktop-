@@ -1,6 +1,6 @@
 [package]
 name = "harmony"
-version = "1.6.6"
+version = "1.6.7"
 description = "Harmony — CRM для бухгалтера ФОП"
 edition = "2021"
 

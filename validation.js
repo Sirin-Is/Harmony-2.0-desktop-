@@ -41,6 +41,11 @@ export function validateClient(record, existingClients, currentId) {
     else if (cost < 0) errors.push('Вартість обслуговування не може бути від’ємною.');
   }
 
+  if (record.rnokpp && !/^\d{10}$/.test(String(record.rnokpp))) {
+    errors.push('РНОКПП має складатися рівно з 10 цифр без роздільників.');
+  }
+  if (record.birthDate && !isValidIsoDate(record.birthDate)) errors.push('Дата народження некоректна.');
+
   [
     ['pricingBase', 'Базова вартість'],
     ['pricingStaff', 'Доплата за найманих працівників'],

@@ -286,6 +286,7 @@ function mutationForPath(database, path) {
     const record = database.hrMonthlyDocuments.find((item) => item.id === first);
     return record ? { table: 'hr_monthly_documents', id: first, payload: cloneValue(record) } : { table: 'hr_monthly_documents', id: first, deleted: true };
   }
+  if (root === 'settings') return { table: 'settings', id: 'default', payload: cloneValue(database.settings) };
   throw new Error(`Непідтримуваний точковий шлях: ${root}`);
 }
 
@@ -299,6 +300,7 @@ function syncBaselineRow(target, source, path) {
     target.incomeRecords[first] ||= {};
     target.incomeRecords[first][second] = source.incomeRecords[first]?.[second] || '';
   } else if (['taxRecords', 'reportRecords'].includes(root)) target[root][first] = cloneValue(source[root][first] || {});
+  else if (root === 'settings') target.settings = cloneValue(source.settings);
   else if (['clients', 'payrollRecords', 'hrMonthlyDocuments'].includes(root)) {
     const sourceRecord = source[root].find((item) => item.id === first);
     const index = target[root].findIndex((item) => item.id === first);
@@ -927,6 +929,26 @@ export function setReportField(clientId, realGroup, period, field, value) {
   record[field] = value;
   saveTargetedChanges([change], 'Змінено запис звітності', 'Звітність');
   return record;
+}
+
+/** Marks selected clients' tax payments as queued and paid on the first day of the active period. */
+export function autoCompleteTaxPeriod(clientIds, realGroups, period, taxTypeKeys) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return 0; }
+  const year = String(period).slice(0, 4);
+  const suffix = String(period).slice(5);
+  const month = /^\d{2}$/.test(suffix) ? suffix : ({ q1: '01', half: '04', '9m': '07', year: '10' }[suffix] || '01');
+  const date = `${year}-${month}-01`;
+  const changes = [];
+  clientIds.forEach((clientId, index) => taxTypeKeys.forEach((taxType) => {
+    const realGroup = realGroups[index]; const record = getTaxRecord(db, clientId, realGroup, period, taxType);
+    const key = `${clientId}|${realGroup}|${period}|${taxType}`;
+    ['queuedDate', 'paidDate'].forEach((field) => {
+      changes.push({ path: ['taxRecords', key, field], clientId, before: cloneValue(record[field]), beforeExisted: Object.prototype.hasOwnProperty.call(record, field), after: date, afterExisted: true });
+      record[field] = date;
+    });
+  }));
+  saveTargetedChanges(changes, 'Автоматично заповнено податки', 'Податки');
+  return changes.length / 2;
 }
 
 export function getEffectiveReportDeadline(realGroup, period, record) {

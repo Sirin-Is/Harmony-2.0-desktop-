@@ -280,6 +280,9 @@ body:has(.activities-table), body:has(.activities-mapping-table), body:has(.audi
 .overview-row { display: flex; align-items: flex-start; gap: 16px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 10px; background: #fff; margin-bottom: 8px; box-shadow: var(--shadow); }
 .overview-row-head { display: flex; align-items: center; gap: 8px; min-width: 150px; flex-shrink: 0; }
 .overview-row-head h2 { font-size: 14px; }
+.overview-status { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; color: #fff; font-size: 13px; font-weight: 800; }
+.overview-status.ok { background: #208354; }.overview-status.warn { background: #d97706; }
+.overview-intro { margin: 0 0 8px; }
 .overview-row-body { flex: 1; font-size: 12px; line-height: 1.7; padding-top: 2px; }
 .overview-row-note { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
 .overview-link { background: none; border: 0; padding: 0; font: inherit; color: var(--brand); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
@@ -335,8 +338,10 @@ dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 
 .calendar-cell > strong { display: block; margin-bottom: 6px; }
 .calendar-event { display: block; width: 100%; margin: 3px 0; padding: 4px 6px; border: 0; border-radius: 4px; background: #eef3ff; color: #243a70; font-size: 11px; line-height: 1.25; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .app-dialog textarea { width: 100%; min-height: 90px; resize: vertical; font: inherit; }
+.app-dialog-checklist { max-height: 330px; overflow: auto; border: 1px solid var(--line); border-radius: 7px; padding: 7px; display: grid; gap: 4px; }
+.app-dialog-checklist label { display: flex; align-items: center; gap: 7px; font-weight: 500; }
 .calendar-event.tax { background: #fff5d9; color: #795600; }.calendar-event.report { background: #feeceb; color: #9c3030; }
-.calendar-event-completed { opacity: .82; text-decoration: line-through; }
+.calendar-event-completed { opacity: .82; text-decoration: none; }
 .calendar-complete-mark { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-right: 4px; border-radius: 50%; color: #fff; background: #208354; font-weight: 900; line-height: 1; text-decoration: none; }
 .calendar-event-row { display: flex; align-items: center; gap: 2px; }.calendar-event-row .calendar-event { flex: 1; }.calendar-delete { width: 16px; min-width: 16px; min-height: 16px; height: 16px; padding: 0; border: 0; background: transparent; color: #7a8696; font-size: 16px; line-height: 1; box-shadow: none; }.calendar-delete:hover { color: var(--red); background: transparent; }
 .calendar-tabs { display: flex; gap: 6px; margin-bottom: 12px; padding: 4px; border: 1px solid #d4dce8; border-radius: 7px; background: #f3f6fa; width: fit-content; }
@@ -350,7 +355,7 @@ dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 
 .calendar-task-day { width: min(840px, 100%); margin: 9px 0 0; text-align: center; color: var(--brand); font-size: 15px; font-weight: 800; letter-spacing: .01em; }
 .task-list { display: grid; gap: 7px; max-width: 840px; }
 .task-row { display: flex; align-items: stretch; border: 1px solid #dce3ec; border-radius: 6px; background: #fff; overflow: hidden; }
-.task-row.completed { opacity: .66; background: #f4faf6; }.task-row.completed strong { text-decoration: line-through; }
+.task-row.completed { opacity: .66; background: #f4faf6; }.task-row.completed strong { text-decoration: none; }
 .task-check { width: 37px; min-width: 37px; border: 0; border-right: 1px solid #dce3ec; border-radius: 0; background: #f7f9fc; color: #208354; font-size: 17px; font-weight: 800; }
 .task-content { display: grid; flex: 1; gap: 3px; padding: 9px 11px; border: 0; border-radius: 0; color: #26354a; background: transparent; text-align: left; }
 .task-content:hover { background: #f3f7ff; }.task-content span { color: #687386; font-size: 12px; }
@@ -359,7 +364,7 @@ dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 
 .task-subtasks { display: grid; gap: 3px; margin: 4px 0 2px 37px; padding-left: 11px; border-left: 2px solid #dbe4f1; }
 .subtask-row { display: flex; align-items: center; gap: 7px; min-height: 28px; color: #455468; font-size: 12px; }
 .subtask-row span { flex: 1; }
-.subtask-row.completed { color: #7a8795; text-decoration: line-through; }
+.subtask-row.completed { color: #7a8795; text-decoration: none; }
 .subtask-check { width: 20px; min-width: 20px; height: 20px; min-height: 20px; padding: 0; border: 1px solid #aebccc; border-radius: 4px; color: #208354; background: #fff; font-weight: 800; line-height: 1; }
 .subtask-delete { width: 20px; min-width: 20px; height: 20px; min-height: 20px; padding: 0; border: 0; border-radius: 4px; color: #7b8796; background: transparent; font-size: 15px; line-height: 1; }.subtask-delete:hover { color: var(--red); background: #fff0f2; }
 .generic-date-picker { font-size: 12px; }

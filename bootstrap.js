@@ -10,13 +10,14 @@ import { $, todayIso } from './utils';
 import { uiState } from './ui-state.js';
 import {
   db, initDatabase, lockDatabase, refreshDatabaseFromSync, prepareDatabaseSwitch, undoLastAction, setAuditActor, setAccessRole, getClientById, deleteClientPermanently, purgeDeletedTestClients, archiveClient, requestClientDeletion, setClientLifecycle, reorderClients, setCustomFieldValue, replaceDatabase,
-  setMonthlyPaymentField, autofillMonthlyCharges, setTaxField, setReportField, setIncomeValue,
+  setMonthlyPaymentField, autofillMonthlyCharges, setTaxField, setReportField, setIncomeValue, autoCompleteTaxPeriod, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline,
   setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, setDropdownOptions, setActivityReference, getSettings,
   deleteCustomColumn, getCustomColumns,
   copyTaxPeriodForward, getVisibleClients, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, canRollbackChanges, rollbackChangesAfter, rollbackRetentionStart, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField,
   getDatabaseRelationshipIssues,
 } from './state.js';
-import { TAX_TYPES, previousPeriodKey, taxPeriodsFor } from './tax-model.ts';
+import { TAX_TYPES, previousPeriodKey, taxPeriodsFor, statusPillHtml, daysUntilLabel } from './tax-model.ts';
+import { reportStatusPillHtml, reportDaysUntilLabel } from './report-model.ts';
 import { setupTopScrollbars, bindTopScrollbarResize } from './render/layout.js';
 import { renderOverview } from './render/overview.js';
 import { renderDashboard } from './render/dashboard.js';
@@ -520,22 +521,22 @@ function bindCurrentView() {
     render();
   }));
   const payrollDateToIso = (value) => {
-    const parts = value.match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
+    const parts = value.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
     if (!parts) return null;
-    const iso = `20${parts[3]}-${parts[2]}-${parts[1]}`;
+    const iso = `${parts[3]}-${parts[2]}-${parts[1]}`;
     const parsed = new Date(`${iso}T00:00:00`);
-    return parsed.getFullYear() === Number(`20${parts[3]}`) && parsed.getMonth() + 1 === Number(parts[2]) && parsed.getDate() === Number(parts[1]) ? iso : null;
+    return parsed.getFullYear() === Number(parts[3]) && parsed.getMonth() + 1 === Number(parts[2]) && parsed.getDate() === Number(parts[1]) ? iso : null;
   };
   const invalidAmountMessage = 'Вкажіть невід’ємну суму в допустимому числовому форматі.';
   const savePayrollDate = (field, iso) => { setPayrollField(field.dataset.payrollId, 'paymentDate', iso); };
   document.querySelectorAll('.payroll-date-field').forEach((field) => field.addEventListener('input', () => {
     const digitPosition = field.value.slice(0, field.selectionStart || 0).replace(/\D/g, '').length;
-    const digits = field.value.replace(/\D/g, '').slice(0, 6);
-    const formatted = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 6)].filter(Boolean).join('.');
+    const digits = field.value.replace(/\D/g, '').slice(0, 8);
+    const formatted = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean).join('.');
     field.value = formatted;
     const cursor = digitPosition <= 2 ? digitPosition : digitPosition <= 4 ? digitPosition + 1 : digitPosition + 2;
     field.setSelectionRange(cursor, cursor);
-    if (digits.length === 6) {
+    if (digits.length === 8) {
       const iso = payrollDateToIso(formatted);
       if (iso) savePayrollDate(field, iso);
     }
@@ -551,7 +552,7 @@ function bindCurrentView() {
     let value = field.value;
     if (field.dataset.payrollField === 'paymentDate') {
       const iso = value ? payrollDateToIso(value) : '';
-      if (value && !iso) { showToast('Вкажіть дату у форматі дд.мм.рр.', 'error'); return; }
+      if (value && !iso) { showToast('Вкажіть дату у форматі дд.мм.рррр.', 'error'); return; }
       value = iso;
     }
     if (!setPayrollField(field.dataset.payrollId, field.dataset.payrollField, value)) {
@@ -705,17 +706,38 @@ function bindCurrentView() {
   document.querySelectorAll('[data-tax-group]').forEach((b) => b.onclick = () => { uiState.taxGroup = b.dataset.taxGroup; uiState.taxPeriod = null; render(); });
   document.querySelectorAll('[data-tax-period]').forEach((b) => b.onclick = () => { uiState.taxPeriod = b.dataset.taxPeriod; render(); });
   document.querySelectorAll('.tax-field').forEach((field) => field.addEventListener('change', () => {
-    if (!setTaxField(field.dataset.client, field.dataset.realGroup, uiState.taxPeriod, field.dataset.tax, field.dataset.field, field.value)) {
+    const record = setTaxField(field.dataset.client, field.dataset.realGroup, uiState.taxPeriod, field.dataset.tax, field.dataset.field, field.value);
+    if (!record) {
       showToast('Перевірте дату: сплата не може передувати набору в банку.', 'error');
+      return;
     }
+    const row = field.closest('tr');
+    const deadline = getEffectiveTaxDeadline(field.dataset.realGroup, field.dataset.tax, uiState.taxPeriod, record);
+    row?.querySelector('.tax-days')?.replaceChildren();
+    const days = row?.querySelector('.tax-days'); if (days) days.innerHTML = record.exemption ? '-' : daysUntilLabel(deadline, record);
+    const status = row?.querySelector('.tax-status'); if (status) status.innerHTML = statusPillHtml(record, deadline);
     if (field.dataset.field === 'exemption') {
-      const row = field.closest('tr');
       row?.classList.toggle('exempt-row', Boolean(field.value));
       const rows = [...document.querySelectorAll(`.tax-table tr[data-row-id="${CSS.escape(field.dataset.client)}"]`)];
       const fullyExempt = rows.length === 3 && rows.every((item) => Boolean(item.querySelector('[data-field="exemption"]')?.value));
       rows[0]?.querySelector('.fop-name-cell')?.classList.toggle('fop-fully-exempt', fullyExempt);
     }
   }));
+  $('[data-tax-auto-ok]')?.addEventListener('click', async () => {
+    const clients = uiState.taxGroup === '3'
+      ? getVisibleClients().filter((c) => String(c.group) === '3')
+      : getVisibleClients().filter((c) => ['1', '2'].includes(String(c.group)));
+    const result = await openAppDialog({
+      title: 'АвтоОК — податки', message: 'Оберіть ФОП. Для всіх трьох податків буде встановлено «Набрано в банку» і «Дата сплати» — 01 число поточного періоду.',
+      fields: [{ key: 'clients', label: 'ФОП', type: 'checkboxes', options: clients.map((client) => ({ value: client.id, label: client.name, checked: true })) }], confirmText: 'Заповнити', cancelText: 'Закрити',
+    });
+    if (!result) return;
+    const selected = result.clients || [];
+    const selectedClients = clients.filter((client) => selected.includes(client.id));
+    const changed = autoCompleteTaxPeriod(selectedClients.map((client) => client.id), selectedClients.map((client) => String(client.group)), uiState.taxPeriod, TAX_TYPES.map((tax) => tax.key));
+    showToast(changed ? `Заповнено податки для ${selectedClients.length} ФОП.` : 'ФОП не обрано.', changed ? 'success' : 'info');
+    render();
+  });
   $('[data-copy-previous-period]')?.addEventListener('click', () => {
     const periods = taxPeriodsFor(uiState.taxGroup === '3' ? '3' : '1', getSettings().workingYear);
     const fromPeriod = previousPeriodKey(periods, uiState.taxPeriod);
@@ -734,9 +756,14 @@ function bindCurrentView() {
   document.querySelectorAll('[data-report-group]').forEach((b) => b.onclick = () => { uiState.reportGroup = b.dataset.reportGroup; uiState.reportPeriod = null; render(); });
   document.querySelectorAll('[data-report-period]').forEach((b) => b.onclick = () => { uiState.reportPeriod = b.dataset.reportPeriod; render(); });
   document.querySelectorAll('.report-field').forEach((field) => field.addEventListener('change', () => {
-    if (!setReportField(field.dataset.client, field.dataset.realGroup, uiState.reportPeriod, field.dataset.field, field.value)) {
+    const record = setReportField(field.dataset.client, field.dataset.realGroup, uiState.reportPeriod, field.dataset.field, field.value);
+    if (!record) {
       showToast('Вкажіть коректне значення звітності.', 'error');
+      return;
     }
+    const row = field.closest('tr'); const deadline = getEffectiveReportDeadline(field.dataset.realGroup, uiState.reportPeriod, record);
+    const days = row?.querySelector('.report-days'); if (days) days.innerHTML = reportDaysUntilLabel(deadline, record);
+    const status = row?.querySelector('.report-status'); if (status) status.innerHTML = reportStatusPillHtml(record, deadline);
   }));
 
   // --- Доходи ---

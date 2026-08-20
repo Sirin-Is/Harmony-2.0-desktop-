@@ -14,6 +14,7 @@ import { normalizeEmployeeName, validateEmployee } from '../employee-model.js';
 import { defaultPayrollDates, payrollDateForPaymentType, payrollDatesForPeriod, payrollPaymentTypes } from '../payroll-model.js';
 import { isValidIsoDate, isValidMonthPeriodKey, isValidReportPeriodKey, isValidTaxPeriodKey, validateCalendarEvent, validateReportRecordChange, validateTaxRecordChange } from '../workflow-validation.js';
 import { findActivityByCode, loadActivityReference, normalizeActivityCode } from '../data/activity-reference.js';
+import { birthDateFromRnokpp } from '../client-model.js';
 
 test('політика паролів компенсує недоступну перевірку витоків на Free Plan', () => {
   assert.equal(MIN_PASSWORD_LENGTH, 8);
@@ -224,14 +225,20 @@ test('статус звіту відрізняє своєчасне поданн
   assert.deepEqual(reports.reportStatus({ submittedDate: '2026-05-10' }, '2026-05-08'), { text: 'Подано із запізненням', cls: 'late' });
 });
 
-test('ручне введення дат приймає коректний формат дд.мм.рр і відхиляє неможливі дати', () => {
-  assert.equal(shortDate('2026-07-31'), '31.07.26');
-  assert.equal(shortDateToIso('29.02.24'), '2024-02-29');
-  assert.equal(shortDateToIso('31.12.26'), '2026-12-31');
-  assert.equal(shortDateToIso('29.02.23'), null);
-  assert.equal(shortDateToIso('31.04.26'), null);
-  assert.equal(shortDateToIso('1.1.26'), null);
+test('ручне введення дат приймає коректний формат дд.мм.рррр і відхиляє неможливі дати', () => {
+  assert.equal(shortDate('2026-07-31'), '31.07.2026');
+  assert.equal(shortDateToIso('29.02.2024'), '2024-02-29');
+  assert.equal(shortDateToIso('31.12.2026'), '2026-12-31');
+  assert.equal(shortDateToIso('29.02.2023'), null);
+  assert.equal(shortDateToIso('31.04.2026'), null);
+  assert.equal(shortDateToIso('1.1.2026'), null);
   assert.equal(shortDate('2026-02-31'), '');
+});
+
+test('РНОКПП визначає дату народження з перших п’яти цифр', () => {
+  assert.equal(birthDateFromRnokpp('0000100000'), '1900-01-01');
+  assert.equal(birthDateFromRnokpp('12345'), '');
+  assert.equal(birthDateFromRnokpp('12345-67890'), '1933-10-19');
 });
 
 test('валідація картки ФОП не пропускає критичні помилки, але попереджає про дублікати', () => {

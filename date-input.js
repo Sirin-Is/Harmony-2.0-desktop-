@@ -5,17 +5,17 @@ export function isValidIsoDate(value = '') {
   return date.getFullYear() === Number(parts[1]) && date.getMonth() + 1 === Number(parts[2]) && date.getDate() === Number(parts[3]);
 }
 
-export const shortDate = (iso = '') => isValidIsoDate(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(2, 4)}` : '';
+export const shortDate = (iso = '') => isValidIsoDate(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : '';
 
 /** Design-test option №2: an outlined calendar with a visible date and no background. */
 export const calendarDateIconSvg = '<svg class="calendar-date-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5v3M15 2.5v3M3 7h14M4.5 4h11A1.5 1.5 0 0 1 17 5.5v11A1.5 1.5 0 0 1 15.5 18h-11A1.5 1.5 0 0 1 3 16.5v-11A1.5 1.5 0 0 1 4.5 4Z"/><text x="10" y="14.3">15</text></svg>';
 
 export function shortDateToIso(value = '') {
-  const parts = String(value).match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
+  const parts = String(value).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
   if (!parts) return null;
-  const iso = `20${parts[3]}-${parts[2]}-${parts[1]}`;
+  const iso = `${parts[3]}-${parts[2]}-${parts[1]}`;
   const date = new Date(`${iso}T00:00:00`);
-  return date.getFullYear() === Number(`20${parts[3]}`) && date.getMonth() + 1 === Number(parts[2]) && date.getDate() === Number(parts[1]) ? iso : null;
+  return date.getFullYear() === Number(parts[3]) && date.getMonth() + 1 === Number(parts[2]) && date.getDate() === Number(parts[1]) ? iso : null;
 }
 
 export function enhanceDateInputs(root = document) {
@@ -24,17 +24,17 @@ export function enhanceDateInputs(root = document) {
     const wrapper = document.createElement('span'); wrapper.className = 'generic-date-control';
     native.parentNode.insertBefore(wrapper, native); wrapper.appendChild(native);
     const text = document.createElement('input');
-    text.type = 'text'; text.inputMode = 'numeric'; text.maxLength = 8; text.placeholder = 'дд.мм.рр'; text.value = shortDate(native.value); text.className = 'generic-date-field';
+    text.type = 'text'; text.inputMode = 'numeric'; text.maxLength = 10; text.placeholder = 'дд.мм.рррр'; text.value = shortDate(native.value); text.className = 'generic-date-field';
     text.setAttribute('aria-label', native.getAttribute('aria-label') || 'Дата');
     const button = document.createElement('button'); button.type = 'button'; button.className = 'generic-date-picker'; button.innerHTML = calendarDateIconSvg; button.title = 'Відкрити календар'; button.setAttribute('aria-label', 'Відкрити календар');
     wrapper.prepend(text); wrapper.appendChild(button);
     text.addEventListener('input', () => {
       const digitsBefore = text.value.slice(0, text.selectionStart || 0).replace(/\D/g, '').length;
-      const digits = text.value.replace(/\D/g, '').slice(0, 6);
-      text.value = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 6)].filter(Boolean).join('.');
+      const digits = text.value.replace(/\D/g, '').slice(0, 8);
+      text.value = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean).join('.');
       const cursor = digitsBefore <= 2 ? digitsBefore : digitsBefore <= 4 ? digitsBefore + 1 : digitsBefore + 2;
       text.setSelectionRange(cursor, cursor);
-      if (digits.length === 6) { const iso = shortDateToIso(text.value); if (iso) { native.value = iso; native.dispatchEvent(new Event('change', { bubbles: true })); } }
+      if (digits.length === 8) { const iso = shortDateToIso(text.value); if (iso) { native.value = iso; native.dispatchEvent(new Event('change', { bubbles: true })); } }
     });
     text.addEventListener('change', () => { if (!text.value) { native.value = ''; native.dispatchEvent(new Event('change', { bubbles: true })); } else if (!shortDateToIso(text.value)) text.value = shortDate(native.value); });
     native.addEventListener('change', () => { text.value = shortDate(native.value); });

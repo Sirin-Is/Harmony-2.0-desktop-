@@ -75,6 +75,7 @@ export interface Client {
   isTestRecord?: boolean;
   customFields?: Record<string, string>;
   rnokpp?: string;
+  birthDate?: string;
   source?: string;
   contractFileName?: string;
   contractLink?: string;

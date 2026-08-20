@@ -56,12 +56,12 @@ function documents() {
 }
 
 const money = (value) => Number(String(value || '').replace(/\s+/g, '').replace(',', '.')) || 0;
-const payrollDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? `${value.slice(8, 10)}.${value.slice(5, 7)}.${value.slice(2, 4)}` : '';
+const payrollDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? `${value.slice(8, 10)}.${value.slice(5, 7)}.${value.slice(0, 4)}` : '';
 const input = (record, field) => {
   const labels = { paymentDate: 'Дата виплати', amount: 'Сума виплати на руки', pdfo: 'ПДФО', vz: 'Військовий збір', esv: 'ЄСВ' };
   const label = `${labels[field] || field}: ${record.employeeName || 'працівник'}`;
   return field === 'paymentDate'
-    ? `<div class="payroll-date-control"><input class="payroll-field payroll-date-field" type="text" inputmode="numeric" maxlength="8" data-payroll-id="${esc(record.id)}" data-payroll-field="${esc(field)}" value="${esc(payrollDate(record[field]))}" placeholder="дд.мм.рр" aria-label="${esc(label)}"><button type="button" class="payroll-date-picker" data-payroll-picker="${esc(record.id)}" title="Відкрити календар" aria-label="Відкрити календар: ${esc(record.employeeName || 'працівник')}">${calendarDateIconSvg}</button><input class="payroll-native-date" type="date" tabindex="-1" aria-hidden="true" data-payroll-id="${esc(record.id)}" data-payroll-native-date="${esc(record.id)}" value="${esc(record[field] || '')}"></div>`
+    ? `<div class="payroll-date-control"><input class="payroll-field payroll-date-field" type="text" inputmode="numeric" maxlength="10" data-payroll-id="${esc(record.id)}" data-payroll-field="${esc(field)}" value="${esc(payrollDate(record[field]))}" placeholder="дд.мм.рррр" aria-label="${esc(label)}"><button type="button" class="payroll-date-picker" data-payroll-picker="${esc(record.id)}" title="Відкрити календар" aria-label="Відкрити календар: ${esc(record.employeeName || 'працівник')}">${calendarDateIconSvg}</button><input class="payroll-native-date" type="date" tabindex="-1" aria-hidden="true" data-payroll-id="${esc(record.id)}" data-payroll-native-date="${esc(record.id)}" value="${esc(record[field] || '')}"></div>`
     : `<input class="payroll-field" inputmode="decimal" data-payroll-id="${esc(record.id)}" data-payroll-field="${esc(field)}" value="${esc(record[field] || '')}" placeholder="-" aria-label="${esc(label)}">`;
 };
 function salary() {

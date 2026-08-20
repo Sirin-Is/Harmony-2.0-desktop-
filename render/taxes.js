@@ -70,6 +70,7 @@ export function renderTaxes() {
   return `<div class="toolbar">
       <p class="note">Дедлайни підставляються автоматично з «Налаштувань» (пунктирна рамка). Змініть дедлайн вручну для конкретного ФОП, щоб задати виняток. Якщо у ФОП є причина звільнення, рядок стає сірим і статус не показується.</p>
       <div class="toolbar-actions">
+        <button class="secondary" data-tax-auto-ok${clients.length ? '' : ' disabled'} title="Заповнює дати набору в банку та сплати першим числом поточного періоду.">АвтоОК</button>
         <button class="secondary" data-copy-previous-period${hasPreviousPeriod && clients.length ? '' : ' disabled'} title="Переносить дедлайн і причину звільнення з попереднього періоду, тільки в порожні поля. Дати сплати ніколи не копіюються.">Скопіювати з попереднього періоду</button>
       </div>
     </div>
