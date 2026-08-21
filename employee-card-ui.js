@@ -38,9 +38,10 @@ function select(name, value, options) {
   const node = element('select');
   node.name = name;
   options.forEach((option) => {
-    const item = element('option', '', option);
-    item.value = option;
-    item.selected = option === value;
+    const optionValue = typeof option === 'object' ? option.value : option;
+    const item = element('option', '', typeof option === 'object' ? option.label : option);
+    item.value = optionValue;
+    item.selected = optionValue === value;
     node.appendChild(item);
   });
   return node;
@@ -126,7 +127,7 @@ export function openEmployeeCard(employeeId = null) {
   const existing = employeeId ? getEmployeeById(employeeId) : null;
   const clients = getVisibleClients();
   if (!clients.length) { showToast('Спочатку додайте активного ФОП.', 'warn'); return; }
-  const employee = existing?.employee || { name: '', position: '', hireDate: '', dismissalDate: '' };
+  const employee = existing?.employee || { name: '', position: '', hireDate: '', dismissalDate: '', esvRate: '22' };
   const clientId = existing?.client?.id || clients[0].id;
   let activeDocumentYear = getSettings().workingYear;
   const el = ensureDialog();
@@ -157,6 +158,7 @@ export function openEmployeeCard(employeeId = null) {
     field('Дата прийняття', input('hireDate', employee.hireDate, { type: 'date', required: true })),
     field('Дата звільнення', input('dismissalDate', employee.dismissalDate, { type: 'date' })),
     field('Виплата ЗП', select('salaryPaymentMethod', employee.salaryPaymentMethod || 'Безготівкою', ['Безготівкою', 'Готівка'])),
+    field('Ставка ЄСВ', select('esvRate', String(employee.esvRate || '22'), [{ value: '22', label: '22%' }, { value: '8.41', label: '8,41%' }])),
   );
 
   const documentsSection = element('section', 'employee-card-documents');

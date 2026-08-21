@@ -4,9 +4,9 @@
 // місяця). Клік на ПІБ переносить у відповідний розділ і підсвічує рядок.
 
 import { escapeHtml, monthPeriodKey, daysUntil } from '../utils';
-import { getVisibleClients, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline, getMonthlyCellValue, getIncomeValue, getHrMonthlyDocuments, getSettings } from '../state.js';
+import { getVisibleClients, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline, getCombinedReportField, getEffectiveCombinedReportDeadline, getMonthlyCellValue, getIncomeValue, getHrMonthlyDocuments, getSettings } from '../state.js';
 import { TAX_TYPES, taxPeriodsFor } from '../tax-model';
-import { reportPeriodsFor } from '../report-model';
+import { reportPeriodsFor, combinedReportPeriodsFor } from '../report-model';
 import { groupLimitAmount, GROUP_MZP_MULTIPLIERS, shortClientName } from '../client-model';
 import { isIncomeLimitWarning } from '../income-model.js';
 import { payrollDatesForPeriod } from '../payroll-model.js';
@@ -56,6 +56,24 @@ function reportAlertEntries() {
       if (!worst || days < worst.days) worst = { period: period.key, days };
     });
     if (worst) entries.push({ id: item.id, name: shortClientName(item.name), group: realGroup === '3' ? '3' : '12', period: worst.period });
+  });
+  return entries;
+}
+
+function combinedReportAlertEntries() {
+  const year = getSettings().workingYear;
+  const entries = [];
+  getVisibleClients().forEach((item) => {
+    let worst = null;
+    combinedReportPeriodsFor(year).forEach((period) => {
+      const record = getCombinedReportField(item.id, period.key);
+      if (record.submittedDate) return;
+      const deadline = getEffectiveCombinedReportDeadline(period.key, record);
+      const days = daysUntil(deadline);
+      if (days === null || days > 5) return;
+      if (!worst || days < worst.days) worst = { period: period.key, days };
+    });
+    if (worst) entries.push({ id: item.id, name: shortClientName(item.name), period: worst.period });
   });
   return entries;
 }
@@ -159,6 +177,7 @@ export function renderOverview() {
   const incomeAlerts = incomeAlertEntries();
   const taxAlerts = taxAlertEntries();
   const reportAlerts = reportAlertEntries();
+  const combinedReportAlerts = combinedReportAlertEntries();
   const serviceAlerts = serviceDebtAlertEntries();
   const hrAlerts = hrDocumentsAlertEntries();
   return `<p class="note overview-intro">Контроль ситуації</p>
@@ -167,7 +186,8 @@ export function renderOverview() {
     ${overviewRow('Сплата послуг', serviceAlerts, 'payments', 'Всі сплатили наші послуги', 'Наші послуги мають ще сплатити: ')}
     ${overviewRow('Сплата податків', taxAlerts, 'taxes', 'Всі податки сплачені', 'Повинні сплатити податки: ')}
     ${overviewRow('Контроль лімітів', incomeAlerts, 'incomes', 'Жоден ФОП не наблизився до вичерпання ліміту', 'До вичерпання ліміту наближаються: ')}
-    ${overviewRow('Подача звітів', reportAlerts, 'reports', 'Всі звіти подано', 'Треба подати звіти по ')}
+    ${overviewRow('Декларації по доходам', reportAlerts, 'reports', 'Всі декларації подано', 'Треба подати декларації по ')}
+    ${overviewRow('Об’єднані звіти', combinedReportAlerts, 'combinedReports', 'Всі об’єднані звіти подано', 'Треба подати об’єднані звіти по ')}
     ${overviewRow('Кадрові документи', hrAlerts, 'hr', 'Всі кадрові документи надіслані', 'Треба надіслати кадрові документи ')}
     ${birthdayRow()}`;
 }

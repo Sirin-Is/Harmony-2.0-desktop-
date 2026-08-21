@@ -1,5 +1,5 @@
 // render/reports.js
-// Builds the "Звітність" tab: вкладки "1-2 група" (раз на рік) / "3 група"
+// Builds the "Декларації" tab: вкладки "1-2 група" (раз на рік) / "3 група"
 // (щоквартально, ті самі періоди, що в Податках). Дедлайни підставляються
 // з db.settings.reportDeadlines, як і в app.js.
 
@@ -49,8 +49,9 @@ export function renderReports() {
     ? table(rows, ['ПІБ', 'Дата подання', 'Днів до дедлайну', 'Дедлайн', 'Статус', 'Примітка'])
     : empty('У цій групі ще немає активних ФОП.');
 
+  const reportPeriodControls = uiState.reportGroup === '12' ? periodTabs : `<span class="report-year-label">${getSettings().workingYear}</span>`;
   return `<div class="toolbar"><p class="note">1-2 групи подають звіт раз на рік; 3 група — щоквартально. Дедлайни підставляються з «Налаштувань», якщо не вказано власного значення.</p></div>
-    <div class="subnav">${groupTabs}</div>
-    <div class="subnav periods">${periodTabs}</div>
+    <div class="subnav report-main-nav"><div>${groupTabs}</div><div>${reportPeriodControls}</div></div>
+    ${uiState.reportGroup === '3' ? `<div class="subnav periods">${periodTabs}</div>` : ''}
     ${body}`;
 }

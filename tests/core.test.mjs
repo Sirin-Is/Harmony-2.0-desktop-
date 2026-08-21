@@ -123,6 +123,14 @@ test('податкові дедлайни 1–2 груп переносятьс�
   assert.equal(tax.calculatedTaxDeadline('2', 'esv', '2026-03'), '2026-04-20');
 });
 
+test('АвтоОК визначає всі завершені періоди незалежно від відкритої вкладки', () => {
+  const august = new Date(2026, 7, 20);
+  assert.deepEqual(tax.priorTaxPeriods('1', 2026, august).map((period) => period.key), ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07']);
+  assert.deepEqual(tax.priorTaxPeriods('3', 2026, august).map((period) => period.key), ['2026-q1', '2026-half']);
+  assert.equal(tax.taxPeriodStart('2026-02'), '2026-02-01');
+  assert.equal(tax.taxPeriodStart('2026-half'), '2026-04-01');
+});
+
 test('податкові дедлайни 3 групи рахуються від завершення кварталу', () => {
   assert.equal(tax.calculatedTaxDeadline('3', 'unified', '2026-q1'), '2026-05-20');
   assert.equal(tax.calculatedTaxDeadline('3', 'military', '2026-half'), '2026-08-19');
@@ -136,6 +144,13 @@ test('звітність має окремі квартальні та річн�
   assert.equal(reports.getDefaultReportDeadline({}, '2', '2026'), '2027-03-01');
   assert.equal(reports.annualPropertyIncomeDeclarationDeadline(2026), '2026-04-30');
   assert.equal(reports.annualPropertyIncomeDeclarationDeadline(2027), '2027-04-30');
+});
+
+test('об’єднані звіти ведуться для всіх ФОП поквартально з дедлайном 40 днів', () => {
+  assert.deepEqual(reports.combinedReportPeriodsFor(2026).map((period) => period.label), ['I квартал', 'II квартал', 'III квартал', 'IV квартал']);
+  assert.equal(reports.statutoryCombinedReportDeadline('2026-q1'), '2026-05-10');
+  assert.equal(reports.getDefaultCombinedReportDeadline({}, '2026-q1'), '2026-05-08'); // 10 травня — неділя
+  assert.equal(reports.getDefaultCombinedReportDeadline({ settings: { reportDeadlines: { combined: { '2026-half': '2026-08-06' } } } }, '2026-half'), '2026-08-06');
 });
 
 test('типи виплати зарплати залежать від вибраного періоду, а не попереднього екрана', () => {
@@ -407,7 +422,8 @@ test('часті табличні зміни зберігають лише зм�
   const bootstrap = readFileSync(new URL('../bootstrap.js', import.meta.url), 'utf8');
   assert.match(state, /function saveTargetedChanges[\s\S]*inverseChanges[\s\S]*storage\.scheduleMutations/);
   assert.match(state, /setTaxField[\s\S]*saveTargetedChanges\(\[change\], 'Змінено податковий запис'/);
-  assert.match(state, /setReportField[\s\S]*saveTargetedChanges\(\[change\], 'Змінено запис звітності'/);
+  assert.match(state, /setReportField[\s\S]*saveTargetedChanges\(\[change\], 'Змінено декларацію'/);
+  assert.match(state, /setCombinedReportField[\s\S]*saveTargetedChanges\(\[change\], 'Змінено об’єднаний звіт'/);
   assert.match(state, /setIncomeValue[\s\S]*saveTargetedChanges\(\[change\], 'Змінено дохід'/);
   assert.match(state, /setMonthlyPaymentField[\s\S]*saveTargetedChanges\(\[change\], 'Змінено оплату послуг'/);
   assert.match(state, /setPayrollField[\s\S]*saveTargetedChanges\(changes, 'Змінено запис виплати зарплати'/);

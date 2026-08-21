@@ -12,8 +12,8 @@
 
 import * as storage from './storage.js';
 import * as clientModel from './client-model';
-import { getTaxRecord, effectiveDeadline as effectiveTaxDeadline, getDefaultDeadline as getDefaultTaxDeadline, exemptionOptions, taxPeriodsFor } from './tax-model.ts';
-import { getReportRecord, effectiveReportDeadline } from './report-model.ts';
+import { getTaxRecord, effectiveDeadline as effectiveTaxDeadline, getDefaultDeadline as getDefaultTaxDeadline, exemptionOptions, taxPeriodsFor, priorTaxPeriods } from './tax-model.ts';
+import { getReportRecord, effectiveReportDeadline, effectiveCombinedReportDeadline } from './report-model.ts';
 import { toNumber, generateId } from './utils';
 import { normalizeNonNegativeAmount } from './money-validation.js';
 import { validateHrOrder } from './hr-order-model.js';
@@ -150,7 +150,7 @@ function normalizeNestedRecordIds(database) {
 
 const SECTION_NAMES = {
   clients: 'Картки клієнтів', customColumns: 'Картки клієнтів', monthlyPayments: 'Оплати',
-  taxRecords: 'Податки', incomeRecords: 'Доходи', reportRecords: 'Звітність',
+  taxRecords: 'Податки', incomeRecords: 'Доходи', reportRecords: 'Декларації',
   calendarEvents: 'Календар', hrOrders: 'Кадри', hrMonthlyDocuments: 'Кадри',
   payrollRecords: 'Виплата зарплати', settings: 'Налаштування',
 };
@@ -659,7 +659,7 @@ export function saveEmployee(fields, id = null) {
   const beforeClient = cloneValue(client);
   const beforeOrders = new Map((db.hrOrders || []).map((item) => [item.id, cloneValue(item)]));
   const beforePayroll = new Map((db.payrollRecords || []).map((item) => [item.id, cloneValue(item)]));
-  const employee = { ...(existing?.employee || {}), id: id || generateId(), name: String(fields.name).trim(), position: String(fields.position).trim(), hireDate: fields.hireDate, dismissalDate: fields.dismissalDate || '', salaryPaymentMethod: fields.salaryPaymentMethod === 'Готівка' ? 'Готівка' : 'Безготівкою' };
+  const employee = { ...(existing?.employee || {}), id: id || generateId(), name: String(fields.name).trim(), position: String(fields.position).trim(), hireDate: fields.hireDate, dismissalDate: fields.dismissalDate || '', salaryPaymentMethod: fields.salaryPaymentMethod === 'Готівка' ? 'Готівка' : 'Безготівкою', esvRate: String(fields.esvRate) === '8.41' ? '8.41' : '22' };
   client.employees ||= [];
   const index = client.employees.findIndex((item) => item.id === employee.id);
   if (index >= 0) client.employees[index] = employee;
@@ -728,6 +728,12 @@ export function setHrMonthlyDocumentStatus(clientId, period, field, value) {
 
 export const getPayrollRecords = () => db.payrollRecords || [];
 
+const makePayrollRecord = (clientId, employee, period, paymentType, paymentDate = '') => ({
+  id: generateId(), clientId, employeeId: employee.id, employeeName: employee.name || '', period,
+  paymentType: String(paymentType || '').trim(), paymentDate: paymentDate || payrollDateForPaymentType(db.settings, period, paymentType),
+  status: '', amount: '', pdfo: '', vz: '', esv: '', clientOrder: 0,
+});
+
 function isSamePayrollSlot(record, clientId, employeeId, period, paymentType) {
   return record.clientId === clientId
     && record.employeeId === employeeId
@@ -735,7 +741,7 @@ function isSamePayrollSlot(record, clientId, employeeId, period, paymentType) {
     && String(record.paymentType || '').trim() === String(paymentType || '').trim();
 }
 
-export function addPayrollForClient(clientId, period, paymentType = '') {
+export function addPayrollForClient(clientId, period, paymentType = '', paymentDate = '') {
   const client = getClientById(clientId);
   if (!client) return 0;
   const employees = client.employees || [];
@@ -743,7 +749,7 @@ export function addPayrollForClient(clientId, period, paymentType = '') {
   const created = [];
   employees.forEach((employee) => {
     if (db.payrollRecords.some((record) => isSamePayrollSlot(record, clientId, employee.id, period, paymentType))) return;
-    const record = { id: generateId(), clientId, employeeId: employee.id, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), paymentDate: payrollDateForPaymentType(db.settings, period, paymentType), status: '', amount: '', pdfo: '', vz: '', esv: '' };
+    const record = makePayrollRecord(clientId, employee, period, paymentType, paymentDate);
     db.payrollRecords.push(record); created.push(record);
     added += 1;
   });
@@ -751,11 +757,11 @@ export function addPayrollForClient(clientId, period, paymentType = '') {
   return added;
 }
 
-export function addPayrollEmployee(clientId, employeeId, period, paymentType = '') {
+export function addPayrollEmployee(clientId, employeeId, period, paymentType = '', paymentDate = '') {
   const employee = getClientById(clientId)?.employees?.find((item) => item.id === employeeId);
   if (!employee) return null;
   if (db.payrollRecords.some((record) => isSamePayrollSlot(record, clientId, employeeId, period, paymentType))) return null;
-  const record = { id: generateId(), clientId, employeeId, employeeName: employee.name || '', period, paymentType: String(paymentType || '').trim(), paymentDate: payrollDateForPaymentType(db.settings, period, paymentType), status: '', amount: '', pdfo: '', vz: '', esv: '' };
+  const record = makePayrollRecord(clientId, employee, period, paymentType, paymentDate);
   db.payrollRecords.push(record); saveTargetedEntity('payrollRecords', record.id, null, record, 'Створено запис виплати зарплати', 'Зарплата', clientId); return record;
 }
 
@@ -779,7 +785,7 @@ export function setPayrollField(id, field, value) {
   const amount = numeric ? normalizeNonNegativeAmount(value) : null;
   if (numeric && !amount.ok) return false;
   const normalized = numeric ? amount.value : value;
-  const formatted = numeric && normalized ? new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 2 }).format(Number(normalized)).replace(/\u00a0/g, ' ') : normalized;
+  const formatted = numeric && normalized ? new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(normalized)).replace(/\u00a0/g, ' ') : normalized;
   const affected = field === 'paymentDate'
     ? db.payrollRecords.filter((item) => item.clientId === record.clientId && item.period === record.period && (item.paymentType || '') === (record.paymentType || ''))
     : [record];
@@ -790,6 +796,38 @@ export function setPayrollField(id, field, value) {
   }));
   affected.forEach((item) => { item[field] = field === 'paymentDate' ? value : formatted; });
   saveTargetedChanges(changes, 'Змінено запис виплати зарплати', 'Зарплата');
+  return true;
+}
+
+export function setPayrollPaymentType(id, paymentType) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return false; }
+  const record = db.payrollRecords.find((item) => item.id === id);
+  const normalized = String(paymentType || '').trim();
+  if (!record || !normalized) return false;
+  const affected = db.payrollRecords.filter((item) => item.period === record.period && item.paymentDate === record.paymentDate && String(item.paymentType || '') === String(record.paymentType || ''));
+  const affectedIds = new Set(affected.map((item) => item.id));
+  if (affected.some((item) => db.payrollRecords.some((other) => !affectedIds.has(other.id) && isSamePayrollSlot(other, item.clientId, item.employeeId, item.period, normalized)))) return false;
+  const changes = affected.map((item) => ({ path: ['payrollRecords', item.id, 'paymentType'], clientId: item.clientId, before: item.paymentType || '', beforeExisted: Object.prototype.hasOwnProperty.call(item, 'paymentType'), after: normalized, afterExisted: true }));
+  affected.forEach((item) => { item.paymentType = normalized; });
+  saveTargetedChanges(changes, 'Змінено тип виплати зарплати', 'Зарплата');
+  return true;
+}
+
+export function movePayrollClientInBatch(id, direction) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return false; }
+  const record = db.payrollRecords.find((item) => item.id === id);
+  if (!record || ![-1, 1].includes(Number(direction))) return false;
+  const batch = db.payrollRecords.filter((item) => item.period === record.period && item.paymentDate === record.paymentDate && String(item.paymentType || '') === String(record.paymentType || ''));
+  const clients = [...new Map(batch.map((item) => [item.clientId, item])).values()].sort((left, right) => Number(left.clientOrder || 0) - Number(right.clientOrder || 0) || String(left.clientId).localeCompare(String(right.clientId)));
+  const index = clients.findIndex((item) => item.clientId === record.clientId);
+  const target = clients[index + Number(direction)];
+  if (index < 0 || !target) return false;
+  const order = new Map(clients.map((item, position) => [item.clientId, position]));
+  order.set(record.clientId, index + Number(direction)); order.set(target.clientId, index);
+  const affected = batch.filter((item) => order.get(item.clientId) !== Number(item.clientOrder || 0));
+  const changes = affected.map((item) => ({ path: ['payrollRecords', item.id, 'clientOrder'], clientId: item.clientId, before: item.clientOrder || 0, beforeExisted: Object.prototype.hasOwnProperty.call(item, 'clientOrder'), after: order.get(item.clientId), afterExisted: true }));
+  affected.forEach((item) => { item.clientOrder = order.get(item.clientId); });
+  saveTargetedChanges(changes, 'Змінено порядок ФОП у виплаті', 'Зарплата');
   return true;
 }
 
@@ -962,7 +1000,7 @@ export function copyTaxPeriodForward(clientIds, realGroups, fromPeriod, toPeriod
 }
 
 // ---------------------------------------------------------------------------
-// Reports (Звітність)
+// Reports (Декларації)
 // ---------------------------------------------------------------------------
 
 export function getReportField(clientId, realGroup, period) {
@@ -979,26 +1017,61 @@ export function setReportField(clientId, realGroup, period, field, value) {
   const key = `${clientId}|${realGroup}|${period}`;
   const change = { path: ['reportRecords', key, field], clientId, before: cloneValue(record[field]), beforeExisted: Object.prototype.hasOwnProperty.call(record, field), after: value, afterExisted: true };
   record[field] = value;
-  saveTargetedChanges([change], 'Змінено запис звітності', 'Звітність');
+  saveTargetedChanges([change], 'Змінено декларацію', 'Декларації');
   return record;
 }
 
-/** Marks selected clients' tax payments as queued and paid on the first day of the active period. */
-export function autoCompleteTaxPeriod(clientIds, realGroups, period, taxTypeKeys) {
+export function getCombinedReportField(clientId, period) {
+  return getReportRecord(db, clientId, 'combined', period);
+}
+
+export function getEffectiveCombinedReportDeadline(period, record) {
+  return effectiveCombinedReportDeadline(db, period, record);
+}
+
+export function setCombinedReportField(clientId, period, field, value) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return false; }
+  if (!clientModel.findClientById(db, clientId) || !/^\d{4}-(?:q1|half|9m|year)$/.test(String(period))) return false;
+  const validation = validateReportRecordChange(field, value);
+  if (!validation.ok) return false;
+  const record = getReportRecord(db, clientId, 'combined', period);
+  const key = `${clientId}|combined|${period}`;
+  const change = { path: ['reportRecords', key, field], clientId, before: cloneValue(record[field]), beforeExisted: Object.prototype.hasOwnProperty.call(record, field), after: value, afterExisted: true };
+  record[field] = value;
+  saveTargetedChanges([change], 'Змінено об’єднаний звіт', 'Об’єднані звіти');
+  return record;
+}
+
+/** Marks selected clients' empty tax dates in every completed period. Each
+ * period receives its own first calendar day (e.g. February → 01.02). */
+export function autoCompleteTaxPeriod(clientIds, tabGroup, taxTypeKeys, referenceDate = new Date()) {
   if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return 0; }
   const changes = [];
-  const currentStart = /^\d{4}-\d{2}$/.test(period) ? `${period}-01` : `${period.slice(0, 4)}-${({ q1: '01', half: '04', '9m': '07', year: '10' })[period.slice(5)] || '01'}-01`;
-  const periods = taxPeriodsFor(String(realGroups[0]) === '3' ? '3' : '1', Number(String(period).slice(0, 4))).filter((entry) => {
-    const start = /^\d{4}-\d{2}$/.test(entry.key) ? `${entry.key}-01` : `${entry.key.slice(0, 4)}-${({ q1: '01', half: '04', '9m': '07', year: '10' })[entry.key.slice(5)]}-01`;
-    return start < currentStart;
+  const taxGroup = String(tabGroup) === '3' ? '3' : '1';
+  const periods = priorTaxPeriods(taxGroup, getSettings().workingYear, referenceDate);
+  clientIds.forEach((clientId) => {
+    const client = clientModel.findClientById(db, clientId);
+    if (!client) return;
+    periods.forEach((entry) => {
+      const realGroup = clientModel.groupAtPeriod(client, entry.key);
+      const belongsToTab = taxGroup === '3' ? realGroup === '3' : ['1', '2'].includes(realGroup);
+      if (!belongsToTab) return;
+      const date = /^\d{4}-\d{2}$/.test(entry.key)
+        ? `${entry.key}-01`
+        : `${entry.key.slice(0, 4)}-${({ q1: '01', half: '04', '9m': '07', year: '10' })[entry.key.slice(5)]}-01`;
+      taxTypeKeys.forEach((taxType) => {
+        const record = getTaxRecord(db, clientId, realGroup, entry.key, taxType);
+        const key = `${clientId}|${realGroup}|${entry.key}|${taxType}`;
+        ['queuedDate', 'paidDate'].forEach((field) => {
+          if (record[field]) return;
+          changes.push({ path: ['taxRecords', key, field], clientId, before: '', beforeExisted: false, after: date, afterExisted: true });
+          record[field] = date;
+        });
+      });
+    });
   });
-  clientIds.forEach((clientId, index) => periods.forEach((entry) => taxTypeKeys.forEach((taxType) => {
-    const realGroup = realGroups[index]; const record = getTaxRecord(db, clientId, realGroup, entry.key, taxType);
-    const key = `${clientId}|${realGroup}|${entry.key}|${taxType}`; const date = /^\d{4}-\d{2}$/.test(entry.key) ? `${entry.key}-01` : `${entry.key.slice(0, 4)}-${({ q1: '01', half: '04', '9m': '07', year: '10' })[entry.key.slice(5)]}-01`;
-    ['queuedDate', 'paidDate'].forEach((field) => { if (!record[field]) { changes.push({ path: ['taxRecords', key, field], clientId, before: '', beforeExisted: false, after: date, afterExisted: true }); record[field] = date; } });
-  })));
   saveTargetedChanges(changes, 'Автоматично заповнено податки', 'Податки');
-  return changes.length / 2;
+  return changes.length;
 }
 
 export function getEffectiveReportDeadline(realGroup, period, record) {
@@ -1076,6 +1149,29 @@ export function setMinWage(value) {
   return true;
 }
 
+/** Imports the monthly income matrix. Empty spreadsheet cells leave the
+ * existing value intact; supplied cells replace it. */
+export function importIncomeRows(rows, year = getSettings().workingYear) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return { updated: 0, skipped: 0, unknown: [] }; }
+  const changes = []; const unknown = []; let skipped = 0;
+  rows.forEach((row) => {
+    const client = clientModel.findClientByName(db, row.name);
+    if (!client) { unknown.push(row.name); return; }
+    (row.values || []).slice(0, 12).forEach((rawValue, index) => {
+      if (String(rawValue ?? '').trim() === '') return;
+      const normalized = normalizeNonNegativeAmount(rawValue);
+      if (!normalized.ok) { skipped += 1; return; }
+      const monthKey = `${year}-${String(index + 1).padStart(2, '0')}`;
+      const clientData = db.incomeRecords[client.id] ||= {};
+      if (clientData[monthKey] === normalized.value) return;
+      changes.push({ path: ['incomeRecords', client.id, monthKey], clientId: client.id, before: cloneValue(clientData[monthKey]), beforeExisted: Object.prototype.hasOwnProperty.call(clientData, monthKey), after: normalized.value, afterExisted: true });
+      clientData[monthKey] = normalized.value;
+    });
+  });
+  saveTargetedChanges(changes, 'Імпортовано доходи', 'Доходи');
+  return { updated: changes.length, skipped, unknown };
+}
+
 /** Fill a month's invoiced-service column from the service price on every
  * active client card, producing only one local save for the whole column. */
 export function autofillMonthlyCharges(monthKey) {
@@ -1110,14 +1206,25 @@ export function setQuarterlyTaxDeadline(taxKey, periodKey, value) {
 
 export function setReportDeadline(scope, periodKeyOrNull, value) {
   const validKey = scope === 'annual' ? /^\d{4}$/.test(periodKeyOrNull) : /^\d{4}-(?:q1|half|9m|year)$/.test(periodKeyOrNull);
-  if (!['annual', 'quarterly'].includes(scope) || !validKey || !isValidOptionalIsoDate(value)) return false;
-  changeSetting(['reportDeadlines', scope, periodKeyOrNull], value, 'Змінено дедлайн звітності');
+  if (!['annual', 'quarterly', 'combined'].includes(scope) || !validKey || !isValidOptionalIsoDate(value)) return false;
+  changeSetting(['reportDeadlines', scope, periodKeyOrNull], value, 'Змінено дедлайн декларації / об’єднаного звіту');
   return true;
 }
 
 export function setAppearanceSetting(key, value) {
   db.settings.appearance ||= { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 };
   changeSetting(['appearance', key], value, 'Змінено вигляд полів');
+}
+
+export function setSectionHeadings(headings) {
+  if (!canEditData() || currentAccessRole !== 'administrator' || !headings || typeof headings !== 'object') return false;
+  const allowed = ['overview', 'dashboard', 'payments', 'taxes', 'incomes', 'reports', 'combinedReports', 'calendar', 'activities', 'hr', 'audit', 'inactive', 'deleted', 'settings'];
+  const sanitized = Object.fromEntries(allowed.map((key) => {
+    const source = headings[key] || {};
+    return [key, { crumb: String(source.crumb || '').trim().slice(0, 80), title: String(source.title || '').trim().slice(0, 140) }];
+  }));
+  changeSetting(['sectionHeadings'], sanitized, 'Змінено заголовки розділів');
+  return true;
 }
 
 export function setDropdownOptions(key, rawValue) {

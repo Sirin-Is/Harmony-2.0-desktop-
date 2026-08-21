@@ -37,6 +37,25 @@ export function taxPeriodsFor(group: string, workingYear = DEFAULT_WORKING_YEAR)
   }));
 }
 
+/** First calendar day represented by a tax period. Group 3 periods start on
+ * the first day of their respective quarter. */
+export function taxPeriodStart(periodKey: string): string {
+  if (/^\d{4}-\d{2}$/.test(periodKey)) return `${periodKey}-01`;
+  const starts: Record<string, string> = { q1: '01', half: '04', '9m': '07', year: '10' };
+  return `${periodKey.slice(0, 4)}-${starts[periodKey.slice(5)] || '01'}-01`;
+}
+
+/** Periods before the current calendar month or quarter. This does not depend
+ * on the period tab currently opened in the UI. */
+export function priorTaxPeriods(group: string, workingYear: number, referenceDate = new Date()): Period[] {
+  const year = referenceDate.getFullYear();
+  const month = referenceDate.getMonth();
+  const currentStart = group === '3'
+    ? `${year}-${String(Math.floor(month / 3) * 3 + 1).padStart(2, '0')}-01`
+    : `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  return taxPeriodsFor(group, workingYear).filter((period) => taxPeriodStart(period.key) < currentStart);
+}
+
 /** Which calendar quarter (q1/half/9m/year) a monthly period key falls into — used by ЄСВ's quarterly deadline. */
 export function quarterKeyForPeriod(periodKey: string): string {
   if (/^\d{4}-(q1|half|9m|year)$/.test(periodKey)) return periodKey.slice(5);

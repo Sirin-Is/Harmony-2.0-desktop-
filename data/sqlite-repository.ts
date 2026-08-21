@@ -53,7 +53,7 @@ const SYNC_TABLES: string[] = LOCAL_TABLES.filter((table) => table !== 'audit_op
 
 const emptyDatabase = (): AppDatabase => ({
   clients: [], customColumns: [], monthlyPayments: {}, taxRecords: {}, incomeRecords: {}, reportRecords: {}, calendarEvents: [], hrOrders: [], hrMonthlyDocuments: [], payrollRecords: [], auditOperations: [], auditEvents: [],
-  settings: { workingYear: 2026, availableWorkingYears: [2026, 2027], minWage: 8647, monthlyDeadlines: {}, quarterlyDeadlines: { group3: {}, esv: {} }, reportDeadlines: { annual: {}, quarterly: { q1: '', half: '', '9m': '', year: '' } }, payrollDates: {}, appearance: { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 }, activityReferences: {} },
+  settings: { workingYear: 2026, availableWorkingYears: [2026, 2027], minWage: 8647, monthlyDeadlines: {}, quarterlyDeadlines: { group3: {}, esv: {} }, reportDeadlines: { annual: {}, quarterly: { q1: '', half: '', '9m': '', year: '' }, combined: { q1: '', half: '', '9m': '', year: '' } }, payrollDates: {}, appearance: { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 }, activityReferences: {}, sectionHeadings: {} },
 });
 
 function normalizeDatabase(raw: Partial<AppDatabase> | null | undefined): AppDatabase {
@@ -79,6 +79,7 @@ function normalizeDatabase(raw: Partial<AppDatabase> | null | undefined): AppDat
       reportDeadlines: {
         annual: typeof settings?.reportDeadlines?.annual === 'object' && settings.reportDeadlines.annual ? settings.reportDeadlines.annual : (legacyAnnual ? { 2026: legacyAnnual } : {}),
         quarterly: settings?.reportDeadlines?.quarterly || base.settings.reportDeadlines.quarterly,
+        combined: settings?.reportDeadlines?.combined || base.settings.reportDeadlines.combined,
       },
       payrollDates: settings?.payrollDates && typeof settings.payrollDates === 'object' ? settings.payrollDates : {},
       appearance: {
@@ -95,6 +96,7 @@ function normalizeDatabase(raw: Partial<AppDatabase> | null | undefined): AppDat
         currency: Array.isArray((settings as any)?.dropdownOptions?.currency) ? (settings as any).dropdownOptions.currency : [],
         kepIssuer: Array.isArray((settings as any)?.dropdownOptions?.kepIssuer) ? (settings as any).dropdownOptions.kepIssuer : [],
       },
+      sectionHeadings: settings?.sectionHeadings && typeof settings.sectionHeadings === 'object' ? settings.sectionHeadings : {},
     },
   };
 }

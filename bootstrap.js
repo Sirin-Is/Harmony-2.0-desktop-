@@ -10,10 +10,10 @@ import { $, todayIso } from './utils';
 import { uiState } from './ui-state.js';
 import {
   db, initDatabase, lockDatabase, refreshDatabaseFromSync, prepareDatabaseSwitch, undoLastAction, setAuditActor, setAccessRole, getClientById, deleteClientPermanently, purgeDeletedTestClients, archiveClient, requestClientDeletion, setClientLifecycle, reorderClients, setCustomFieldValue, replaceDatabase,
-  setMonthlyPaymentField, autofillMonthlyCharges, setTaxField, setReportField, setIncomeValue, autoCompleteTaxPeriod, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline,
-  setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, setDropdownOptions, setActivityReference, getSettings,
+  setMonthlyPaymentField, autofillMonthlyCharges, setTaxField, setReportField, setCombinedReportField, setIncomeValue, importIncomeRows, autoCompleteTaxPeriod, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline, getEffectiveCombinedReportDeadline,
+  setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, setSectionHeadings, setDropdownOptions, setActivityReference, getSettings,
   deleteCustomColumn, getCustomColumns,
-  copyTaxPeriodForward, getVisibleClients, getClientsByTaxTab, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, canRollbackChanges, rollbackChangesAfter, rollbackRetentionStart, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField,
+  copyTaxPeriodForward, getVisibleClients, getClientsByTaxTab, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, canRollbackChanges, rollbackChangesAfter, rollbackRetentionStart, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField, setPayrollPaymentType, movePayrollClientInBatch,
   getDatabaseRelationshipIssues,
 } from './state.js';
 import { TAX_TYPES, previousPeriodKey, taxPeriodsFor, statusPillHtml, daysUntilLabel } from './tax-model.ts';
@@ -25,6 +25,7 @@ import { renderPayments, positionPaymentsTable } from './render/payments.js';
 import { renderTaxes } from './render/taxes.js';
 import { renderIncomes } from './render/incomes.js';
 import { renderReports } from './render/reports.js';
+import { renderCombinedReports } from './render/combined-reports.js';
 import { renderCalendar } from './render/calendar.js';
 import { renderActivities } from './render/activities.js';
 import { renderHR } from './render/hr.js';
@@ -49,17 +50,17 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, passwordPolicyError } from '.
 import { check } from '@tauri-apps/plugin-updater';
 import { getLocalStorageProtection } from './local-storage-protection.ts';
 import { assertBackupFileSize, createEncryptedBackup, decryptBackup, isEncryptedBackup, validateBackupDatabase } from './backup-crypto.js';
-import { payrollPaymentTypes } from './payroll-model.js';
-import { groupAtPeriod } from './client-model.js';
-import { readSpreadsheetRows } from './spreadsheet-security.js';
+import { payrollPaymentTypes, payrollDateForPaymentType } from './payroll-model.js';
+import { readSpreadsheetRows, readSpreadsheetMatrix } from './spreadsheet-security.js';
 
 const TITLES = {
-  overview: ['Огляд', 'Зведення зауважень по розділах'],
+  overview: ['Огляд', 'Контроль ситуації'],
   dashboard: ['Картки клієнтів', 'Картки клієнтів ФОП'],
   payments: ['Оплати', 'Оплати бухгалтерських послуг'],
   taxes: ['Податки', 'Сплата податків по групах ЄП'],
   incomes: ['Доходи', 'Облік доходів і залишку ліміту'],
-  reports: ['Звітність', 'Подання звітів по групах ЄП'],
+  reports: ['Декларації', 'Декларації по доходам'],
+  combinedReports: ['Об’єднані звіти', 'Об’єднані звіти'],
   calendar: ['Календар', 'Задачі та автоматичні дедлайни'],
   activities: ['Види діяльності', 'Довідники КВЕД-2010 та NACE 2.1-UA'],
   hr: ['Кадри', 'Наймані працівники та кадрові документи'],
@@ -76,6 +77,7 @@ const VIEWS = {
   taxes: renderTaxes,
   incomes: renderIncomes,
   reports: renderReports,
+  combinedReports: renderCombinedReports,
   calendar: renderCalendar,
   activities: renderActivities,
   hr: renderHR,
@@ -233,7 +235,10 @@ function restoreViewport(snapshot) {
 export function render({ preserveViewport = true } = {}) {
   if (!uiState.currentUser || !db) { setAuthenticatedUi(false); return; }
   const viewport = preserveViewport ? captureViewport() : null;
-  const [crumb, title] = TITLES[uiState.view];
+  const defaults = TITLES[uiState.view];
+  const configured = db.settings?.sectionHeadings?.[uiState.view] || {};
+  const crumb = configured.crumb || defaults[0];
+  const title = configured.title || defaults[1];
   $('#crumb').textContent = crumb;
   $('#title').textContent = title;
   document.title = `${title} — Harmony`;
@@ -489,11 +494,11 @@ function bindCurrentView() {
     const clients = getVisibleClients().filter((client) => (client.employees || []).length);
     const period = `${getSettings().workingYear}-${String(uiState.payrollMonth).padStart(2, '0')}`;
     const paymentTypes = payrollPaymentTypes(period);
-    const result = await openAppDialog({ title: 'Додати ФОП до виплати зарплати', fields: [{ key: 'client', label: 'ФОП', required: true, options: clients.map((client) => client.name) }, { key: 'paymentType', label: 'Тип виплати', type: 'select', required: true, value: paymentTypes[0], options: paymentTypes }], confirmText: 'Додати' });
+    const result = await openAppDialog({ title: 'Додати виплату зарплати', fields: [{ key: 'client', label: 'ФОП', required: true, options: clients.map((client) => client.name) }, { key: 'paymentType', label: 'Тип виплати', type: 'select', required: true, value: paymentTypes[0], options: paymentTypes }, { key: 'paymentDate', label: 'Дата виплати', type: 'date', value: payrollDateForPaymentType(getSettings(), period, paymentTypes[0]), required: false }], confirmText: 'Додати' });
     if (!result) return;
     const client = clients.find((item) => item.name === result.client);
     if (!client) { showToast('Оберіть ФОП зі списку.', 'error'); return; }
-    const added = addPayrollForClient(client.id, period, result.paymentType);
+    const added = addPayrollForClient(client.id, period, result.paymentType, result.paymentDate);
     showToast(added ? `Додано працівників: ${added}.` : 'Усі працівники цього ФОП уже є у вибраній виплаті.', added ? 'success' : 'warn');
     render();
   });
@@ -501,11 +506,11 @@ function bindCurrentView() {
     const choices = getVisibleClients().flatMap((client) => (client.employees || []).map((employee) => ({ client, employee, label: `${client.name} — ${employee.name}` })));
     const period = `${getSettings().workingYear}-${String(uiState.payrollMonth).padStart(2, '0')}`;
     const paymentTypes = payrollPaymentTypes(period);
-    const result = await openAppDialog({ title: 'Додати працівника до виплати', fields: [{ key: 'employee', label: 'ФОП і працівник', required: true, options: choices.map((choice) => choice.label) }, { key: 'paymentType', label: 'Тип виплати', type: 'select', required: true, value: paymentTypes[0], options: paymentTypes }], confirmText: 'Додати' });
+    const result = await openAppDialog({ title: 'Додати працівника до виплати', fields: [{ key: 'employee', label: 'ФОП і працівник', required: true, options: choices.map((choice) => choice.label) }, { key: 'paymentType', label: 'Тип виплати', type: 'select', required: true, value: paymentTypes[0], options: paymentTypes }, { key: 'paymentDate', label: 'Дата виплати', type: 'date', value: payrollDateForPaymentType(getSettings(), period, paymentTypes[0]), required: false }], confirmText: 'Додати' });
     if (!result) return;
     const choice = choices.find((item) => item.label === result.employee);
     if (!choice) { showToast('Оберіть працівника зі списку.', 'error'); return; }
-    const added = addPayrollEmployee(choice.client.id, choice.employee.id, period, result.paymentType);
+    const added = addPayrollEmployee(choice.client.id, choice.employee.id, period, result.paymentType, result.paymentDate);
     showToast(added ? 'Рядок працівника додано.' : 'Цей працівник уже є у вибраній виплаті.', added ? 'success' : 'warn');
     render();
   });
@@ -559,6 +564,13 @@ function bindCurrentView() {
     if (!setPayrollField(field.dataset.payrollId, field.dataset.payrollField, value)) {
       showToast(invalidAmountMessage, 'error');
     }
+  }));
+  document.querySelectorAll('[data-payroll-type-id]').forEach((field) => field.addEventListener('change', () => {
+    if (!setPayrollPaymentType(field.dataset.payrollTypeId, field.value)) showToast('Не вдалося змінити тип: у цій виплаті вже є такий працівник з вибраним типом.', 'error');
+    render();
+  }));
+  document.querySelectorAll('[data-move-payroll-client]').forEach((button) => button.addEventListener('click', () => {
+    if (movePayrollClientInBatch(button.dataset.movePayrollClient, Number(button.dataset.moveDirection))) render();
   }));
   document.querySelectorAll('[data-activities-section]').forEach((button) => button.addEventListener('click', () => { uiState.activitiesSection = button.dataset.activitiesSection; render(); }));
   document.querySelector('#auditSearch')?.addEventListener('input', (event) => {
@@ -698,6 +710,7 @@ function bindCurrentView() {
     const section = button.dataset.alertSection;
     if (section === 'taxes') { uiState.taxGroup = button.dataset.alertGroup; uiState.taxPeriod = button.dataset.alertPeriod; }
     if (section === 'reports') { uiState.reportGroup = button.dataset.alertGroup; uiState.reportPeriod = button.dataset.alertPeriod; }
+    if (section === 'combinedReports') uiState.combinedReportPeriod = button.dataset.alertPeriod;
     if (section === 'incomes') uiState.incomeGroup = button.dataset.alertGroup;
     uiState.pendingHighlightClientId = button.dataset.alertClient;
     setView(section);
@@ -726,16 +739,16 @@ function bindCurrentView() {
     }
   }));
   $('[data-tax-auto-ok]')?.addEventListener('click', async () => {
-    const clients = getClientsByTaxTab(uiState.taxGroup, uiState.taxPeriod);
+    const clients = getVisibleClients();
     const result = await openAppDialog({
-      title: 'АвтоОК — податки', message: 'Оберіть ФОП. Для всіх трьох податків буде встановлено «Набрано в банку» і «Дата сплати» — 01 число поточного періоду.',
+      title: 'АвтоОК — податки', message: 'Оберіть ФОП. У всіх завершених періодах поточної групи будуть заповнені лише порожні поля «Набрано в банку» та «Дата сплати» — 01 число відповідного періоду.',
       fields: [{ key: 'clients', label: 'ФОП', type: 'checkboxes', options: clients.map((client) => ({ value: client.id, label: client.name, checked: true })) }], confirmText: 'Заповнити', cancelText: 'Закрити',
     });
     if (!result) return;
     const selected = result.clients || [];
     const selectedClients = clients.filter((client) => selected.includes(client.id));
-    const changed = autoCompleteTaxPeriod(selectedClients.map((client) => client.id), selectedClients.map((client) => groupAtPeriod(client, uiState.taxPeriod)), uiState.taxPeriod, TAX_TYPES.map((tax) => tax.key));
-    showToast(changed ? `Заповнено податки для ${selectedClients.length} ФОП.` : 'ФОП не обрано.', changed ? 'success' : 'info');
+    const changed = autoCompleteTaxPeriod(selectedClients.map((client) => client.id), uiState.taxGroup, TAX_TYPES.map((tax) => tax.key));
+    showToast(changed ? `Заповнено ${changed} порожніх дат для ${selectedClients.length} ФОП.` : selectedClients.length ? 'У завершених періодах немає порожніх дат для заповнення.' : 'ФОП не обрано.', changed ? 'success' : 'info');
     render();
   });
   $('[data-copy-previous-period]')?.addEventListener('click', () => {
@@ -752,7 +765,7 @@ function bindCurrentView() {
     render();
   });
 
-  // --- Звітність ---
+  // --- Декларації та об’єднані звіти ---
   document.querySelectorAll('[data-report-group]').forEach((b) => b.onclick = () => { uiState.reportGroup = b.dataset.reportGroup; uiState.reportPeriod = null; render(); });
   document.querySelectorAll('[data-report-period]').forEach((b) => b.onclick = () => { uiState.reportPeriod = b.dataset.reportPeriod; render(); });
   document.querySelectorAll('.report-field').forEach((field) => field.addEventListener('change', () => {
@@ -765,12 +778,37 @@ function bindCurrentView() {
     const days = row?.querySelector('.report-days'); if (days) days.innerHTML = reportDaysUntilLabel(deadline, record);
     const status = row?.querySelector('.report-status'); if (status) status.innerHTML = reportStatusPillHtml(record, deadline);
   }));
+  document.querySelectorAll('[data-combined-report-period]').forEach((button) => button.addEventListener('click', () => { uiState.combinedReportPeriod = button.dataset.combinedReportPeriod; render(); }));
+  document.querySelectorAll('.combined-report-field').forEach((field) => field.addEventListener('change', () => {
+    const record = setCombinedReportField(field.dataset.client, uiState.combinedReportPeriod, field.dataset.field, field.value);
+    if (!record) { showToast('Вкажіть коректне значення звітності.', 'error'); return; }
+    const row = field.closest('tr'); const deadline = getEffectiveCombinedReportDeadline(uiState.combinedReportPeriod, record);
+    const days = row?.querySelector('.report-days'); if (days) days.innerHTML = reportDaysUntilLabel(deadline, record);
+    const status = row?.querySelector('.report-status'); if (status) status.innerHTML = reportStatusPillHtml(record, deadline);
+  }));
 
   // --- Доходи ---
   document.querySelectorAll('[data-income-group]').forEach((b) => b.onclick = () => { uiState.incomeGroup = b.dataset.incomeGroup; render(); });
   document.querySelectorAll('.income-value').forEach((field) => field.addEventListener('change', () => {
     if (!setIncomeValue(field.dataset.client, field.dataset.month, field.value)) showToast(invalidAmountMessage, 'error');
   }));
+  $('[data-import-incomes]')?.addEventListener('click', () => $('#incomeImportFile')?.click());
+  $('#incomeImportFile')?.addEventListener('change', async (event) => {
+    const file = event.target.files[0]; event.target.value = '';
+    if (!file) return;
+    try {
+      const rows = await readSpreadsheetMatrix(file);
+      if (!rows.length) throw new Error('Файл порожній або не містить рядків даних.');
+      const firstCell = String(rows[0]?.[0] || '').trim().toLocaleLowerCase('uk');
+      const hasHeader = /піб|назва|фоп|name/.test(firstCell);
+      const matrix = rows.slice(hasHeader ? 1 : 0).map((row) => ({ name: String(row[0] || '').trim(), values: row.slice(1, 13) })).filter((row) => row.name);
+      const summary = importIncomeRows(matrix, getSettings().workingYear);
+      const unknown = summary.unknown.length ? ` Не знайдено ФОП: ${summary.unknown.slice(0, 5).join(', ')}${summary.unknown.length > 5 ? '…' : ''}.` : '';
+      const skipped = summary.skipped ? ` Некоректних сум пропущено: ${summary.skipped}.` : '';
+      showToast(`Імпортовано значень доходу: ${summary.updated}.${skipped}${unknown}`, summary.updated ? 'success' : 'warn', 7000);
+      render();
+    } catch (error) { showToast(error.message || 'Не вдалося імпортувати доходи.', 'error', 7000); }
+  });
 
   // --- Оплати ---
   document.querySelectorAll('[data-payments-quarter]').forEach((button) => button.addEventListener('click', () => { uiState.paymentsQuarter = Number(button.dataset.paymentsQuarter); render(); }));
@@ -858,6 +896,7 @@ function bindCurrentView() {
     else if (field.dataset.scope === 'quarterly') saved = setQuarterlyTaxDeadline(field.dataset.tax, field.dataset.period, field.value);
     else if (field.dataset.scope === 'report-annual') saved = setReportDeadline('annual', field.dataset.period, field.value);
     else if (field.dataset.scope === 'report-quarterly') saved = setReportDeadline('quarterly', field.dataset.period, field.value);
+    else if (field.dataset.scope === 'report-combined') saved = setReportDeadline('combined', field.dataset.period, field.value);
     if (!saved) showToast('Вкажіть коректну дату дедлайну.', 'error');
   }));
   document.querySelectorAll('[data-dropdown-options]').forEach((field) => field.addEventListener('change', () => {
@@ -884,6 +923,18 @@ function bindCurrentView() {
     }
     render();
   }));
+  document.querySelector('[data-save-section-headings]')?.addEventListener('click', () => {
+    const headings = Object.fromEntries([...document.querySelectorAll('[data-section-heading]')].reduce((entries, field) => {
+      const key = field.dataset.sectionHeading;
+      const item = entries.find(([entryKey]) => entryKey === key)?.[1] || {};
+      item[field.dataset.headingPart] = field.value;
+      if (!entries.some(([entryKey]) => entryKey === key)) entries.push([key, item]);
+      return entries;
+    }, []));
+    if (!setSectionHeadings(headings)) { showToast('Заголовки може змінювати лише адміністратор.', 'error'); return; }
+    showToast('Заголовки розділів збережено.', 'success');
+    render();
+  });
   $('[data-refresh-sync-log]')?.addEventListener('click', async () => {
     try { uiState.syncLog = await getRecentSyncLog(); render(); }
     catch (error) { showToast(error.message || String(error), 'error'); }

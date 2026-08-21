@@ -12,6 +12,7 @@ export const uiState = {
   taxPeriod: null,
   reportGroup: '12',
   reportPeriod: null,
+  combinedReportPeriod: null,
   incomeGroup: '12',
   paymentsQuarter: null,
   dashboardFilters: {},

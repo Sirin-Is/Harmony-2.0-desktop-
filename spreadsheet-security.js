@@ -110,3 +110,22 @@ export async function readSpreadsheetRows(file) {
   assertWorksheetBounds(XLSX, sheet);
   return assertSpreadsheetRows(XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false }));
 }
+
+/** Reads a positional spreadsheet while retaining the first row. Used for
+ * compact imports whose contract is based on columns rather than headers. */
+export async function readSpreadsheetMatrix(file) {
+  assertSpreadsheetFile(file);
+  const XLSX = await loadSpreadsheetLibrary();
+  const buffer = await file.arrayBuffer();
+  assertSpreadsheetArchive(buffer);
+  const workbook = XLSX.read(buffer, { type: 'array', cellDates: true, sheetRows: MAX_SPREADSHEET_DATA_ROWS + 2, sheets: 0 });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  if (!sheet) return [];
+  assertWorksheetBounds(XLSX, sheet);
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+  if (!Array.isArray(rows) || rows.length > MAX_SPREADSHEET_DATA_ROWS + 1) throw new Error(`У таблиці понад ${MAX_SPREADSHEET_DATA_ROWS} рядків даних.`);
+  rows.forEach((row) => {
+    if (!Array.isArray(row) || row.length > MAX_SPREADSHEET_COLUMNS || row.some((value) => String(value ?? '').length > MAX_SPREADSHEET_CELL_CHARS)) throw new Error('Таблиця має некоректну структуру.');
+  });
+  return rows;
+}

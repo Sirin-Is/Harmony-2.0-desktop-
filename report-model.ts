@@ -1,5 +1,5 @@
 // report-model.ts
-// Business logic for "Звітність". Поведінка ідентична report-model.js.
+// Business logic for declarations and combined reports.
 
 import { DEFAULT_WORKING_YEAR, daysBetween, daysUntil } from './utils.ts';
 import { taxPeriodsFor, controlDeadline, quarterEnd, type Period, type TabGroup } from './tax-model.ts';
@@ -18,6 +18,17 @@ export function annualPropertyIncomeDeclarationDeadline(workingYear: number): st
 
 export function reportPeriodsFor(group: string, workingYear: number): Period[] {
   return group === '3' ? taxPeriodsFor('3', workingYear) : [{ key: String(workingYear), label: `Рік ${workingYear}` }];
+}
+
+/** Combined payroll/PIT reports are separate quarter-by-quarter filings for
+ * every active client, irrespective of their single-tax group. */
+export function combinedReportPeriodsFor(workingYear: number): Period[] {
+  return [
+    { key: `${workingYear}-q1`, label: 'I квартал' },
+    { key: `${workingYear}-half`, label: 'II квартал' },
+    { key: `${workingYear}-9m`, label: 'III квартал' },
+    { key: `${workingYear}-year`, label: 'IV квартал' },
+  ];
 }
 
 function reportRecordKey(clientId: string, realGroup: string, period: string): string {
@@ -45,6 +56,21 @@ export function getDefaultReportDeadline(db: Database, realGroup: string, period
     : db?.settings?.reportDeadlines?.annual?.[periodKey];
   if (configured) return configured;
   return controlDeadline(statutoryReportDeadline(realGroup, periodKey));
+}
+
+/** Statutory deadline: no later than 40 calendar days after each quarter. */
+export function statutoryCombinedReportDeadline(periodKey: string): string {
+  const end = quarterEnd(periodKey);
+  end.setDate(end.getDate() + 40);
+  return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+}
+
+export function getDefaultCombinedReportDeadline(db: Database, periodKey: string): string {
+  return db?.settings?.reportDeadlines?.combined?.[periodKey] || controlDeadline(statutoryCombinedReportDeadline(periodKey));
+}
+
+export function effectiveCombinedReportDeadline(db: Database, periodKey: string, record: ReportRecord): string {
+  return record.deadline || getDefaultCombinedReportDeadline(db, periodKey);
 }
 
 export function effectiveReportDeadline(db: Database, realGroup: string, periodKey: string, record: ReportRecord): string {

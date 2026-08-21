@@ -62,7 +62,7 @@ export function renderIncomes() {
     ? `<div class="table-wrap incomes-matrix"><table class="table ${uiState.incomeGroup === '3' ? 'income-group-3' : 'income-group-12'}"><thead><tr>${headCells}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
     : `<p class="empty">У цій групі ще немає активних ФОП.</p>`;
 
-  return `<div class="toolbar"><p class="note">Дохід за місяць вводьте вручну. Стовпці кварталу/півріччя/9 місяців/року рахуються автоматично. «Залишок ліміту» = ліміт групи (з «Налаштувань») мінус накопичений дохід з початку року.</p></div>
-    <div class="subnav">${groupTabs}</div>
+  return `<div class="toolbar"><p class="note">Дохід за місяць вводьте вручну або імпортуйте з Excel. У файлі: колонка A — ПІБ, B–M — січень–грудень. Стовпці кварталу/півріччя/9 місяців/року рахуються автоматично.</p></div>
+    <div class="subnav income-main-nav"><div>${groupTabs}</div><div class="toolbar-actions"><span class="report-year-label">${workingYear}</span><button class="secondary" data-import-incomes>Імпорт</button><input id="incomeImportFile" type="file" accept=".xlsx,.xls,.csv" hidden></div></div>
     ${body}`;
 }

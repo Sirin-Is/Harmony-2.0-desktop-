@@ -40,15 +40,20 @@ function quarterlyDeadlineRow(taxKey, label, workingYear) {
 }
 
 function reportDeadlineBlock(workingYear) {
-  const { annual, quarterly } = getSettings().reportDeadlines;
+  const { annual, quarterly, combined = {} } = getSettings().reportDeadlines;
   const qCells = SETTINGS_QUARTERS.map((q) => {
     const periodKey = `${workingYear}-${q.key}`;
     const value = quarterly[periodKey] || (workingYear === 2026 ? quarterly[q.key] : '') || '';
     return `<td><input type="date" class="settings-field compact-date" data-scope="report-quarterly" data-period="${periodKey}" value="${escapeHtml(value)}" aria-label="Звіт ${q.label}"></td>`;
   }).join('');
   const qHeads = SETTINGS_QUARTERS.map((q) => `<th>${q.label}</th>`).join('');
+  const combinedCells = SETTINGS_QUARTERS.map((q) => {
+    const periodKey = `${workingYear}-${q.key}`;
+    const value = combined[periodKey] || (workingYear === 2026 ? combined[q.key] : '') || '';
+    return `<td><input type="date" class="settings-field compact-date" data-scope="report-combined" data-period="${periodKey}" value="${escapeHtml(value)}" aria-label="Об’єднаний звіт ${q.label}"></td>`;
+  }).join('');
   return `<div class="panel settings-panel">
-    <h2>Дедлайни звітності</h2>
+    <h2>Дедлайни декларацій і звітів</h2>
     <div class="settings-block">
       <p class="settings-block-label">1-2 групи — раз на рік</p>
       <input type="date" class="settings-field compact-date" data-scope="report-annual" data-period="${workingYear}" value="${escapeHtml(annual[workingYear] || '')}" aria-label="Річний дедлайн звітності 1-2 груп" style="max-width:150px">
@@ -56,6 +61,10 @@ function reportDeadlineBlock(workingYear) {
     <div class="settings-block">
       <p class="settings-block-label">3 група — поквартально</p>
       <div class="table-wrap"><table class="table settings-table"><thead><tr>${qHeads}</tr></thead><tbody><tr>${qCells}</tr></tbody></table></div>
+    </div>
+    <div class="settings-block">
+      <p class="settings-block-label">Об’єднані звіти — поквартально (40 календарних днів після завершення кварталу)</p>
+      <div class="table-wrap"><table class="table settings-table"><thead><tr>${qHeads}</tr></thead><tbody><tr>${combinedCells}</tr></tbody></table></div>
     </div>
   </div>`;
 }
@@ -87,7 +96,7 @@ function conflictContext(item, local, remote, client, changedCount) {
   const period = payload.monthKey || payload.period || keyParts[2] || (['monthly_payments', 'income_records'].includes(item.entityType) ? keyParts[1] : '');
   const section = {
     clients: 'Картки клієнтів → картка ФОП', monthly_payments: 'Оплати', tax_records: 'Податки', income_records: 'Доходи',
-    report_records: 'Звітність', calendar_events: 'Календар → Задачі', hr_orders: 'Кадри → Документи по кадрам',
+    report_records: 'Декларації', calendar_events: 'Календар → Задачі', hr_orders: 'Кадри → Документи по кадрам',
     hr_monthly_documents: 'Кадри → Документи по кадрам', payroll_records: 'Кадри → Виплата зарплати',
     custom_columns: 'Картки клієнтів → колонки таблиці', audit_events: 'Журнал подій', settings: 'Налаштування',
   }[item.entityType] || item.entityType;
@@ -109,8 +118,8 @@ function conflictContext(item, local, remote, client, changedCount) {
 
 function conflictsPanel() {
   const editable = uiState.currentUser?.role !== 'observer';
-  const entityNames = { clients: 'Картка клієнта', custom_columns: 'Додаткова колонка', monthly_payments: 'Оплати', tax_records: 'Податки', income_records: 'Доходи', report_records: 'Звітність', calendar_events: 'Задача календаря', hr_orders: 'Кадровий документ', hr_monthly_documents: 'Кадрові документи', payroll_records: 'Виплата зарплати', audit_events: 'Запис журналу', settings: 'Налаштування' };
-  const fieldNames = { name: 'ПІБ', title: 'Назва', note: 'Примітка', eventDate: 'Дата', eventTime: 'Час', completedAt: 'Виконання', completedDates: 'Дати виконання', subtasks: 'Підзадачі', charged: 'Нарахування', paid: 'Сплата', queuedDate: 'Набрано в банку', paidDate: 'Дата сплати', submittedDate: 'Дата подання', exemption: 'Причина звільнення', status: 'Статус', deadline: 'Дедлайн', paymentDate: 'Дата виплати', paymentType: 'Тип виплати', amount: 'Сума виплати', pdfo: 'ПДФО', vz: 'Військовий збір', payrollDates: 'Зарплата → дати виплат', secondHalf: 'ІІ половина попереднього місяця', firstHalf: 'І половина поточного місяця', monthlyDeadlines: 'Податки → щомісячні дедлайни', quarterlyDeadlines: 'Податки → квартальні дедлайни', reportDeadlines: 'Звітність → дедлайни', group3: '3 група', esv: 'ЄСВ', annual: 'Річна звітність', quarterly: 'Квартальна звітність', appearance: 'Зовнішній вигляд', fieldColor: 'Колір полів', fieldRadius: 'Заокруглення полів', fieldOpacity: 'Прозорість полів', workingYear: 'Робочий рік', minWage: 'МЗП', q1: 'I квартал', half: 'Півріччя', '9m': '9 місяців', year: 'Рік', position: 'Посада', hireDate: 'Дата прийняття', dismissalDate: 'Дата звільнення', subject: 'Суть документа', number: 'Номер документа', effectiveDate: 'Дата початку дії', deliveryStatus: 'Надіслано ФОПу', timesheetStatus: 'Табель робочого часу', payrollStatus: 'Розрахунково-платіжна відомість', cashStatementStatus: 'Відомість на виплату готівки' };
+  const entityNames = { clients: 'Картка клієнта', custom_columns: 'Додаткова колонка', monthly_payments: 'Оплати', tax_records: 'Податки', income_records: 'Доходи', report_records: 'Декларації / об’єднані звіти', calendar_events: 'Задача календаря', hr_orders: 'Кадровий документ', hr_monthly_documents: 'Кадрові документи', payroll_records: 'Виплата зарплати', audit_events: 'Запис журналу', settings: 'Налаштування' };
+  const fieldNames = { name: 'ПІБ', title: 'Назва', note: 'Примітка', eventDate: 'Дата', eventTime: 'Час', completedAt: 'Виконання', completedDates: 'Дати виконання', subtasks: 'Підзадачі', charged: 'Нарахування', paid: 'Сплата', queuedDate: 'Набрано в банку', paidDate: 'Дата сплати', submittedDate: 'Дата подання', exemption: 'Причина звільнення', status: 'Статус', deadline: 'Дедлайн', paymentDate: 'Дата виплати', paymentType: 'Тип виплати', amount: 'Сума виплати', pdfo: 'ПДФО', vz: 'Військовий збір', payrollDates: 'Зарплата → дати виплат', secondHalf: 'ІІ половина попереднього місяця', firstHalf: 'І половина поточного місяця', monthlyDeadlines: 'Податки → щомісячні дедлайни', quarterlyDeadlines: 'Податки → квартальні дедлайни', reportDeadlines: 'Декларації та звіти → дедлайни', group3: '3 група', esv: 'ЄСВ', annual: 'Річні декларації', quarterly: 'Квартальні декларації', combined: 'Об’єднані звіти', appearance: 'Зовнішній вигляд', fieldColor: 'Колір полів', fieldRadius: 'Заокруглення полів', fieldOpacity: 'Прозорість полів', workingYear: 'Робочий рік', minWage: 'МЗП', q1: 'I квартал', half: 'Півріччя', '9m': '9 місяців', year: 'Рік', position: 'Посада', hireDate: 'Дата прийняття', dismissalDate: 'Дата звільнення', subject: 'Суть документа', number: 'Номер документа', effectiveDate: 'Дата початку дії', deliveryStatus: 'Надіслано ФОПу', timesheetStatus: 'Табель робочого часу', payrollStatus: 'Розрахунково-платіжна відомість', cashStatementStatus: 'Відомість на виплату готівки' };
   const parse = (value) => { try { return JSON.parse(value); } catch { return {}; } };
   const displayValue = (value) => {
     if (value === undefined || value === null || value === '') return '—';
@@ -162,7 +171,20 @@ function diagnosticsPanel() {
 
 function settingsTabs() {
   const admin = uiState.currentUser?.role === 'administrator';
-  return `<div class="subnav"><button class="tab ${uiState.settingsSection === 'general' ? 'active' : ''}" data-settings-section="general">Загальні</button><button class="tab ${uiState.settingsSection === 'deadlines' ? 'active' : ''}" data-settings-section="deadlines">Автоматичні дедлайни</button><button class="tab ${uiState.settingsSection === 'dropdowns' ? 'active' : ''}" data-settings-section="dropdowns">Випадаючі списки</button><button class="tab ${uiState.settingsSection === 'appearance' ? 'active' : ''}" data-settings-section="appearance">Зовнішній вигляд</button><button class="tab ${uiState.settingsSection === 'conflicts' ? 'active' : ''}" data-settings-section="conflicts">Конфлікти</button>${admin ? `<button class="tab ${uiState.settingsSection === 'diagnostics' ? 'active' : ''}" data-settings-section="diagnostics">Діагностика</button><button class="tab ${uiState.settingsSection === 'users' ? 'active' : ''}" data-settings-section="users">Користувачі</button>` : ''}</div>`;
+  return `<div class="subnav"><button class="tab ${uiState.settingsSection === 'general' ? 'active' : ''}" data-settings-section="general">Загальні</button><button class="tab ${uiState.settingsSection === 'deadlines' ? 'active' : ''}" data-settings-section="deadlines">Автоматичні дедлайни</button><button class="tab ${uiState.settingsSection === 'dropdowns' ? 'active' : ''}" data-settings-section="dropdowns">Випадаючі списки</button><button class="tab ${uiState.settingsSection === 'appearance' ? 'active' : ''}" data-settings-section="appearance">Зовнішній вигляд</button><button class="tab ${uiState.settingsSection === 'conflicts' ? 'active' : ''}" data-settings-section="conflicts">Конфлікти</button>${admin ? `<button class="tab ${uiState.settingsSection === 'headings' ? 'active' : ''}" data-settings-section="headings">Шапки розділів</button><button class="tab ${uiState.settingsSection === 'diagnostics' ? 'active' : ''}" data-settings-section="diagnostics">Діагностика</button><button class="tab ${uiState.settingsSection === 'users' ? 'active' : ''}" data-settings-section="users">Користувачі</button>` : ''}</div>`;
+}
+
+const SECTION_HEADINGS = [
+  ['overview', 'Огляд', 'Контроль ситуації'], ['dashboard', 'Картки клієнтів', 'Картки клієнтів ФОП'], ['payments', 'Оплати', 'Оплати бухгалтерських послуг'], ['taxes', 'Податки', 'Сплата податків по групах ЄП'], ['incomes', 'Доходи', 'Облік доходів і залишку ліміту'], ['reports', 'Декларації', 'Декларації по доходам'], ['combinedReports', 'Об’єднані звіти', 'Об’єднані звіти'], ['calendar', 'Календар', 'Задачі та автоматичні дедлайни'], ['activities', 'Види діяльності', 'Довідники КВЕД-2010 та NACE 2.1-UA'], ['hr', 'Кадри', 'Наймані працівники та кадрові документи'], ['inactive', 'Неактивні', 'Приховані ФОП'], ['deleted', 'Видалені', 'Кошик — відновлення ФОП'], ['settings', 'Налаштування', 'Налаштування'], ['audit', 'Журнал подій', 'Історія змін і відкат'],
+];
+
+function headingsPanel() {
+  const configured = getSettings().sectionHeadings || {};
+  const rows = SECTION_HEADINGS.map(([key, defaultCrumb, defaultTitle]) => {
+    const value = configured[key] || {};
+    return `<tr><td>${escapeHtml(defaultCrumb)}</td><td><input data-section-heading="${key}" data-heading-part="crumb" value="${escapeHtml(value.crumb || defaultCrumb)}" aria-label="Назва розділу ${escapeHtml(defaultCrumb)}"></td><td><input data-section-heading="${key}" data-heading-part="title" value="${escapeHtml(value.title || defaultTitle)}" aria-label="Пояснення до розділу ${escapeHtml(defaultCrumb)}"></td></tr>`;
+  }).join('');
+  return `<div class="panel settings-panel"><h2>Шапки розділів</h2><p class="note">Змініть назву розділу й текст у великому заголовку. Налаштування застосовуються для всіх користувачів.</p><div class="table-wrap"><table class="table settings-table"><thead><tr><th>Розділ</th><th>Назва</th><th>Заголовок</th></tr></thead><tbody>${rows}</tbody></table></div><div class="toolbar-actions" style="margin-top:12px"><button type="button" class="primary" data-save-section-headings>Зберегти</button></div></div>`;
 }
 
 function dropdownsPanel() {
@@ -196,10 +218,11 @@ export function renderSettings() {
   const tabs = settingsTabs();
   if (uiState.settingsSection === 'appearance') return `${tabs}${appearancePanel}`;
   if (uiState.settingsSection === 'dropdowns') return `${tabs}${dropdownsPanel()}`;
+  if (uiState.settingsSection === 'headings' && uiState.currentUser?.role === 'administrator') return `${tabs}${headingsPanel()}`;
   if (uiState.settingsSection === 'conflicts') return `${tabs}${conflictsPanel()}`;
   if (uiState.settingsSection === 'diagnostics' && uiState.currentUser?.role === 'administrator') return `${tabs}${diagnosticsPanel()}`;
-  if (uiState.settingsSection === 'deadlines') return `${tabs}<div class="toolbar"><p class="note">Ці дати є спільними для всіх розділів Harmony. Зміна тут одразу застосовується до «Податків», «Звітності» та календаря; індивідуальний дедлайн ФОП залишається винятком.</p></div><div class="panel settings-panel"><h2>Податки — ${workingYear}</h2>${monthlyDeadlineBlock(workingYear)}${quarterlyDeadlineRow('group3', 'ЄП + ВЗ, 3 група', workingYear)}${quarterlyDeadlineRow('esv', 'ЄСВ, усі групи', workingYear)}</div>${reportDeadlineBlock(workingYear)}`;
-  return `${tabs}<div class="toolbar"><p class="note">МЗП застосовується до ліміту доходу у формі ФОП і в «Доходах». Дедлайни розраховуються автоматично за правилами ПКУ; у таблицях «Податки» та «Звітність» можна задати виняток лише для конкретного ФОП.</p></div>
+  if (uiState.settingsSection === 'deadlines') return `${tabs}<div class="toolbar"><p class="note">Ці дати є спільними для всіх розділів Harmony. Зміна тут одразу застосовується до «Податків», «Декларацій», «Об’єднаних звітів» та календаря; індивідуальний дедлайн ФОП залишається винятком.</p></div><div class="panel settings-panel"><h2>Податки — ${workingYear}</h2>${monthlyDeadlineBlock(workingYear)}${quarterlyDeadlineRow('group3', 'ЄП + ВЗ, 3 група', workingYear)}${quarterlyDeadlineRow('esv', 'ЄСВ, усі групи', workingYear)}</div>${reportDeadlineBlock(workingYear)}`;
+  return `${tabs}<div class="toolbar"><p class="note">МЗП застосовується до ліміту доходу у формі ФОП і в «Доходах». Дедлайни розраховуються автоматично за правилами ПКУ; у таблицях «Податки», «Декларації» та «Об’єднані звіти» можна задати виняток лише для конкретного ФОП.</p></div>
     <div class="panel settings-panel">
       <h2>Робочий період</h2>
       <label class="settings-mzp">Рік<select id="f_workingYear">${settings.availableWorkingYears.map((year) => `<option value="${year}" ${year === workingYear ? 'selected' : ''}>${year}</option>`).join('')}</select></label>
