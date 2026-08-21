@@ -11,7 +11,7 @@
 // поточний вигляд.
 
 import { escapeHtml, generateId } from './utils';
-import { getClientById, getVisibleClients, getSettings, upsertClient, archiveClient, changeClientGroup } from './state.js';
+import { getClientById, getVisibleClients, getSettings, upsertClient, archiveClient, requestClientDeletion, changeClientGroup } from './state.js';
 import { openAppDialog } from './app-dialog.js';
 import { enhanceDateInputs } from './date-input.js';
 import { showToast } from './toast.js';
@@ -42,7 +42,7 @@ const FIELD_DEFAULTS = {
   prroName: '',
   currency: '', registrationAddress: '',
   kvedMainCode: '', kvedMainName: '', kvedAdditional: [],
-  additionalInfo: '', accounts: [], employees: [],
+  additionalInfo: '', accounts: [], employees: [], formerEmployees: [],
 };
 
 let draft = null;
@@ -392,7 +392,8 @@ function bindEmployees() {
   });
   overlay.querySelectorAll('[data-remove-employee]').forEach((button) => button.addEventListener('click', () => {
     readForm();
-    draft.employees.splice(Number(button.dataset.removeEmployee), 1);
+    const [employee] = draft.employees.splice(Number(button.dataset.removeEmployee), 1);
+    if (employee?.id) draft.formerEmployees = [...(draft.formerEmployees || []).filter((item) => item.id !== employee.id), employee];
     draft.employeesCount = String(draft.employees.length);
     paint();
   }));
@@ -407,7 +408,7 @@ function paint() {
     </div>
     <div class="cc-body">${bodyHtml()}</div>
     <div class="cc-actions">
-      ${!isNew ? `<button type="button" class="secondary" data-cc-hide>🗄 Деактивувати</button>` : ''}
+       ${!isNew ? `<button type="button" class="secondary" data-cc-hide>🗄 Деактивувати</button><button type="button" class="danger" data-cc-delete>Видалити</button>` : ''}
       <span style="flex:1"></span>
       <button type="button" class="secondary" data-cc-close>Скасувати</button>
       <button type="button" class="primary" data-cc-save>Зберегти</button>
@@ -444,6 +445,14 @@ function paint() {
     if (!result) return;
     if (result.name !== draft.name) { showToast('ПІБ не збігається. Деактивацію скасовано.', 'error'); return; }
     archiveClient(draft.id, true, result.reason);
+    close();
+    notifyChanged();
+  });
+  overlay.querySelector('[data-cc-delete]')?.addEventListener('click', async () => {
+    const result = await openAppDialog({ title: 'Перенести до видалених', message: 'ФОП буде перенесено до розділу «Видалені». Вкажіть причину, а потім введіть повний ПІБ вручну для підтвердження.', fields: [{ key: 'reason', label: 'Причина видалення', required: true }, { key: 'name', label: `Повний ПІБ: ${draft.name}`, required: true, manualEntry: true }], confirmText: 'Перенести', danger: true });
+    if (!result) return;
+    if (result.name !== draft.name) { showToast('ПІБ не збігається. Видалення скасовано.', 'error'); return; }
+    requestClientDeletion(draft.id, result.reason);
     close();
     notifyChanged();
   });
@@ -513,6 +522,7 @@ export function openClientCard(id) {
   draft.accounts = (draft.accounts || []).map((a) => ({ ...a }));
   draft.kvedAdditional = additionalKved(draft.kvedAdditional);
   draft.employees = (draft.employees || []).map((employee) => ({ id: employee.id || uid(), ...employee }));
+  draft.formerEmployees = (draft.formerEmployees || []).map((employee) => ({ id: employee.id || uid(), ...employee }));
   draft.hadEmployees = Boolean(draft.hadEmployees || draft.employees.length || Number(draft.employeesCount));
   overlay.classList.add('open');
   paint();

@@ -17,9 +17,23 @@ export function defaultPayrollDates(period) {
   return { secondHalf: previousWorkday(year, month, 7), firstHalf: previousWorkday(year, month, 22) };
 }
 
-// Зарплатний графік є єдиним для всіх місяців: 7 і 22 число.
-// Збережені у старих версіях помісячні винятки навмисно ігноруються.
-export function payrollDatesForPeriod(_settings, period) { return defaultPayrollDates(period); }
+function scheduleDay(settings, key, fallback) {
+  const value = Number(settings?.payrollSchedule?.[key]);
+  return Number.isInteger(value) && value >= 1 && value <= 31 ? value : fallback;
+}
+
+// Графік є спільним для всіх місяців. Користувач може налаштувати саме
+// число місяця; помісячні винятки старих версій навмисно ігноруються.
+export function payrollDatesForPeriod(settings, period) {
+  const match = validPeriod(period);
+  if (!match) return { secondHalf: '', firstHalf: '' };
+  const year = Number(match[1]); const month = Number(match[2]);
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    secondHalf: previousWorkday(year, month, Math.min(lastDay, scheduleDay(settings, 'secondHalfDay', 7))),
+    firstHalf: previousWorkday(year, month, Math.min(lastDay, scheduleDay(settings, 'firstHalfDay', 22))),
+  };
+}
 
 export function payrollPartForPaymentType(paymentType) {
   const label = String(paymentType || '').toLowerCase();

@@ -75,13 +75,26 @@ function batchCodesFromSpreadsheet(rows) {
 }
 
 function refreshBatchKvedCheck() {
-  const group = batchDialog.querySelector('[data-batch-kved-group]').value;
+  const group = batchDialog.querySelector('[data-batch-kved-group]')?.value || '1';
   batchDialog.querySelectorAll('[data-batch-kved-code]').forEach((input) => {
     const index = input.dataset.batchKvedCode;
     const result = input.value.trim() ? validateKved({ group, kvedMainCode: input.value })[0] : null;
     batchDialog.querySelector(`[data-batch-kved-name="${index}"]`).textContent = result?.name || '—';
     batchDialog.querySelector(`[data-batch-kved-status="${index}"]`).innerHTML = result ? `<span class="kved-result ${result.kind}">${escapeHtml(result.label)}</span>` : '—';
   });
+}
+
+function setBatchKvedGroup(group) {
+  if (!['1', '2', '3'].includes(String(group))) return;
+  const field = batchDialog.querySelector('[data-batch-kved-group]');
+  if (!field) return;
+  field.value = String(group);
+  batchDialog.querySelectorAll('[data-batch-kved-group-option]').forEach((button) => {
+    const active = button.dataset.batchKvedGroupOption === String(group);
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  refreshBatchKvedCheck();
 }
 
 function setBatchKvedRows(codes = []) {
@@ -98,7 +111,6 @@ export function openBatchKvedCheck() {
       if (event.target.matches('[data-batch-kved-code]')) refreshBatchKvedCheck();
     });
     batchDialog.addEventListener('change', async (event) => {
-      if (event.target.matches('[data-batch-kved-group]')) refreshBatchKvedCheck();
       if (!event.target.matches('[data-batch-kved-import-file]')) return;
       const file = event.target.files?.[0];
       if (!file) return;
@@ -112,6 +124,8 @@ export function openBatchKvedCheck() {
       } finally { event.target.value = ''; }
     });
     batchDialog.addEventListener('click', (event) => {
+      const groupOption = event.target.closest('[data-batch-kved-group-option]');
+      if (groupOption) setBatchKvedGroup(groupOption.dataset.batchKvedGroupOption);
       if (event.target.closest('[data-import-batch-kved]')) batchDialog.querySelector('[data-batch-kved-import-file]')?.click();
       if (event.target.closest('[data-clear-batch-kved]')) {
         setBatchKvedRows();
@@ -119,6 +133,6 @@ export function openBatchKvedCheck() {
       }
     });
   }
-  batchDialog.innerHTML = `<form method="dialog" class="app-dialog-form"><header><h2>Одночасна перевірка КВЕД</h2><button class="close" type="submit" aria-label="Закрити">×</button></header><div class="batch-kved-controls"><label>Група ЄП<select data-batch-kved-group><option value="1">1 група</option><option value="2">2 група</option><option value="3">3 група</option></select></label><button class="secondary" type="button" data-import-batch-kved>Імпорт</button><input type="file" accept=".xlsx,.xls,.csv" data-batch-kved-import-file hidden></div><div class="kved-result-body"><table class="table batch-kved-table"><thead><tr><th>Код</th><th>Назва</th><th>Статус</th></tr></thead><tbody data-batch-kved-rows>${batchKvedRows()}</tbody></table></div><footer><button class="secondary" type="button" data-clear-batch-kved>Очистити</button><button class="primary" type="submit">Закрити</button></footer></form>`;
+  batchDialog.innerHTML = `<form method="dialog" class="app-dialog-form"><header><h2>Одночасна перевірка КВЕД</h2><button class="close" type="submit" aria-label="Закрити">×</button></header><div class="batch-kved-controls"><div class="batch-kved-group-switches" role="group" aria-label="Група єдиного податку"><button type="button" class="batch-kved-group-switch active" data-batch-kved-group-option="1" aria-pressed="true">1 група</button><button type="button" class="batch-kved-group-switch" data-batch-kved-group-option="2" aria-pressed="false">2 група</button><button type="button" class="batch-kved-group-switch" data-batch-kved-group-option="3" aria-pressed="false">3 група</button></div><input type="hidden" data-batch-kved-group value="1"><span class="batch-kved-divider" aria-hidden="true">|</span><button class="secondary" type="button" data-import-batch-kved>Імпорт</button><input type="file" accept=".xlsx,.xls,.csv" data-batch-kved-import-file hidden></div><div class="kved-result-body"><table class="table batch-kved-table"><thead><tr><th>Код</th><th>Назва</th><th>Статус</th></tr></thead><tbody data-batch-kved-rows>${batchKvedRows()}</tbody></table></div><footer><button class="secondary" type="button" data-clear-batch-kved>Очистити</button><button class="primary" type="submit">Закрити</button></footer></form>`;
   batchDialog.showModal();
 }

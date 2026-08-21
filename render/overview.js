@@ -67,7 +67,7 @@ function combinedReportAlertEntries() {
     let worst = null;
     combinedReportPeriodsFor(year).forEach((period) => {
       const record = getCombinedReportField(item.id, period.key);
-      if (record.notReportable || ['submitted', 'accepted'].includes(record.combinedStatus) || record.submittedDate) return;
+      if (record.notReportable || record.combinedStatus === 'notReportable' || ['submitted', 'accepted'].includes(record.combinedStatus) || record.submittedDate) return;
       const deadline = getEffectiveCombinedReportDeadline(period.key, record);
       const days = daysUntil(deadline);
       if (days === null || days > 5) return;
@@ -187,6 +187,6 @@ export function renderOverview() {
     ${overviewRow('Контроль лімітів', incomeAlerts, 'incomes', 'Жоден ФОП не наблизився до вичерпання ліміту', 'До вичерпання ліміту наближаються: ')}
     ${overviewRow('Декларації по доходам', reportAlerts, 'reports', 'Всі декларації подано', 'Треба подати декларації по ')}
     ${overviewRow('Об’єднані звіти', combinedReportAlerts, 'combinedReports', 'Всі об’єднані звіти подано', 'Треба подати об’єднані звіти по ')}
-    ${overviewRow('Кадрові документи', hrAlerts, 'hr', 'Всі кадрові документи надіслані', 'Треба надіслати кадрові документи ')}
+    ${overviewRow('Кадрові документи', hrAlerts, 'hr', 'Всі кадрові документи цього місяця надіслані', 'Треба надіслати кадрові документи ')}
     ${birthdayRow()}`;
 }

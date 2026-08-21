@@ -644,8 +644,10 @@ export function saveCalendarEvent(fields, id = null) {
 // ---------------------------------------------------------------------------
 export function getEmployeeById(id) {
   for (const client of db.clients || []) {
-    const employee = (client.employees || []).find((item) => item.id === id);
-    if (employee) return { client, employee };
+    for (const collection of ['employees', 'formerEmployees']) {
+      const employee = (client[collection] || []).find((item) => item.id === id);
+      if (employee) return { client, employee, collection };
+    }
   }
   return null;
 }
@@ -656,16 +658,17 @@ export function saveEmployee(fields, id = null) {
   if (!validation.ok || !client) return null;
   const existing = id ? getEmployeeById(id) : null;
   if (existing && existing.client.id !== client.id) return null;
-  const duplicate = (client.employees || []).some((item) => item.id !== id && normalizeEmployeeName(item.name) === normalizeEmployeeName(fields.name));
+  const duplicate = [...(client.employees || []), ...(client.formerEmployees || [])].some((item) => item.id !== id && normalizeEmployeeName(item.name) === normalizeEmployeeName(fields.name));
   if (duplicate) return null;
   const beforeClient = cloneValue(client);
   const beforeOrders = new Map((db.hrOrders || []).map((item) => [item.id, cloneValue(item)]));
   const beforePayroll = new Map((db.payrollRecords || []).map((item) => [item.id, cloneValue(item)]));
   const employee = { ...(existing?.employee || {}), id: id || generateId(), name: String(fields.name).trim(), position: String(fields.position).trim(), hireDate: fields.hireDate, dismissalDate: fields.dismissalDate || '', salaryPaymentMethod: fields.salaryPaymentMethod === 'Готівка' ? 'Готівка' : 'Безготівкою', esvRate: String(fields.esvRate) === '8.41' ? '8.41' : '22' };
-  client.employees ||= [];
-  const index = client.employees.findIndex((item) => item.id === employee.id);
-  if (index >= 0) client.employees[index] = employee;
-  else client.employees.push(employee);
+  const collection = existing?.collection || 'employees';
+  client[collection] ||= [];
+  const index = client[collection].findIndex((item) => item.id === employee.id);
+  if (index >= 0) client[collection][index] = employee;
+  else client[collection].push(employee);
   client.employeesCount = String(client.employees.length);
   client.hadEmployees = true;
   (db.hrOrders || []).forEach((order) => {
@@ -800,6 +803,25 @@ export function setPayrollField(id, field, value) {
   affected.forEach((item) => { item[field] = field === 'paymentDate' || field === 'status' ? value : formatted; });
   saveTargetedChanges(changes, 'Змінено запис виплати зарплати', 'Зарплата');
   return true;
+}
+
+/** Applies pasted payroll amounts atomically, so one spreadsheet row is one local save. */
+export function setPayrollFields(id, values) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return null; }
+  const record = db.payrollRecords.find((item) => item.id === id);
+  const allowed = ['amount', 'pdfo', 'vz', 'esv'];
+  const entries = Object.entries(values || {}).filter(([field]) => allowed.includes(field));
+  if (!record || entries.length === 0) return null;
+  const normalized = entries.map(([field, value]) => [field, normalizeNonNegativeAmount(value)]);
+  if (normalized.some(([, amount]) => !amount.ok)) return null;
+  const formatted = Object.fromEntries(normalized.map(([field, amount]) => [field, amount.value ? new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(amount.value)).replace(/\u00a0/g, ' ') : '']));
+  const changes = Object.entries(formatted).map(([field, value]) => ({
+    path: ['payrollRecords', record.id, field], clientId: record.clientId,
+    before: cloneValue(record[field]), beforeExisted: Object.prototype.hasOwnProperty.call(record, field), after: value, afterExisted: true,
+  }));
+  Object.assign(record, formatted);
+  saveTargetedChanges(changes, 'Вставлено суми виплати зарплати', 'Зарплата');
+  return formatted;
 }
 
 export function setPayrollPaymentType(id, paymentType) {
@@ -1144,6 +1166,14 @@ export function setMinWage(value) {
   const normalized = amount.ok ? Number(amount.value) : NaN;
   if (!Number.isFinite(normalized) || normalized <= 0) return false;
   changeSetting(['minWage'], normalized, 'Змінено мінімальну заробітну плату');
+  return true;
+}
+
+export function setPayrollScheduleDay(part, value) {
+  if (!['secondHalfDay', 'firstHalfDay'].includes(part)) return false;
+  const day = Number(value);
+  if (!Number.isInteger(day) || day < 1 || day > 31) return false;
+  changeSetting(['payrollSchedule', part], day, 'Змінено день виплати зарплати');
   return true;
 }
 

@@ -159,16 +159,17 @@ test('зарплатний графік використовує 7/22 і пер�
   assert.deepEqual(defaultPayrollDates('2026-11'), { secondHalf: '2026-11-06', firstHalf: '2026-11-20' });
   const settings = { payrollDates: { '2026-08': { secondHalf: '2026-08-05', firstHalf: '2026-08-19' } } };
   assert.deepEqual(payrollDatesForPeriod(settings, '2026-08'), { secondHalf: '2026-08-07', firstHalf: '2026-08-21' });
+  assert.deepEqual(payrollDatesForPeriod({ payrollSchedule: { secondHalfDay: 6, firstHalfDay: 20 } }, '2026-08'), { secondHalf: '2026-08-06', firstHalf: '2026-08-20' });
   assert.equal(payrollDateForPaymentType(settings, '2026-08', 'Виплата ЗП за другу половину липня'), '2026-08-07');
   assert.equal(payrollDateForPaymentType(settings, '2026-08', 'Виплата ЗП за першу половину серпня'), '2026-08-21');
   assert.equal(payrollDateForPaymentType(settings, '2026-08', 'Лікарняні'), '');
 });
 
-test('налаштування зарплати не містять помісячних полів, а палітра читає лише обраний колір', () => {
+test('налаштування зарплати не містять помісячних полів, але дозволяють змінити спільні числа графіка', () => {
   const settingsSource = readFileSync(new URL('../render/settings.js', import.meta.url), 'utf8');
   const bootstrapSource = readFileSync(new URL('../bootstrap.js', import.meta.url), 'utf8');
   assert.doesNotMatch(settingsSource, /data-scope="payroll"/);
-  assert.match(settingsSource, /7 число[\s\S]*22 число/);
+  assert.match(settingsSource, /data-payroll-schedule="secondHalfDay"[\s\S]*data-payroll-schedule="firstHalfDay"/);
   assert.match(bootstrapSource, /field\.type !== 'radio' \|\| field\.checked/);
   assert.match(bootstrapSource, /Приклад довідника КВЕД\/NACE успішно завантажено/);
   assert.match(bootstrapSource, /Не вдалося завантажити приклад довідника/);

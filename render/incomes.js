@@ -33,7 +33,8 @@ export function renderIncomes() {
   const rows = clients.map((item) => {
     const ytd = incomeSum(item.id, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], workingYear);
     const monthCells = Array.from({ length: 12 }, (_, index) => cell(item, index)).join('');
-    return `<tr data-row-id="${escapeHtml(item.id)}"><td class="fop-name"><strong>${escapeHtml(shortClientName(item.name))}</strong></td><td class="right income-limit-cell">${remainingLimitLabel(item.group, ytd)}</td>${monthCells}</tr>`;
+    const limit = groupLimitAmount(item.group, getSettings().minWage);
+    return `<tr data-row-id="${escapeHtml(item.id)}" data-income-limit="${limit || ''}"><td class="fop-name"><strong>${escapeHtml(shortClientName(item.name))}</strong></td><td class="right income-limit-cell">${remainingLimitLabel(item.group, ytd)}</td>${monthCells}</tr>`;
   });
   const headCells = headings.map((h, index) => `<th class="${index === 0 ? 'fop-name' : index === 1 ? 'income-limit-cell' : ''}">${h}</th>`).join('');
   const body = clients.length

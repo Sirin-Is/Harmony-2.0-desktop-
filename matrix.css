@@ -1,10 +1,13 @@
-/* Payments matrix (Оплати): sticky ПІБ/Борг columns, quarterly month grid, editable cells. */
+/* Payments matrix (Оплати): sticky ПІБ/Борг columns, yearly month grid, editable cells. */
 .payments-matrix th { text-align: center; padding: 6px 6px; }
 .payments-matrix .fop-name { position: sticky; left: 0; background: var(--bg); width: 170px; min-width: 0; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; z-index: 2; }
 .payments-matrix .debt { position: sticky; left: 170px; background: var(--bg); width: 115px; min-width: 0; max-width: 115px; font-weight: 700; z-index: 2; box-shadow: 4px 0 6px -4px rgba(23, 32, 51, .18); }
 .payments-matrix thead .fop-name, .payments-matrix thead .debt { z-index: 3; }
 .payments-matrix .month-head { border-left: 1px solid var(--line); }
-.payments-matrix .table { min-width: 760px; }
+.payments-matrix .table { min-width: 1320px; }
+.payments-matrix th, .payments-matrix td { padding-left: 3px; padding-right: 3px; }
+.payments-matrix .month-value { width: 66px; padding-left: 3px; padding-right: 3px; }
+.payments-matrix .month-paid-cell { width: 23px; min-width: 23px; text-align: center; }
 .month-value { width: 68px; border: 1px solid #d7dde5; border-radius: 5px; padding: 5px; text-align: right; font: 12px inherit; }
 .month-value:focus { outline: 2px solid #83d5bd; border-color: #176b58; }
 .column-control { border: 0; background: transparent; color: #667085; cursor: pointer; padding: 0 2px; font-size: 11px; }

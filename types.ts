@@ -60,6 +60,7 @@ export interface Client {
   prro?: string;
   employeesCount?: string | number;
   employees?: Employee[];
+  formerEmployees?: Employee[];
   hadEmployees?: boolean;
   kepIssuer?: string;
   kepExpiry?: string;
@@ -225,7 +226,8 @@ export interface Settings {
   quarterlyDeadlines: { group3: Record<string, string>; esv: Record<string, string> };
   reportDeadlines: { annual: Record<string, string>; quarterly: Record<string, string>; combined: Record<string, string> };
   payrollDates?: Record<string, { secondHalf?: string; firstHalf?: string }>;
-  appearance?: { fieldColor: string; fieldRadius: number; fieldOpacity: number; fieldBorderOpacity: number };
+  payrollSchedule?: { secondHalfDay?: number; firstHalfDay?: number };
+  appearance?: { fieldColor: string; fieldRadius: number; fieldOpacity: number; fieldBorderOpacity: number; clientCardRadius?: number; clientCardOpacity?: number; clientCardBorderOpacity?: number };
   activityReferences?: { kved?: string[][]; nace?: string[][] };
   dropdownOptions?: { prro?: string[]; currency?: string[]; kepIssuer?: string[] };
   sectionHeadings?: Record<string, { crumb?: string; title?: string }>;

@@ -70,9 +70,12 @@ function reportDeadlineBlock(workingYear) {
 }
 
 function payrollDatesPanel() {
+  const schedule = getSettings().payrollSchedule || {};
+  const secondHalfDay = Number(schedule.secondHalfDay) || 7;
+  const firstHalfDay = Number(schedule.firstHalfDay) || 22;
   return `<div class="panel settings-panel"><h2>Дати виплати зарплати</h2>
-    <div class="payroll-schedule-summary"><div><strong>7 число</strong><span>за другу половину попереднього місяця</span></div><div><strong>22 число</strong><span>за першу половину поточного місяця</span></div></div>
-    <p class="note">Графік діє автоматично для кожного місяця. Якщо 7 або 22 число припадає на суботу чи неділю, виплата переноситься на попередній робочий день. У календарі такий перенос показується одразу правильною датою, без стрілки.</p></div>`;
+    <div class="payroll-schedule-summary"><label><input class="payroll-schedule-day" type="number" min="1" max="31" step="1" data-payroll-schedule="secondHalfDay" value="${secondHalfDay}" aria-label="День виплати за другу половину попереднього місяця"><strong>число</strong><span>за другу половину попереднього місяця</span></label><label><input class="payroll-schedule-day" type="number" min="1" max="31" step="1" data-payroll-schedule="firstHalfDay" value="${firstHalfDay}" aria-label="День виплати за першу половину поточного місяця"><strong>число</strong><span>за першу половину поточного місяця</span></label></div>
+    <p class="note">Графік діє автоматично для кожного місяця. Якщо вказане число припадає на суботу чи неділю, виплата переноситься на попередній робочий день. У календарі такий перенос показується одразу правильною датою, без стрілки.</p></div>`;
 }
 
 function usersPanel() {
@@ -203,6 +206,7 @@ export function renderSettings() {
   const settings = getSettings();
   const workingYear = settings.workingYear;
   const appearance = settings.appearance || { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0, fieldBorderOpacity: 50 };
+  const clientCardAppearance = { radius: Number(appearance.clientCardRadius ?? appearance.fieldRadius), opacity: Number(appearance.clientCardOpacity ?? appearance.fieldOpacity), borderOpacity: Number(appearance.clientCardBorderOpacity ?? appearance.fieldBorderOpacity ?? 50) };
   const rollbackSnapshotBytes = getAuditOperations().reduce((sum, item) => sum + (item.beforeSnapshot ? JSON.stringify(item.beforeSnapshot).length : 0), 0);
   const rollbackSnapshotSize = rollbackSnapshotBytes < 1024 * 1024
     ? `${Math.round(rollbackSnapshotBytes / 1024)} КБ`
@@ -211,8 +215,9 @@ export function renderSettings() {
   const appearancePanel = `<div class="panel settings-panel appearance-panel"><h2>Зовнішній вигляд</h2>
     <label>Колір полів<span class="appearance-swatches">${colors.map((color) => `<input type="radio" name="fieldColor" data-appearance="fieldColor" value="${color}" ${appearance.fieldColor === color ? 'checked' : ''} style="--swatch:${color}" aria-label="${color}">`).join('')}</span></label>
     <label>Заокруглення кутів<select data-appearance="fieldRadius">${[2, 4, 6, 9, 14].map((value) => `<option value="${value}" ${Number(appearance.fieldRadius) === value ? 'selected' : ''}>${value === 2 ? 'Майже прямі' : value === 14 ? 'Сильно заокруглені' : `${value}px`}</option>`).join('')}</select></label>
-    <label>Прозорість<select data-appearance="fieldOpacity">${[0, 20, 40, 60, 80, 100].map((value) => `<option value="${value}" ${Number(appearance.fieldOpacity) === value ? 'selected' : ''}>${value === 0 ? '0% — непрозорі' : value === 100 ? '100% — повністю прозорі' : `${value}%`}</option>`).join('')}</select></label>
-    <label>Прозорість рамок<select data-appearance="fieldBorderOpacity">${[0, 20, 40, 60, 80, 100].map((value) => `<option value="${value}" ${Number(appearance.fieldBorderOpacity ?? 50) === value ? 'selected' : ''}>${value === 0 ? '0% — без рамок' : value === 100 ? '100% — чорні' : `${value}%`}</option>`).join('')}</select></label>
+    <label>Прозорість полів<select data-appearance="fieldOpacity">${[0, 20, 40, 60, 80, 100].map((value) => `<option value="${value}" ${Number(appearance.fieldOpacity) === value ? 'selected' : ''}>${value === 0 ? '0% — непрозорі' : value === 100 ? '100% — повністю прозорі' : `${value}%`}</option>`).join('')}</select></label>
+    <label>Прозорість рамок<select data-appearance="fieldBorderOpacity">${[0, 20, 40, 60, 80, 100].map((value) => `<option value="${value}" ${Number(appearance.fieldBorderOpacity ?? 50) === value ? 'selected' : ''}>${value === 0 ? '0% — чорні' : value === 100 ? '100% — без рамок' : `${value}%`}</option>`).join('')}</select></label>
+    <div class="appearance-client-card-settings"><h3>Картки клієнтів</h3><label>Заокруглення кутів<select data-appearance="clientCardRadius">${[2, 4, 6, 9, 14].map((value) => `<option value="${value}" ${clientCardAppearance.radius === value ? 'selected' : ''}>${value === 2 ? 'Майже прямі' : value === 14 ? 'Сильно заокруглені' : `${value}px`}</option>`).join('')}</select></label><label>Прозорість полів<select data-appearance="clientCardOpacity">${[0, 20, 40, 60, 80, 100].map((value) => `<option value="${value}" ${clientCardAppearance.opacity === value ? 'selected' : ''}>${value === 0 ? '0% — непрозорі' : value === 100 ? '100% — повністю прозорі' : `${value}%`}</option>`).join('')}</select></label><label>Прозорість рамок<select data-appearance="clientCardBorderOpacity">${[0, 20, 40, 60, 80, 100].map((value) => `<option value="${value}" ${clientCardAppearance.borderOpacity === value ? 'selected' : ''}>${value === 0 ? '0% — чорні' : value === 100 ? '100% — без рамок' : `${value}%`}</option>`).join('')}</select></label></div>
     <div class="appearance-preview" id="appearancePreview"><span>Зразок поля</span><input type="text" value="Текстове поле" aria-label="Зразок текстового поля"><select aria-label="Зразок списку"><option>Випадаючий список</option></select></div>
     <div class="toolbar-actions"><button type="button" class="primary" data-save-appearance>Зберегти</button></div>
     <p class="note">До збереження зміни видно лише у зразку. Після збереження вони застосуються до всіх текстових полів, дат і списків.</p></div>`;
@@ -234,7 +239,7 @@ export function renderSettings() {
     ${payrollDatesPanel()}
     <div class="panel settings-panel">
       <h2>Мінімальна заробітна плата (МЗП) — ${workingYear}</h2>
-      <label class="settings-mzp">грн/міс<input id="f_minWage" type="number" min="1" step="1" value="${settings.minWage}"></label>
+      <label class="settings-mzp">грн/міс<input id="f_minWage" type="text" inputmode="numeric" value="${settings.minWage}"></label>
     </div>
     <div class="panel settings-panel">
       <h2>Видалені</h2>

@@ -6,7 +6,7 @@
 .cc-overlay { position: fixed; inset: 0; background: rgba(8,18,24,.55); z-index: 5000; display: none; padding: 24px; overflow: auto; }
 .cc-overlay.open { display: flex; align-items: flex-start; justify-content: center; }
 
-.cc-window { width: min(980px, 100%); background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(16,24,40,.28); overflow: hidden; }
+.cc-window { --field-opacity: var(--client-card-field-opacity); --field-border-opacity: var(--client-card-field-border-opacity); --field-outline-opacity: var(--client-card-field-outline-opacity); --field-radius: var(--client-card-field-radius); width: min(980px, 100%); background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(16,24,40,.28); overflow: hidden; }
 
 .cc-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid #e6eaf0; background: #fafcfb; }
 .cc-title { font-size: 18px; font-weight: 800; color: #176b58; }

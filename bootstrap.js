@@ -6,22 +6,22 @@
 // Бізнес-логіка сюди НЕ переноситься — лише виклики вже готових функцій
 // з state.js / *-model.js / render/*.js.
 
-import { $, todayIso } from './utils';
+import { $, todayIso, moneyFormat } from './utils';
 import { uiState } from './ui-state.js';
 import {
   db, initDatabase, lockDatabase, refreshDatabaseFromSync, prepareDatabaseSwitch, undoLastAction, setAuditActor, setAccessRole, getClientById, deleteClientPermanently, purgeDeletedClients, archiveClient, requestClientDeletion, setClientLifecycle, reorderClients, setCustomFieldValue, replaceDatabase,
   setMonthlyPaymentField, setMonthlyPaymentPaidStatus, autofillMonthlyCharges, setTaxField, setReportField, setCombinedReportField, setIncomeValue, importIncomeRows, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline, getEffectiveCombinedReportDeadline,
-  setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, setSectionHeadings, setDropdownOptions, setActivityReference, getSettings,
+  setWorkingYear, createWorkingYear, setMinWage, setPayrollScheduleDay, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, setSectionHeadings, setDropdownOptions, setActivityReference, getSettings,
   deleteCustomColumn, getCustomColumns,
   copyTaxPeriodForward, getVisibleClients, getClientsByTaxTab, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, canRollbackChanges, rollbackChangesAfter, rollbackRetentionStart, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField, setPayrollPaymentType,
-  getDatabaseRelationshipIssues,
+  getDatabaseRelationshipIssues, setPayrollFields,
 } from './state.js';
 import { TAX_TYPES, previousPeriodKey, taxPeriodsFor, statusPillHtml, daysUntilLabel } from './tax-model.ts';
 import { reportStatusPillHtml, reportDaysUntilLabel } from './report-model.ts';
 import { setupTopScrollbars, bindTopScrollbarResize } from './render/layout.js';
 import { renderOverview } from './render/overview.js';
 import { renderDashboard } from './render/dashboard.js';
-import { renderPayments, positionPaymentsTable } from './render/payments.js';
+import { renderPayments } from './render/payments.js';
 import { renderTaxes } from './render/taxes.js';
 import { renderIncomes } from './render/incomes.js';
 import { renderReports } from './render/reports.js';
@@ -52,6 +52,7 @@ import { getLocalStorageProtection } from './local-storage-protection.ts';
 import { assertBackupFileSize, createEncryptedBackup, decryptBackup, isEncryptedBackup, validateBackupDatabase } from './backup-crypto.js';
 import { payrollPaymentTypes, payrollDateForPaymentType } from './payroll-model.js';
 import { readSpreadsheetRows, readSpreadsheetMatrix } from './spreadsheet-security.js';
+import { formatEditableAmount, normalizeNonNegativeAmount } from './money-validation.js';
 
 const TITLES = {
   overview: ['Огляд', 'Контроль ситуації'],
@@ -257,8 +258,8 @@ export function render({ preserveViewport = true } = {}) {
   requestAnimationFrame(() => {
     let movedToHighlight = false;
     setupTopScrollbars();
-    if (uiState.view === 'payments') positionPaymentsTable();
     if (uiState.view === 'dashboard') positionDashboardFilterMenu();
+    if (uiState.view === 'hr' && uiState.hrSection === 'employees') positionHrEmployeeFilterMenu();
     if (uiState.view === 'calendar') drawCalendarDeadlineTransfers();
     if (focusHeadingAfterRender) {
       focusHeadingAfterRender = false;
@@ -292,13 +293,23 @@ function positionDashboardFilterMenu() {
   menu.style.top = `${Math.min(rect.bottom + 5, window.innerHeight - menu.offsetHeight - 8)}px`;
 }
 
+function positionHrEmployeeFilterMenu() {
+  const menu = document.querySelector('[data-hr-employee-filter-menu]');
+  const trigger = document.querySelector('[data-hr-employee-filter]');
+  if (!menu || !trigger) return;
+  const rect = trigger.getBoundingClientRect();
+  const width = menu.offsetWidth || 230;
+  menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))}px`;
+  menu.style.top = `${Math.min(rect.bottom + 5, window.innerHeight - menu.offsetHeight - 8)}px`;
+}
+
 function drawCalendarDeadlineTransfers() {
   const grid = document.querySelector('.calendar-grid');
   const layer = grid?.querySelector('.calendar-transfer-layer');
   if (!grid || !layer) return;
   const gridRect = grid.getBoundingClientRect();
   layer.setAttribute('viewBox', `0 0 ${gridRect.width} ${gridRect.height}`);
-  layer.innerHTML = '<defs><marker id="deadline-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z"></path></marker></defs>';
+  layer.innerHTML = '<defs><marker id="deadline-arrow" viewBox="0 0 12 12" markerWidth="12" markerHeight="12" refX="10.5" refY="6" orient="auto"><path d="M1.5,1.5 L10.5,6 L1.5,10.5"></path></marker></defs>';
   const ids = new Set([...grid.querySelectorAll('[data-transfer-role="statutory"]')].map((item) => item.dataset.transferId));
   ids.forEach((id) => {
     const statutory = grid.querySelector(`[data-transfer-id="${CSS.escape(id)}"][data-transfer-role="statutory"]`)?.closest('.calendar-cell');
@@ -333,9 +344,16 @@ function applyAppearance(appearance = getSettings()?.appearance || { fieldColor:
   target.style.setProperty('--field-rgb', rgb);
   target.style.setProperty('--bg', `rgb(${pageRgb})`);
   target.style.setProperty('--field-opacity', String(1 - Number(appearance.fieldOpacity ?? 0) / 100));
-  target.style.setProperty('--field-border-opacity', String(Number(appearance.fieldBorderOpacity ?? 50) / 100));
-  target.style.setProperty('--field-outline-opacity', String(Number(appearance.fieldBorderOpacity ?? 50) / 180));
+  const borderOpacity = Math.max(0, Math.min(100, Number(appearance.fieldBorderOpacity ?? 50)));
+  target.style.setProperty('--field-border-opacity', String(1 - borderOpacity / 100));
+  target.style.setProperty('--field-outline-opacity', String((100 - borderOpacity) / 180));
   target.style.setProperty('--field-radius', `${Number(appearance.fieldRadius ?? 5)}px`);
+  const cardOpacity = Math.max(0, Math.min(100, Number(appearance.clientCardOpacity ?? appearance.fieldOpacity ?? 0)));
+  const cardBorderOpacity = Math.max(0, Math.min(100, Number(appearance.clientCardBorderOpacity ?? appearance.fieldBorderOpacity ?? 50)));
+  target.style.setProperty('--client-card-field-opacity', String(1 - cardOpacity / 100));
+  target.style.setProperty('--client-card-field-border-opacity', String(1 - cardBorderOpacity / 100));
+  target.style.setProperty('--client-card-field-outline-opacity', String((100 - cardBorderOpacity) / 180));
+  target.style.setProperty('--client-card-field-radius', `${Number(appearance.clientCardRadius ?? appearance.fieldRadius ?? 5)}px`);
 }
 
 function setView(view) {
@@ -480,7 +498,7 @@ function bindCurrentView() {
     uiState.calendarTaskDate = event.target.value;
     render();
   });
-  document.querySelectorAll('[data-hr-section]').forEach((button) => button.addEventListener('click', () => { uiState.hrSection = button.dataset.hrSection; render(); }));
+  document.querySelectorAll('[data-hr-section]').forEach((button) => button.addEventListener('click', () => { uiState.hrSection = button.dataset.hrSection; uiState.hrEmployeeFilterOpen = false; render(); }));
   document.querySelector('[data-add-employee]')?.addEventListener('click', () => openEmployeeCard());
   document.querySelectorAll('[data-open-employee]').forEach((button) => button.addEventListener('click', () => openEmployeeCard(button.dataset.openEmployee)));
   document.querySelector('[data-hr-doc-prev]')?.addEventListener('click', () => { if (uiState.hrDocumentsMonth > 1) { uiState.hrDocumentsMonth -= 1; render(); } });
@@ -569,6 +587,17 @@ function bindCurrentView() {
     if (!setPayrollField(field.dataset.payrollId, field.dataset.payrollField, value)) {
       showToast(invalidAmountMessage, 'error');
     }
+  }));
+  document.querySelectorAll('.payroll-field[data-payroll-field="amount"]').forEach((field) => field.addEventListener('paste', (event) => {
+    const firstRow = String(event.clipboardData?.getData('text') || '').split(/\r?\n/)[0];
+    const values = firstRow.split('\t').map((value) => value.trim());
+    if (values.length !== 4) return;
+    event.preventDefault();
+    const saved = setPayrollFields(field.dataset.payrollId, Object.fromEntries(['amount', 'pdfo', 'vz', 'esv'].map((name, index) => [name, values[index]])));
+    if (!saved) { showToast(invalidAmountMessage, 'error'); return; }
+    document.querySelectorAll('.payroll-field').forEach((input) => {
+      if (input.dataset.payrollId === field.dataset.payrollId && Object.prototype.hasOwnProperty.call(saved, input.dataset.payrollField)) input.value = formatEditableAmount(saved[input.dataset.payrollField]);
+    });
   }));
   document.querySelectorAll('[data-payroll-type-id]').forEach((field) => field.addEventListener('change', () => {
     if (!setPayrollPaymentType(field.dataset.payrollTypeId, field.value)) showToast('Не вдалося змінити тип: у цій виплаті вже є такий працівник з вибраним типом.', 'error');
@@ -812,9 +841,28 @@ function bindCurrentView() {
   }));
 
   // --- Доходи ---
-  document.querySelectorAll('.income-value').forEach((field) => field.addEventListener('change', () => {
-    if (!setIncomeValue(field.dataset.client, field.dataset.month, field.value)) showToast(invalidAmountMessage, 'error');
-  }));
+  const refreshIncomeLimit = (field) => {
+    const row = field.closest('tr[data-income-limit]');
+    const limitCell = row?.querySelector('.income-limit-cell');
+    if (!row || !limitCell) return;
+    const limit = Number(row.dataset.incomeLimit);
+    if (!limit) { limitCell.textContent = '—'; return; }
+    const values = [...row.querySelectorAll('.income-value')].map((input) => normalizeNonNegativeAmount(input.value));
+    if (values.some((value) => !value.ok)) return;
+    const remaining = limit - values.reduce((sum, value) => sum + Number(value.value || 0), 0);
+    const pill = document.createElement('span');
+    pill.className = `pill ${remaining < 0 ? 'late' : remaining < limit * .1 ? 'warn' : 'ok'}`;
+    pill.textContent = moneyFormat.format(remaining);
+    limitCell.replaceChildren(pill);
+  };
+  document.querySelectorAll('.income-value').forEach((field) => {
+    field.addEventListener('input', () => refreshIncomeLimit(field));
+    field.addEventListener('change', () => {
+      if (!setIncomeValue(field.dataset.client, field.dataset.month, field.value)) { showToast(invalidAmountMessage, 'error'); return; }
+      field.value = formatEditableAmount(field.value);
+      refreshIncomeLimit(field);
+    });
+  });
   $('[data-import-incomes]')?.addEventListener('click', () => $('#incomeImportFile')?.click());
   $('#incomeImportFile')?.addEventListener('change', async (event) => {
     const file = event.target.files[0]; event.target.value = '';
@@ -834,7 +882,6 @@ function bindCurrentView() {
   });
 
   // --- Оплати ---
-  document.querySelectorAll('[data-payments-quarter]').forEach((button) => button.addEventListener('click', () => { uiState.paymentsQuarter = Number(button.dataset.paymentsQuarter); render(); }));
   document.querySelectorAll('.month-value').forEach((field) => field.addEventListener('change', () => {
     if (!setMonthlyPaymentField(field.dataset.client, field.dataset.month, field.dataset.type, field.value)) showToast(invalidAmountMessage, 'error');
   }));
@@ -919,6 +966,10 @@ function bindCurrentView() {
     if (!setMinWage($('#f_minWage').value)) showToast('МЗП має бути додатним числом.', 'error');
     render();
   });
+  document.querySelectorAll('[data-payroll-schedule]').forEach((field) => field.addEventListener('change', () => {
+    if (!setPayrollScheduleDay(field.dataset.payrollSchedule, field.value)) showToast('Вкажіть число від 1 до 31.', 'error');
+    render();
+  }));
   document.querySelectorAll('.settings-field').forEach((field) => field.addEventListener('change', () => {
     let saved = false;
     if (field.dataset.scope === 'monthly') saved = setMonthlyTaxDeadline(field.dataset.period, field.value);
@@ -1148,6 +1199,25 @@ function bindCurrentView() {
     if (selected.length === all.length) delete uiState.dashboardFilters[key];
     else uiState.dashboardFilters[key] = selected;
     uiState.dashboardFilterOpen = null;
+    render();
+  });
+  $('[data-hr-employee-filter]')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    uiState.hrEmployeeFilterOpen = !uiState.hrEmployeeFilterOpen;
+    render();
+  });
+  $('[data-close-hr-employee-filter]')?.addEventListener('click', () => {
+    uiState.hrEmployeeFilterOpen = false;
+    render();
+  });
+  $('[data-hr-employee-filter-select-all]')?.addEventListener('change', (event) => {
+    document.querySelectorAll('[data-hr-employee-filter-option]').forEach((field) => { field.checked = event.target.checked; });
+  });
+  $('[data-apply-hr-employee-filter]')?.addEventListener('click', () => {
+    const all = [...document.querySelectorAll('[data-hr-employee-filter-option]')];
+    const selected = all.filter((field) => field.checked).map((field) => field.value);
+    uiState.hrEmployeeClientFilter = selected.length === all.length ? null : selected;
+    uiState.hrEmployeeFilterOpen = false;
     render();
   });
   $('[data-import-clients]')?.addEventListener('click', () => $('#importFile')?.click());

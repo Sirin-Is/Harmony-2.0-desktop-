@@ -2,7 +2,7 @@
 // Transient "where am I looking" state. Deliberately separate from
 // state.js: this is UI navigation, not persisted business data.
 //
-// Етап 2: додано reportGroup/reportPeriod/incomeGroup/paymentsQuarter/
+// Етап 2: додано reportGroup/reportPeriod/incomeGroup/
 // pendingHighlightClientId — усі вони вже використовувались в app.js,
 // але були відсутні тут.
 
@@ -14,7 +14,6 @@ export const uiState = {
   reportPeriod: null,
   combinedReportPeriod: null,
   incomeGroup: '12',
-  paymentsQuarter: null,
   dashboardFilters: {},
   dashboardSearch: '',
   dashboardFilterOpen: null,
@@ -26,6 +25,8 @@ export const uiState = {
   calendarSection: 'calendar',
   calendarTaskDate: null,
   hrSection: 'employees',
+  hrEmployeeClientFilter: null,
+  hrEmployeeFilterOpen: false,
   hrDocumentsMonth: null,
   payrollMonth: null,
   activitiesSection: 'kved',
