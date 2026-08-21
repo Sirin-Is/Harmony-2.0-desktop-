@@ -5,13 +5,13 @@
 // app.js більше не підключений, він працює через state.js — так само,
 // як і решта UI-шару.
 //
-// Після збереження/приховання/видалення файл не імпортує bootstrap.js
+// Після збереження або приховування файл не імпортує bootstrap.js
 // напряму (це створило б циклічний імпорт), а надсилає подію
 // 'harmony:changed', на яку bootstrap.js підписаний і перемальовує
 // поточний вигляд.
 
 import { escapeHtml, generateId } from './utils';
-import { getClientById, getVisibleClients, getSettings, upsertClient, archiveClient, requestClientDeletion, changeClientGroup } from './state.js';
+import { getClientById, getVisibleClients, getSettings, upsertClient, archiveClient, changeClientGroup } from './state.js';
 import { openAppDialog } from './app-dialog.js';
 import { enhanceDateInputs } from './date-input.js';
 import { showToast } from './toast.js';
@@ -408,7 +408,7 @@ function paint() {
     </div>
     <div class="cc-body">${bodyHtml()}</div>
     <div class="cc-actions">
-       ${!isNew ? `<button type="button" class="secondary" data-cc-hide>🗄 Деактивувати</button><button type="button" class="danger" data-cc-delete>Видалити</button>` : ''}
+       ${!isNew ? `<button type="button" class="secondary" data-cc-hide>🗄 Приховати</button>` : ''}
       <span style="flex:1"></span>
       <button type="button" class="secondary" data-cc-close>Скасувати</button>
       <button type="button" class="primary" data-cc-save>Зберегти</button>
@@ -441,18 +441,10 @@ function paint() {
   overlay.querySelectorAll('[data-cc-close]').forEach((b) => b.addEventListener('click', close));
   overlay.querySelector('[data-cc-save]')?.addEventListener('click', save);
   overlay.querySelector('[data-cc-hide]')?.addEventListener('click', async () => {
-    const result = await openAppDialog({ title: 'Деактивація ФОП', message: 'Вкажіть причину, а потім введіть повний ПІБ вручну для підтвердження.', fields: [{ key: 'reason', label: 'Причина деактивації', value: draft.inactiveReason || '', required: true }, { key: 'name', label: `Повний ПІБ: ${draft.name}`, required: true, manualEntry: true }], confirmText: 'Деактивувати', danger: true });
+    const result = await openAppDialog({ title: 'Приховування ФОП', message: 'Вкажіть причину, а потім введіть повний ПІБ вручну для підтвердження.', fields: [{ key: 'reason', label: 'Причина приховування', value: draft.inactiveReason || '', required: true }, { key: 'name', label: `Повний ПІБ: ${draft.name}`, required: true, manualEntry: true }], confirmText: 'Приховати', danger: true });
     if (!result) return;
-    if (result.name !== draft.name) { showToast('ПІБ не збігається. Деактивацію скасовано.', 'error'); return; }
+    if (result.name !== draft.name) { showToast('ПІБ не збігається. Приховування скасовано.', 'error'); return; }
     archiveClient(draft.id, true, result.reason);
-    close();
-    notifyChanged();
-  });
-  overlay.querySelector('[data-cc-delete]')?.addEventListener('click', async () => {
-    const result = await openAppDialog({ title: 'Перенести до видалених', message: 'ФОП буде перенесено до розділу «Видалені». Вкажіть причину, а потім введіть повний ПІБ вручну для підтвердження.', fields: [{ key: 'reason', label: 'Причина видалення', required: true }, { key: 'name', label: `Повний ПІБ: ${draft.name}`, required: true, manualEntry: true }], confirmText: 'Перенести', danger: true });
-    if (!result) return;
-    if (result.name !== draft.name) { showToast('ПІБ не збігається. Видалення скасовано.', 'error'); return; }
-    requestClientDeletion(draft.id, result.reason);
     close();
     notifyChanged();
   });

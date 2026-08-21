@@ -60,6 +60,7 @@
 .cc-kved-add-btn, .cc-kved-import-btn, .cc-acc-import-btn { margin-top: 0; }
 .cc-inline-actions { align-items: center; }
 .cc-inline-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.cc-kved-list + .cc-inline-actions { margin-top: 8px; }
 .cc-inline-actions .secondary { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; height: 30px; padding: 0 10px; }
 .cc-acc-actions { margin-top: 8px; }
 .cc-employees-block { margin-top: 12px; }

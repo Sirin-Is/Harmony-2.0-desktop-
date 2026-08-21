@@ -169,6 +169,7 @@ h2 { font-size: 15px; margin: 0; }
 .dashboard-table th:nth-child(6), .dashboard-table td:nth-child(6) { width: 6%; }
 .dashboard-table th:nth-child(7), .dashboard-table td:nth-child(7) { width: 5%; }
 .dashboard-table th:nth-child(8), .dashboard-table td:nth-child(8) { width: 10%; }
+.dashboard-table th:nth-child(8), .dashboard-table td:nth-child(8) { text-align: right; }
 .dashboard-table th:nth-child(9), .dashboard-table td:nth-child(9) { width: 10%; }
 .dashboard-table th:nth-child(10), .dashboard-table td:nth-child(10) { width: 8%; }
 .dashboard-client-name { padding-left: 6px !important; }
@@ -501,7 +502,8 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .payments-matrix .fop-name { width: 190px; min-width: 190px; overflow: visible; text-overflow: clip; }
 .payments-matrix .debt { width: 120px; min-width: 120px; }
 .payments-matrix .month-head, .payments-matrix .month-charge-cell { width: 78px; min-width: 78px; overflow: visible; text-overflow: clip; }
-.payments-matrix .month-head { display: flex; align-items: center; justify-content: center; gap: 2px; text-align: center; }
+.payments-matrix .month-head { text-align: center; }
+.payments-matrix .month-head-content { display: inline-flex; align-items: center; gap: 2px; }
 .auto-charge { display: inline-grid; width: 16px; height: 16px; margin: 0; padding: 0; place-items: center; border: 0; border-radius: 4px; font: 700 12px/1 inherit; color: #176b58; background: #dcf5ea; cursor: pointer; }
 .month-charge-cell { text-align: center; }
 .service-charge-toggle { width: 64px; min-width: 64px; min-height: 28px; border: 1px solid #c8d3df; border-radius: 999px; padding: 3px; color: #334155; background: #fff; font: 600 11px inherit; font-variant-numeric: tabular-nums; cursor: pointer; }
@@ -511,11 +513,19 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .incomes-matrix { max-height: calc(100vh - 250px); }
 .income-group-quarter { width: 100%; min-width: 0; table-layout: fixed; font-size: 13px; }
 .income-group-quarter th, .income-group-quarter td { padding: 10px 8px; text-align: center; }
+.income-group-quarter .fop-name { text-align: left; }
 .income-group-quarter th:first-child, .income-group-quarter td:first-child { width: 17%; }
 .income-group-quarter th:nth-child(2), .income-group-quarter td:nth-child(2) { width: 16%; }
 .income-group-quarter th:nth-child(3), .income-group-quarter td:nth-child(3), .income-group-quarter th:nth-child(4), .income-group-quarter td:nth-child(4), .income-group-quarter th:nth-child(5), .income-group-quarter td:nth-child(5) { width: 15%; }
 .income-group-quarter th:nth-child(6), .income-group-quarter td:nth-child(6) { width: 22%; }
-.income-group-quarter .income-value { font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
+.income-group-quarter .income-value {
+  font-size: 13px;
+  /* Reserve the visual width of “000,00” at the right, so values line up
+     without sitting against the field border. */
+  padding-right: 6ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .income-group-quarter .right { text-align: center; }
 .income-group-quarter .income-quarter-sum { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .income-group-quarter .income-limit-cell .pill { padding: 4px 8px; font-size: 12px; }
@@ -549,6 +559,7 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .declarations-table-group-3 .declaration-status-column { width: 82px; }
 .declarations-table-group-3 .declaration-note-column { width: auto; }
 .declarations-table-group-3 th:first-child, .declarations-table-group-3 td:first-child { width: 175px; min-width: 175px; }
+.declarations-table-group-3 th:first-child, .declarations-table-group-3 td:first-child { padding-left: 8px; }
 .declarations-table-group-3 .report-period-heading { min-width: 0; }
 .declarations-table-group-3 th, .declarations-table-group-3 td { padding-left: 4px; padding-right: 4px; }
 .declarations-table-group-3 .report-filing-status { width: 100%; min-width: 0; padding-left: 3px; padding-right: 3px; }

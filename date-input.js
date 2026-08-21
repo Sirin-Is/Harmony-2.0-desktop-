@@ -32,8 +32,11 @@ export function enhanceDateInputs(root = document) {
       const probe = document.createElement('canvas').getContext('2d');
       const style = getComputedStyle(text);
       probe.font = style.font;
-      const value = text.value || text.placeholder;
-      wrapper.style.setProperty('--date-text-width', `${Math.ceil(probe.measureText(value).width)}px`);
+      // Keep the calendar button in exactly the same position whether the
+      // field is empty or filled.  A representative widest numeric date and
+      // the placeholder cover every state of the shared dd.mm.yyyy control.
+      const width = Math.max(probe.measureText('88.88.8888').width, probe.measureText(text.placeholder).width);
+      wrapper.style.setProperty('--date-text-width', `${Math.ceil(width)}px`);
     };
     requestAnimationFrame(syncFieldWidth);
     text.addEventListener('input', () => {
