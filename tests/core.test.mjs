@@ -341,7 +341,7 @@ test('імпорт доходів однаково знаходить ПІБ і�
   assert.equal(findClientByImportName(db, 'Іванов Іван')?.id, 'one');
   assert.equal(findClientByImportName(db, 'Петренко Петро Петрович')?.id, 'two');
   const incomes = readFileSync(new URL('../render/incomes.js', import.meta.url), 'utf8');
-  assert.match(incomes, /import \{ escapeHtml, moneyFormat, MONTH_SHORT_UA, monthPeriodKey \} from '\.\.\/utils'/);
+  assert.match(incomes, /import \{ escapeHtml, moneyFormat, MONTH_NAMES_UA, monthPeriodKey \} from '\.\.\/utils'/);
 });
 
 test('етап 2 підключає пошук, очищення фільтрів і доступні стани навігації', () => {

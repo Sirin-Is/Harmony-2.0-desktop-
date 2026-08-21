@@ -11,7 +11,6 @@
 
 import { escapeHtml, moneyFormat, toNumber } from '../utils';
 import { rateText, phoneLines, kepDaysLabel, kepStatusLabel, shortClientName } from '../client-model';
-import { table } from './layout.js';
 import { getVisibleClients, getCustomColumns } from '../state.js';
 import { uiState } from '../ui-state.js';
 
@@ -103,6 +102,12 @@ export function renderDashboard() {
     '', ...FILTER_COLUMNS.map(([key, label]) => filterHeader(label, key)),
     ...columns.map(customColumnHeader),
   ];
+  // colgroup is the reliable source of width for a fixed-layout table.  Without
+  // it, the browser could distribute the unused table width into this empty
+  // header column instead of keeping the drag handle compact.
+  const colgroup = `<colgroup><col class="dashboard-drag-column">${FILTER_COLUMNS.map(([key]) => `<col class="dashboard-column-${key}">`).join('')}${columns.map(() => '<col class="dashboard-custom-column">').join('')}</colgroup>`;
+  const tableRows = rows.length ? rows.join('') : `<tr><td colspan="${headings.length}" class="empty-cell">${hasQuery ? 'За пошуком або вибраними фільтрами записів немає.' : 'Активних ФОП поки немає.'}</td></tr>`;
+  const dashboardTable = `<div class="table-wrap"><table class="table dashboard-table">${colgroup}<thead><tr>${headings.map((heading) => `<th>${heading}</th>`).join('')}</tr></thead><tbody>${tableRows}</tbody></table></div>`;
   return `<div class="toolbar">
       <div class="toolbar-actions">
         <label class="dashboard-search"><span class="visually-hidden">Швидкий пошук ФОП</span><input type="search" data-dashboard-search value="${escapeHtml(uiState.dashboardSearch || '')}" placeholder="Пошук ФОП…" autocomplete="off"></label>
@@ -115,5 +120,5 @@ export function renderDashboard() {
       </div>
     </div>
     ${openColumn ? `<div class="dashboard-filter-area">${filterMenu(openColumn[1], openColumn[0], allClients)}</div>` : ''}
-    ${table(rows.length ? rows : [`<tr><td colspan="${headings.length}" class="empty-cell">${hasQuery ? 'За пошуком або вибраними фільтрами записів немає.' : 'Активних ФОП поки немає.'}</td></tr>`], headings, 'dashboard-table')}`;
+    ${dashboardTable}`;
 }

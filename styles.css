@@ -161,7 +161,8 @@ h2 { font-size: 15px; margin: 0; }
 .row-actions { display: flex; gap: 4px; white-space: nowrap; }
 .dashboard-table { width: 100%; min-width: 0; table-layout: fixed; font-size: 14px; }
 .dashboard-table th, .dashboard-table td { padding: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dashboard-table th:first-child, .dashboard-table td:first-child { width: 24px; padding-left: 3px; padding-right: 3px; }
+.dashboard-table col.dashboard-drag-column { width: 24px; }
+.dashboard-table th:first-child, .dashboard-table td:first-child { width: 24px; min-width: 24px; max-width: 24px; box-sizing: border-box; padding-left: 3px; padding-right: 3px; }
 .dashboard-table th:nth-child(2), .dashboard-table td:nth-child(2) { width: 15%; }
 .dashboard-table th:nth-child(3), .dashboard-table td:nth-child(3) { width: 8%; }
 .dashboard-table th:nth-child(4), .dashboard-table td:nth-child(4) { width: 5%; }
@@ -382,7 +383,9 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .calendar-sticky .calendar-tabs { margin-bottom: 8px; }
 .calendar-sticky .toolbar { margin: 0; }
 .calendar-navigation { display: flex; align-items: center; gap: 12px; }
-.calendar-navigation .generic-date-control, .calendar-task-date { width: 180px; flex: 0 0 180px; }
+.calendar-navigation .generic-date-control { width: 180px; flex: 0 0 180px; }
+.calendar-navigation .generic-date-control > .generic-date-field { flex: 1 1 auto; width: auto !important; }
+.calendar-task-date { width: 180px; flex: 0 0 180px; }
 .calendar-navigation > button:not(.calendar-today) { width: 38px; min-width: 38px; height: 34px; }
 .tax-main-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .calendar-task-day { width: min(840px, 100%); margin: 9px 0 0; text-align: center; color: var(--brand); font-size: 15px; font-weight: 800; letter-spacing: .01em; }
@@ -429,7 +432,7 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .batch-kved-group-switch { min-height: 30px; padding: 4px 9px; border: 1px solid #c7d1df; border-radius: 999px; color: #475467; background: #fff; font: 600 12px inherit; cursor: pointer; }
 .batch-kved-group-switch.active { border-color: #9dd8bf; color: #176b58; background: #e4f7ed; }
 .batch-kved-table th:first-child, .batch-kved-table td:first-child { width: 64px; }
-.batch-kved-table th:last-child, .batch-kved-table td:last-child { width: 150px; }
+.batch-kved-table th:last-child, .batch-kved-table td:last-child { width: 180px; }
 .batch-kved-code { width: 100%; min-width: 0; text-align: center; }
 .batch-kved-divider { color: #98a2b3; font-size: 17px; line-height: 1; }
 .kved-result.allowed { color: #187344; }
@@ -485,19 +488,21 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .payroll-type-row .payroll-batch-total { text-align: right; font-size: 11px; font-variant-numeric: tabular-nums; }
 .payroll-total-row td { padding-top: 5px; padding-bottom: 6px; color: #334155; background: #fafbfc; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
 .payroll-total-row td:nth-child(2) { text-align: left; }
-.auto-charge { margin-left: 5px; border: 0; border-radius: 4px; padding: 2px 4px; font: inherit; font-weight: 600; color: #176b58; background: #dcf5ea; cursor: pointer; }
+.payments-matrix .table th, .payments-matrix .table td { padding-left: 3px; padding-right: 3px; }
+.payments-matrix .month-head { text-align: center; }
+.auto-charge { display: inline-grid; width: 16px; height: 16px; margin-left: 2px; padding: 0; place-items: center; border: 0; border-radius: 4px; font: 700 12px/1 inherit; color: #176b58; background: #dcf5ea; cursor: pointer; vertical-align: middle; }
 .month-charge-cell { text-align: center; }
-.service-charge-toggle { width: 62px; min-width: 62px; min-height: 29px; border: 1px solid #c8d3df; border-radius: 999px; padding: 4px 6px; color: #334155; background: #fff; font: 600 11px inherit; font-variant-numeric: tabular-nums; cursor: pointer; }
+.service-charge-toggle { width: 50px; min-width: 50px; min-height: 28px; border: 1px solid #c8d3df; border-radius: 999px; padding: 4px; color: #334155; background: #fff; font: 600 11px inherit; font-variant-numeric: tabular-nums; cursor: pointer; }
 .service-charge-toggle.is-active { border-color: #8fd0b4; color: #176b58; background: #e4f7ed; }
-.service-charge-toggle-edit { width: 62px; box-sizing: border-box; padding: 4px 6px; text-align: right; font: 600 11px inherit; font-variant-numeric: tabular-nums; }
+.service-charge-toggle-edit { width: 50px; box-sizing: border-box; padding: 4px; text-align: right; font: 600 11px inherit; font-variant-numeric: tabular-nums; }
 .income-main-nav > div:first-child { display: flex; gap: 8px; }
 .incomes-matrix { max-height: calc(100vh - 250px); }
 .income-group-quarter { width: 100%; min-width: 0; table-layout: fixed; font-size: 13px; }
 .income-group-quarter th, .income-group-quarter td { padding: 10px 12px; }
-.income-group-quarter th:first-child, .income-group-quarter td:first-child { width: 27%; }
-.income-group-quarter th:nth-child(2), .income-group-quarter td:nth-child(2), .income-group-quarter th:nth-child(3), .income-group-quarter td:nth-child(3), .income-group-quarter th:nth-child(4), .income-group-quarter td:nth-child(4) { width: 13%; }
-.income-group-quarter th:nth-child(5), .income-group-quarter td:nth-child(5) { width: 15%; }
-.income-group-quarter th:nth-child(6), .income-group-quarter td:nth-child(6) { width: 19%; }
+.income-group-quarter th:first-child, .income-group-quarter td:first-child { width: 26%; }
+.income-group-quarter th:nth-child(2), .income-group-quarter td:nth-child(2) { width: 19%; }
+.income-group-quarter th:nth-child(3), .income-group-quarter td:nth-child(3), .income-group-quarter th:nth-child(4), .income-group-quarter td:nth-child(4), .income-group-quarter th:nth-child(5), .income-group-quarter td:nth-child(5) { width: 14%; }
+.income-group-quarter th:nth-child(6), .income-group-quarter td:nth-child(6) { width: 13%; }
 .income-group-quarter .income-value { font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
 .income-group-quarter .income-quarter-sum { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .income-group-quarter .income-limit-cell .pill { padding: 4px 8px; font-size: 12px; }
@@ -526,6 +531,13 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .declarations-table-single-period .declaration-status-column { width: 22%; }
 .declarations-table-single-period .declaration-note-column { width: 46%; }
 .declarations-table-single-period .report-period-heading { min-width: 0; }
+.declarations-table-group-3 { width: 100%; min-width: 0; }
+.declarations-table-group-3 .declaration-fop-column { width: 28%; }
+.declarations-table-group-3 .declaration-status-column { width: 12%; }
+.declarations-table-group-3 .declaration-note-column { width: 6%; }
+.declarations-table-group-3 .report-period-heading { min-width: 0; }
+.declarations-table-group-3 th, .declarations-table-group-3 td { padding-left: 4px; padding-right: 4px; }
+.declarations-table-group-3 .report-filing-status { width: 100%; min-width: 0; padding-left: 3px; padding-right: 3px; }
 .report-filing-status-cell { text-align: center; }
 .report-filing-status { min-width: 86px; min-height: 28px; padding: 3px 5px; border: 1px solid #aeb8c6; border-radius: 999px; font: 600 11px inherit; cursor: pointer; }
 .report-filing-status-notReportable { color: #475467; background: #fff; }
@@ -564,13 +576,13 @@ body.auth-locked .employee-card-dialog { display: none; }
 @media (max-width: 680px) { .employee-card-fields { grid-template-columns: 1fr; } }
 
 /* Єдина легка рамка для полів: без дублюючого контуру та дорогого blur. */
-input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea {
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(.generic-date-field):not(.date-native), select, textarea {
   border: 1px solid rgb(0 0 0 / var(--field-border-opacity, .5)) !important;
   border-radius: var(--field-radius, 5px) !important;
   background: rgb(var(--field-rgb, 255 255 255) / var(--field-opacity, .58)) !important;
   box-shadow: none !important;
 }
-input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus, select:focus, textarea:focus {
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(.generic-date-field):not(.date-native):focus, select:focus, textarea:focus {
   outline: 2px solid rgba(47, 99, 197, .7);
   outline-offset: 1px;
   box-shadow: 0 0 0 4px rgba(47, 99, 197, .14), inset 0 1px 0 rgba(255, 255, 255, .85) !important;

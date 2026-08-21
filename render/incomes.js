@@ -3,7 +3,7 @@
 // "Залишок ліміту" = the active group's limit minus income since the
 // beginning of the selected year.
 
-import { escapeHtml, moneyFormat, MONTH_SHORT_UA, monthPeriodKey } from '../utils';
+import { escapeHtml, moneyFormat, MONTH_NAMES_UA, monthPeriodKey } from '../utils';
 import { getVisibleClients, incomeSum, getIncomeValue, getSettings } from '../state.js';
 import { groupLimitAmount } from '../client-model';
 import { shortClientName } from '../client-model.js';
@@ -39,15 +39,15 @@ export function renderIncomes() {
   const quarter = QUARTERS.find((item) => item.key === uiState.incomeQuarter);
   const otherMonths = Array.from({ length: 12 }, (_, index) => index).filter((index) => !quarter.months.includes(index));
   const cell = (item, index) => incomeCell(item, monthPeriodKey(workingYear, index + 1));
-  const headings = ['ПІБ', ...quarter.months.map((index) => MONTH_SHORT_UA[index]), 'Сума за квартал', 'Залишок ліміту'];
+  const headings = ['ПІБ', 'Залишок ліміту', ...quarter.months.map((index) => MONTH_NAMES_UA[index]), 'Сума за квартал'];
   const rows = clients.map((item) => {
     const otherIncome = incomeSum(item.id, otherMonths, workingYear);
     const quarterIncome = incomeSum(item.id, quarter.months, workingYear);
     const monthCells = quarter.months.map((index) => cell(item, index)).join('');
     const limit = groupLimitAmount(item.group, getSettings().minWage);
-    return `<tr data-row-id="${escapeHtml(item.id)}" data-income-limit="${limit || ''}" data-income-outside-quarter="${otherIncome}"><td class="fop-name"><strong>${escapeHtml(shortClientName(item.name))}</strong></td>${monthCells}<td class="right income-quarter-sum">${moneyFormat.format(quarterIncome)}</td><td class="right income-limit-cell">${remainingLimitLabel(item.group, otherIncome + quarterIncome)}</td></tr>`;
+    return `<tr data-row-id="${escapeHtml(item.id)}" data-income-limit="${limit || ''}" data-income-outside-quarter="${otherIncome}"><td class="fop-name"><strong>${escapeHtml(shortClientName(item.name))}</strong></td><td class="right income-limit-cell">${remainingLimitLabel(item.group, otherIncome + quarterIncome)}</td>${monthCells}<td class="right income-quarter-sum">${moneyFormat.format(quarterIncome)}</td></tr>`;
   });
-  const headCells = headings.map((h, index) => `<th class="${index === 0 ? 'fop-name' : index === headings.length - 1 ? 'income-limit-cell' : index === headings.length - 2 ? 'income-quarter-sum' : ''}">${h}</th>`).join('');
+  const headCells = headings.map((h, index) => `<th class="${index === 0 ? 'fop-name' : index === 1 ? 'income-limit-cell' : index === headings.length - 1 ? 'income-quarter-sum' : ''}">${h}</th>`).join('');
   const body = clients.length
     ? `<div class="table-wrap incomes-matrix"><table class="table income-group-quarter"><thead><tr>${headCells}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
     : `<p class="empty">Активних ФОП поки немає.</p>`;
