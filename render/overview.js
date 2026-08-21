@@ -48,7 +48,7 @@ function reportAlertEntries() {
     let worst = null;
     reportPeriodsFor(realGroup, workingYear).forEach((period) => {
       const record = getReportField(item.id, realGroup, period.key);
-      if (record.notReportable || record.submittedDate) return;
+      if (record.notReportable || ['submitted', 'accepted'].includes(record.filingStatus) || record.submittedDate) return;
       const deadline = getEffectiveReportDeadline(realGroup, period.key, record);
       if (!deadline) return;
       const days = daysUntil(deadline);
@@ -67,7 +67,7 @@ function combinedReportAlertEntries() {
     let worst = null;
     combinedReportPeriodsFor(year).forEach((period) => {
       const record = getCombinedReportField(item.id, period.key);
-      if (record.submittedDate) return;
+      if (record.notReportable || ['submitted', 'accepted'].includes(record.combinedStatus) || record.submittedDate) return;
       const deadline = getEffectiveCombinedReportDeadline(period.key, record);
       const days = daysUntil(deadline);
       if (days === null || days > 5) return;

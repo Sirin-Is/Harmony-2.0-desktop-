@@ -92,7 +92,10 @@ function derivedEvents(year, month) {
     const record = getTaxField(client.id, String(client.group), period, taxType);
     return Boolean(record.exemption || record.paidDate);
   })));
-  const reportComplete = (clients, period) => clients.every((client) => Boolean(getReportField(client.id, String(client.group), period).submittedDate));
+  const reportComplete = (clients, period) => clients.every((client) => {
+    const record = getReportField(client.id, String(client.group), period);
+    return Boolean(record.notReportable || ['submitted', 'accepted'].includes(record.filingStatus) || record.submittedDate);
+  });
   const quarterMonths = (period) => {
     const month = { q1: 1, half: 4, '9m': 7, year: 10 }[period.slice(5)] || 1;
     return [month, month + 1, month + 2].map((value) => `${period.slice(0, 4)}-${pad(value)}`);

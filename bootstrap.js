@@ -13,7 +13,7 @@ import {
   setMonthlyPaymentField, setMonthlyPaymentPaidStatus, autofillMonthlyCharges, setTaxField, setReportField, setCombinedReportField, setIncomeValue, importIncomeRows, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline, getEffectiveCombinedReportDeadline,
   setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, setSectionHeadings, setDropdownOptions, setActivityReference, getSettings,
   deleteCustomColumn, getCustomColumns,
-  copyTaxPeriodForward, getVisibleClients, getClientsByTaxTab, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, canRollbackChanges, rollbackChangesAfter, rollbackRetentionStart, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField, setPayrollPaymentType, movePayrollClientInBatch,
+  copyTaxPeriodForward, getVisibleClients, getClientsByTaxTab, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, canRollbackChanges, rollbackChangesAfter, rollbackRetentionStart, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField, setPayrollPaymentType,
   getDatabaseRelationshipIssues,
 } from './state.js';
 import { TAX_TYPES, previousPeriodKey, taxPeriodsFor, statusPillHtml, daysUntilLabel } from './tax-model.ts';
@@ -325,7 +325,7 @@ function applyRoleAccess() {
   document.querySelectorAll('#content [data-drag-handle]').forEach((handle) => { handle.tabIndex = -1; handle.setAttribute('aria-disabled', 'true'); });
 }
 
-function applyAppearance(appearance = getSettings()?.appearance || { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 }, target = document.documentElement) {
+function applyAppearance(appearance = getSettings()?.appearance || { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0, fieldBorderOpacity: 50 }, target = document.documentElement) {
   const hex = String(appearance.fieldColor || '#ffffff').replace('#', '');
   const channels = hex.length === 6 ? [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)] : [255, 255, 255];
   const rgb = channels.join(' ');
@@ -333,6 +333,8 @@ function applyAppearance(appearance = getSettings()?.appearance || { fieldColor:
   target.style.setProperty('--field-rgb', rgb);
   target.style.setProperty('--bg', `rgb(${pageRgb})`);
   target.style.setProperty('--field-opacity', String(1 - Number(appearance.fieldOpacity ?? 0) / 100));
+  target.style.setProperty('--field-border-opacity', String(Number(appearance.fieldBorderOpacity ?? 50) / 100));
+  target.style.setProperty('--field-outline-opacity', String(Number(appearance.fieldBorderOpacity ?? 50) / 180));
   target.style.setProperty('--field-radius', `${Number(appearance.fieldRadius ?? 5)}px`);
 }
 
@@ -572,9 +574,39 @@ function bindCurrentView() {
     if (!setPayrollPaymentType(field.dataset.payrollTypeId, field.value)) showToast('Не вдалося змінити тип: у цій виплаті вже є такий працівник з вибраним типом.', 'error');
     render();
   }));
-  document.querySelectorAll('[data-move-payroll-client]').forEach((button) => button.addEventListener('click', () => {
-    if (movePayrollClientInBatch(button.dataset.movePayrollClient, Number(button.dataset.moveDirection))) render();
-  }));
+  document.querySelectorAll('[data-payroll-client-drag]').forEach((handle) => {
+    handle.addEventListener('keydown', (event) => {
+      if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+      const row = handle.closest('[data-payroll-client-row]');
+      const clientRows = [...document.querySelectorAll('[data-payroll-client-row]')];
+      const target = clientRows[clientRows.indexOf(row) + (event.key === 'ArrowUp' ? -1 : 1)];
+      if (!row?.dataset.payrollClientId || !target?.dataset.payrollClientId) return;
+      event.preventDefault();
+      if (reorderClients(row.dataset.payrollClientId, target.dataset.payrollClientId)) render();
+    });
+    handle.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      const sourceId = handle.dataset.payrollClientDrag;
+      const row = handle.closest('[data-payroll-client-row]');
+      if (!sourceId || !row) return;
+      handle.setPointerCapture?.(event.pointerId);
+      row.classList.add('dragging');
+      let targetRow = null;
+      const move = (pointerEvent) => {
+        const nextTarget = document.elementFromPoint(pointerEvent.clientX, pointerEvent.clientY)?.closest('[data-payroll-client-row]');
+        document.querySelectorAll('[data-payroll-client-row]').forEach((item) => item.classList.remove('drag-over'));
+        targetRow = nextTarget && nextTarget !== row ? nextTarget : null;
+        targetRow?.classList.add('drag-over');
+      };
+      const finish = () => {
+        document.querySelectorAll('[data-payroll-client-row]').forEach((item) => item.classList.remove('dragging', 'drag-over'));
+        handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', finish); handle.removeEventListener('pointercancel', finish);
+        const sourceRow = handle.closest('[data-payroll-client-row]');
+        if (sourceRow?.dataset.payrollClientId && targetRow?.dataset.payrollClientId && reorderClients(sourceRow.dataset.payrollClientId, targetRow.dataset.payrollClientId)) render();
+      };
+      handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', finish); handle.addEventListener('pointercancel', finish);
+    });
+  });
   document.querySelectorAll('[data-activities-section]').forEach((button) => button.addEventListener('click', () => { uiState.activitiesSection = button.dataset.activitiesSection; render(); }));
   document.querySelector('#auditSearch')?.addEventListener('input', (event) => {
     const caret = event.target.selectionStart;
@@ -757,26 +789,26 @@ function bindCurrentView() {
 
   // --- Декларації та об’єднані звіти ---
   document.querySelectorAll('[data-report-group]').forEach((b) => b.onclick = () => { uiState.reportGroup = b.dataset.reportGroup; uiState.reportPeriod = null; render(); });
-  document.querySelectorAll('[data-report-period]').forEach((b) => b.onclick = () => { uiState.reportPeriod = b.dataset.reportPeriod; render(); });
+  document.querySelectorAll('[data-report-status]').forEach((button) => button.addEventListener('click', () => {
+    const statuses = { notReportable: 'notSubmitted', notSubmitted: 'submitted', submitted: 'accepted', accepted: 'notReportable' };
+    if (!setReportField(button.dataset.client, button.dataset.realGroup, button.dataset.period, 'filingStatus', statuses[button.dataset.status])) showToast('Не вдалося змінити статус декларації.', 'error');
+    else render();
+  }));
   document.querySelectorAll('.report-field').forEach((field) => field.addEventListener('change', () => {
-    const record = setReportField(field.dataset.client, field.dataset.realGroup, uiState.reportPeriod, field.dataset.field, field.value);
+    const record = setReportField(field.dataset.client, field.dataset.realGroup, field.dataset.period || uiState.reportPeriod, field.dataset.field, field.value);
     if (!record) {
       showToast('Вкажіть коректне значення звітності.', 'error');
       return;
     }
-    const row = field.closest('tr'); const deadline = getEffectiveReportDeadline(field.dataset.realGroup, uiState.reportPeriod, record);
-    const days = row?.querySelector('.report-days'); if (days) days.innerHTML = reportDaysUntilLabel(deadline, record);
-    const status = row?.querySelector('.report-status'); if (status) status.innerHTML = reportStatusPillHtml(record, deadline);
   }));
-  document.querySelectorAll('[data-combined-report-period]').forEach((button) => button.addEventListener('click', () => { uiState.combinedReportPeriod = button.dataset.combinedReportPeriod; render(); }));
+  document.querySelectorAll('[data-combined-report-status]').forEach((button) => button.addEventListener('click', () => {
+    const statuses = { notReportable: 'notSubmitted', notSubmitted: 'submitted', submitted: 'accepted', accepted: 'notReportable' };
+    if (!setCombinedReportField(button.dataset.client, button.dataset.period, 'combinedStatus', statuses[button.dataset.status])) showToast('Не вдалося змінити статус об’єднаного звіту.', 'error');
+    else render();
+  }));
   document.querySelectorAll('.combined-report-field').forEach((field) => field.addEventListener('change', () => {
-    const value = field.dataset.field === 'notReportable' ? field.checked : field.value;
-    const record = setCombinedReportField(field.dataset.client, uiState.combinedReportPeriod, field.dataset.field, value);
+    const record = setCombinedReportField(field.dataset.client, field.dataset.period, field.dataset.field, field.value);
     if (!record) { showToast('Вкажіть коректне значення звітності.', 'error'); return; }
-    if (field.dataset.field === 'notReportable') { render(); return; }
-    const row = field.closest('tr'); const deadline = getEffectiveCombinedReportDeadline(uiState.combinedReportPeriod, record);
-    const days = row?.querySelector('.report-days'); if (days) days.innerHTML = reportDaysUntilLabel(deadline, record);
-    const status = row?.querySelector('.report-status'); if (status) status.innerHTML = reportStatusPillHtml(record, deadline);
   }));
 
   // --- Доходи ---

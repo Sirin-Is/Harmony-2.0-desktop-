@@ -75,6 +75,7 @@ function salary() {
   const month = uiState.payrollMonth;
   const period = monthPeriodKey(settings.workingYear, month);
   const clients = getVisibleClients();
+  const clientPositions = new Map(clients.map((client, index) => [client.id, index]));
   const names = new Map(clients.map((client) => [client.id, client.name]));
   const employees = new Map(clients.flatMap((client) => (client.employees || []).map((employee) => [employee.id, employee])));
   const paymentType = (type) => type || `Виплата ЗП за другу половину ${MONTH_NAMES_GENITIVE_UA[month === 1 ? 11 : month - 2]}`;
@@ -87,15 +88,7 @@ function salary() {
     if (dateB) return 1;
     return typeRank(typeA) - typeRank(typeB) || typeA.localeCompare(typeB);
   };
-  const clientChronology = (recordsA, recordsB) => {
-    const orderA = Number(recordsA[0]?.clientOrder || 0); const orderB = Number(recordsB[0]?.clientOrder || 0);
-    if (orderA || orderB) return orderA - orderB || String(names.get(recordsA[0].clientId)).localeCompare(String(names.get(recordsB[0].clientId)));
-    const dateA = recordsA[0]?.paymentDate || ''; const dateB = recordsB[0]?.paymentDate || '';
-    if (dateA && dateB) return dateA.localeCompare(dateB) || String(names.get(recordsA[0].clientId)).localeCompare(String(names.get(recordsB[0].clientId)));
-    if (dateA) return -1;
-    if (dateB) return 1;
-    return String(names.get(recordsA[0].clientId)).localeCompare(String(names.get(recordsB[0].clientId)));
-  };
+  const clientChronology = (recordsA, recordsB) => (clientPositions.get(recordsA[0].clientId) ?? Number.MAX_SAFE_INTEGER) - (clientPositions.get(recordsB[0].clientId) ?? Number.MAX_SAFE_INTEGER);
   const byPaymentBatch = new Map();
   getPayrollRecords().filter((record) => record.period === period).sort(chronology).forEach((record) => {
     const type = paymentType(record.paymentType); const key = `${record.paymentDate || ''}|${type}`;
@@ -110,14 +103,15 @@ function salary() {
     const clientId = record.clientId;
     const gross = money(record.amount) / 0.77;
     const check = (rate, value) => gross * rate - money(value);
-    const result = (rate, value) => gross ? `<span class="payroll-check ${Math.abs(check(rate, value)) < 1 ? 'ok' : 'warn'}">${payrollMoney(check(rate, value))}</span>` : '-';
+    const result = (label, rate, value) => gross ? `<span class="payroll-check ${Math.abs(check(rate, value)) < 1 ? 'ok' : 'warn'}" title="Перевірка ${label}"><b>${label}</b>${payrollMoney(check(rate, value))}</span>` : '';
     const esvRate = Number(employees.get(record.employeeId)?.esvRate || record.esvRate || 22) / 100;
-    const moveControls = `<span class="payroll-client-order"><button class="icon" data-move-payroll-client="${esc(record.id)}" data-move-direction="-1" title="Перемістити ФОП вище">↑</button><button class="icon" data-move-payroll-client="${esc(record.id)}" data-move-direction="1" title="Перемістити ФОП нижче">↓</button></span>`;
+    const moveControls = `<span class="payroll-client-order"><button type="button" class="payroll-drag-handle" data-payroll-client-drag="${esc(record.id)}" title="Перетягнути ФОП" aria-label="Перетягнути ФОП. Клавіші вгору та вниз також змінюють порядок">⠿</button></span>`;
     const statusCell = index === 0 ? `<td rowspan="${records.length}"><select class="payroll-field payroll-status-field" data-payroll-id="${esc(record.id)}" data-payroll-field="status" aria-label="Статус виплати: ${esc(names.get(clientId) || record.clientName || 'ФОП')}"><option value="" ${record.status ? '' : 'selected'}></option>${['Набрано','Сплачено','Повідомлено','Сплачено невчасно'].map((s) => `<option ${record.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td>` : '';
-    return `<tr>${index === 0 ? `<td rowspan="${records.length}" class="payroll-date">${input(record, 'paymentDate')}</td><td rowspan="${records.length}" class="payroll-client">${moveControls}<strong>${esc(shortName(names.get(clientId) || record.clientName || '-'))}</strong></td>` : ''}<td><button class="icon payroll-delete" data-delete-payroll="${esc(record.id)}" data-payroll-employee="${esc(record.employeeName || 'Працівник')}" data-payroll-type="${esc(type)}" data-payroll-amount="${esc(record.amount || '')}" title="Видалити рядок" aria-label="Видалити зарплатний рядок: ${esc(record.employeeName || 'працівник')}">✕</button>${esc(employeePayrollName(record.employeeName))}</td><td>${input(record, 'amount')}</td><td>${input(record, 'pdfo')}</td><td>${input(record, 'vz')}</td><td>${input(record, 'esv')}</td>${statusCell}<td>${gross ? payrollMoney(gross) : '-'}</td><td>${result(.18, record.pdfo)}</td><td>${result(.05, record.vz)}</td><td>${result(esvRate, record.esv)}</td></tr>`;
+    const checks = gross ? `<td class="payroll-checks" aria-label="Перевірка податків"><div>${result('ПДФО', .18, record.pdfo)}${result('ВЗ', .05, record.vz)}${result('ЄСВ', esvRate, record.esv)}</div></td>` : '<td class="payroll-checks">-</td>';
+    return `<tr${index === 0 ? ` data-payroll-client-row data-payroll-client-id="${esc(clientId)}"` : ''}>${index === 0 ? `<td rowspan="${records.length}" class="payroll-date">${input(record, 'paymentDate')}</td><td rowspan="${records.length}" class="payroll-client">${moveControls}<strong>${esc(shortName(names.get(clientId) || record.clientName || '-'))}</strong></td>` : ''}<td><button class="icon payroll-delete" data-delete-payroll="${esc(record.id)}" data-payroll-employee="${esc(record.employeeName || 'Працівник')}" data-payroll-type="${esc(type)}" data-payroll-amount="${esc(record.amount || '')}" title="Видалити рядок" aria-label="Видалити зарплатний рядок: ${esc(record.employeeName || 'працівник')}">✕</button>${esc(employeePayrollName(record.employeeName))}</td><td>${input(record, 'amount')}</td><td>${input(record, 'pdfo')}</td><td>${input(record, 'vz')}</td><td>${input(record, 'esv')}</td>${statusCell}<td>${gross ? payrollMoney(gross) : '-'}</td>${checks}</tr>`;
     }))];
   });
-  return `<div class="toolbar section-control-row section-control-row-secondary"><div class="toolbar-actions"><button class="secondary" data-payroll-prev ${month === 1 ? 'disabled' : ''} aria-label="Попередній місяць">←</button><strong class="calendar-period">${MONTH_NAMES_UA[month - 1]} ${settings.workingYear}</strong><button class="secondary" data-payroll-next ${month === 12 ? 'disabled' : ''} aria-label="Наступний місяць">→</button><button class="primary" data-add-payroll-client>+ Додати виплату</button><button class="secondary" data-add-payroll-employee>+ Працівник</button></div></div>${rows.length ? table(rows, ['Дата','ПІБ ФОП','ПІБ працівника','Сума виплати','ПДФО','ВЗ','ЄСВ','Статус','До оподатк.','Перев. ПДФО','Перев. ВЗ','Перев. ЄСВ'], 'payroll-table') : empty('Додайте виплату — усі працівники вибраного ФОП з’являться окремими рядками.')}`;
+  return `<div class="toolbar section-control-row section-control-row-secondary"><div class="toolbar-actions"><button class="secondary" data-payroll-prev ${month === 1 ? 'disabled' : ''} aria-label="Попередній місяць">←</button><strong class="calendar-period">${MONTH_NAMES_UA[month - 1]} ${settings.workingYear}</strong><button class="secondary" data-payroll-next ${month === 12 ? 'disabled' : ''} aria-label="Наступний місяць">→</button><button class="primary" data-add-payroll-client>+ Додати виплату</button><button class="secondary" data-add-payroll-employee>+ Працівник</button></div></div>${rows.length ? table(rows, ['Дата','ПІБ ФОП','ПІБ працівника','Сума виплати','ПДФО','ВЗ','ЄСВ','Статус','До оподаткування','Перевірка податків'], 'payroll-table') : empty('Додайте виплату — усі працівники вибраного ФОП з’являться окремими рядками.')}`;
 }
 
 export function renderHR() {

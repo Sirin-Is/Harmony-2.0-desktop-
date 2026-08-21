@@ -7,8 +7,8 @@ export function isValidIsoDate(value = '') {
 
 export const shortDate = (iso = '') => isValidIsoDate(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : '';
 
-/** Design-test option №2: an outlined calendar with a visible date and no background. */
-export const calendarDateIconSvg = '<svg class="calendar-date-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5v3M15 2.5v3M3 7h14M4.5 4h11A1.5 1.5 0 0 1 17 5.5v11A1.5 1.5 0 0 1 15.5 18h-11A1.5 1.5 0 0 1 3 16.5v-11A1.5 1.5 0 0 1 4.5 4Z"/><text x="10" y="14.3">15</text></svg>';
+/** Week-view calendar icon used consistently in every date input. */
+export const calendarDateIconSvg = '<svg class="calendar-date-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M7 2v4M17 2v4M3 8h18M7 12h10M7 16h10"/></svg>';
 
 export function shortDateToIso(value = '') {
   const parts = String(value).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
@@ -28,16 +28,25 @@ export function enhanceDateInputs(root = document) {
     text.setAttribute('aria-label', native.getAttribute('aria-label') || 'Дата');
     const button = document.createElement('button'); button.type = 'button'; button.className = 'generic-date-picker'; button.innerHTML = calendarDateIconSvg; button.title = 'Відкрити календар'; button.setAttribute('aria-label', 'Відкрити календар');
     wrapper.prepend(text); wrapper.appendChild(button);
+    const syncFieldWidth = () => {
+      const probe = document.createElement('canvas').getContext('2d');
+      const style = getComputedStyle(text);
+      probe.font = style.font;
+      const value = text.value || text.placeholder;
+      wrapper.style.setProperty('--date-text-width', `${Math.ceil(probe.measureText(value).width)}px`);
+    };
+    requestAnimationFrame(syncFieldWidth);
     text.addEventListener('input', () => {
       const digitsBefore = text.value.slice(0, text.selectionStart || 0).replace(/\D/g, '').length;
       const digits = text.value.replace(/\D/g, '').slice(0, 8);
       text.value = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean).join('.');
       const cursor = digitsBefore <= 2 ? digitsBefore : digitsBefore <= 4 ? digitsBefore + 1 : digitsBefore + 2;
       text.setSelectionRange(cursor, cursor);
+      syncFieldWidth();
       if (digits.length === 8) { const iso = shortDateToIso(text.value); if (iso) { native.value = iso; native.dispatchEvent(new Event('change', { bubbles: true })); } }
     });
-    text.addEventListener('change', () => { if (!text.value) { native.value = ''; native.dispatchEvent(new Event('change', { bubbles: true })); } else if (!shortDateToIso(text.value)) text.value = shortDate(native.value); });
-    native.addEventListener('change', () => { text.value = shortDate(native.value); });
+    text.addEventListener('change', () => { if (!text.value) { native.value = ''; native.dispatchEvent(new Event('change', { bubbles: true })); } else if (!shortDateToIso(text.value)) text.value = shortDate(native.value); syncFieldWidth(); });
+    native.addEventListener('change', () => { text.value = shortDate(native.value); syncFieldWidth(); });
     button.addEventListener('click', () => { if (typeof native.showPicker === 'function') native.showPicker(); else native.click(); });
   });
 }

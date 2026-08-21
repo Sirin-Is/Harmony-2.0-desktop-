@@ -834,6 +834,25 @@ export function movePayrollClientInBatch(id, direction) {
   return true;
 }
 
+export function reorderPayrollClientInBatch(sourceId, targetId) {
+  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return false; }
+  const source = db.payrollRecords.find((item) => item.id === sourceId);
+  const target = db.payrollRecords.find((item) => item.id === targetId);
+  if (!source || !target || source.clientId === target.clientId || source.period !== target.period || source.paymentDate !== target.paymentDate || String(source.paymentType || '') !== String(target.paymentType || '')) return false;
+  const batch = db.payrollRecords.filter((item) => item.period === source.period && item.paymentDate === source.paymentDate && String(item.paymentType || '') === String(source.paymentType || ''));
+  const clients = [...new Map(batch.map((item) => [item.clientId, item])).values()].sort((left, right) => Number(left.clientOrder || 0) - Number(right.clientOrder || 0) || String(left.clientId).localeCompare(String(right.clientId)));
+  const from = clients.findIndex((item) => item.clientId === source.clientId);
+  const to = clients.findIndex((item) => item.clientId === target.clientId);
+  if (from < 0 || to < 0) return false;
+  const [moved] = clients.splice(from, 1); clients.splice(to, 0, moved);
+  const order = new Map(clients.map((item, position) => [item.clientId, position]));
+  const affected = batch.filter((item) => order.get(item.clientId) !== Number(item.clientOrder || 0));
+  const changes = affected.map((item) => ({ path: ['payrollRecords', item.id, 'clientOrder'], clientId: item.clientId, before: item.clientOrder || 0, beforeExisted: Object.prototype.hasOwnProperty.call(item, 'clientOrder'), after: order.get(item.clientId), afterExisted: true }));
+  affected.forEach((item) => { item.clientOrder = order.get(item.clientId); });
+  saveTargetedChanges(changes, 'Змінено порядок ФОП у виплаті', 'Зарплата');
+  return true;
+}
+
 export function deleteCalendarEvent(id) {
   const record = cloneValue(db.calendarEvents.find((item) => item.id === id));
   const before = db.calendarEvents.length;
@@ -1191,7 +1210,7 @@ export function setReportDeadline(scope, periodKeyOrNull, value) {
 }
 
 export function setAppearanceSetting(key, value) {
-  db.settings.appearance ||= { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 };
+  db.settings.appearance ||= { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0, fieldBorderOpacity: 50 };
   changeSetting(['appearance', key], value, 'Змінено вигляд полів');
 }
 

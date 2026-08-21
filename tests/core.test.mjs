@@ -390,7 +390,7 @@ test('фінальний accessibility-прохід додає контекст 
   const index = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const toast = readFileSync(new URL('../toast.js', import.meta.url), 'utf8');
   assert.match(sources, /aria-label="Набрано в банку:/);
-  assert.match(sources, /aria-label="Дата подання звіту:/);
+  assert.match(sources, /data-report-status/);
   assert.match(sources, /aria-label="Статус виплати:/);
   assert.match(sources, /aria-pressed=/);
   assert.match(index, /id="syncStatus"[^>]*aria-live="polite"/);

@@ -407,38 +407,43 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .kved-results-table th:last-child, .kved-results-table td:last-child { width: 42%; white-space: normal; overflow: visible; text-overflow: clip; }
 .hr-orders-section { margin-top: 28px; }
 .hr-orders-section > h3 { margin: 0 0 12px; }
-.payroll-field { width: 100%; box-sizing: border-box; border: 1px solid rgba(255, 255, 255, .9) !important; border-radius: var(--field-radius, 5px) !important; padding: 5px; font: 11px inherit; color: var(--ink); background: rgb(var(--field-rgb, 255 255 255) / var(--field-opacity, .58)) !important; box-shadow: 0 0 0 1px rgba(148, 163, 184, .8), inset 0 1px 0 rgba(255, 255, 255, .72) !important; }
-.payroll-date { width: 116px; vertical-align: top; }
+.payroll-field { width: 100%; box-sizing: border-box; border: 1px solid rgb(0 0 0 / var(--field-border-opacity, .5)) !important; border-radius: var(--field-radius, 5px) !important; padding: 5px; font: 11px inherit; color: var(--ink); background: rgb(var(--field-rgb, 255 255 255) / var(--field-opacity, .58)) !important; box-shadow: 0 0 0 1px rgb(0 0 0 / var(--field-outline-opacity, .28)), inset 0 1px 0 rgba(255, 255, 255, .72) !important; }
+.payroll-date { width: 87px; vertical-align: top; }
 .payroll-date-control { position: relative; display: flex; align-items: stretch; min-width: 0; }
 .payroll-date-control .payroll-date-field { padding-right: 26px; }
-.payroll-date-picker { position: absolute; right: 2px; top: 2px; width: 22px; min-width: 22px; min-height: 22px; height: 22px; padding: 0; border: 0; color: #526274; background: transparent; font-size: 13px; line-height: 1; }
+.payroll-date-picker { position: absolute; right: 2px; top: 0; transform: none; display: flex; align-items: center; justify-content: center; width: 20px; min-width: 20px; min-height: 0; height: 100%; padding: 0; border: 0; color: #526274; background: transparent; font-size: 13px; line-height: 1; }
 .payroll-date-picker:hover { color: var(--brand); background: #edf3ff; }
 .payroll-native-date { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .payroll-client { width: 155px; vertical-align: top; }
-.payroll-check { display: inline-block; min-width: 48px; padding: 3px 5px; border-radius: 4px; text-align: right; font-size: 11px; }
+.payroll-check { display: flex; align-items: center; justify-content: space-between; min-width: 0; padding: 2px 5px; border-radius: 4px; text-align: right; font-size: 10px; font-variant-numeric: tabular-nums; }
+.payroll-check b { margin-right: 5px; font-size: 9px; }
 .payroll-check.ok { background: #e4f7ed; color: #187344; }
 .payroll-check.warn { background: #fff1d6; color: #895900; }
 .payroll-table th, .payroll-table td { white-space: nowrap; }
-.payroll-table { min-width: 1180px; }
+.payroll-table { min-width: 1050px; }
 .payroll-table th, .payroll-table td { padding: 5px 6px; }
 .payroll-table th { font-size: 10px; }
-.payroll-table th:nth-child(1), .payroll-table td:nth-child(1) { width: 100px; }
-.payroll-table th:nth-child(2), .payroll-table td:nth-child(2) { width: 160px; overflow: visible; text-overflow: clip; }
-.payroll-table th:nth-child(3), .payroll-table td:nth-child(3) { width: 150px; overflow: visible; text-overflow: clip; }
+.payroll-table th:nth-child(1), .payroll-table td:nth-child(1) { width: 112px; }
+.payroll-table th:nth-child(2), .payroll-table td:nth-child(2) { width: 170px; overflow: visible; text-overflow: clip; }
+.payroll-table th:nth-child(3), .payroll-table td:nth-child(3) { width: 165px; overflow: visible; text-overflow: clip; }
 .payroll-table th:nth-child(4), .payroll-table td:nth-child(4), .payroll-table th:nth-child(5), .payroll-table td:nth-child(5), .payroll-table th:nth-child(6), .payroll-table td:nth-child(6), .payroll-table th:nth-child(7), .payroll-table td:nth-child(7) { width: 92px; }
-.payroll-table th:nth-child(8), .payroll-table td:nth-child(8) { width: 126px; }
-.payroll-table th:nth-child(9), .payroll-table td:nth-child(9) { width: 78px; }
-.payroll-table th:nth-child(10), .payroll-table td:nth-child(10), .payroll-table th:nth-child(11), .payroll-table td:nth-child(11), .payroll-table th:nth-child(12), .payroll-table td:nth-child(12) { width: 78px; }
-.payroll-table th:nth-child(4), .payroll-table th:nth-child(5), .payroll-table th:nth-child(6), .payroll-table th:nth-child(7), .payroll-table th:nth-child(8), .payroll-table th:nth-child(9), .payroll-table th:nth-child(10), .payroll-table th:nth-child(11), .payroll-table th:nth-child(12) { text-align: center; }
+.payroll-table th:nth-child(8), .payroll-table td:nth-child(8) { width: 132px; }
+.payroll-table th:nth-child(9), .payroll-table td:nth-child(9) { width: 104px; }
+.payroll-table th:nth-child(10), .payroll-table td:nth-child(10) { width: 112px; }
+.payroll-table th:nth-child(4), .payroll-table th:nth-child(5), .payroll-table th:nth-child(6), .payroll-table th:nth-child(7), .payroll-table th:nth-child(8), .payroll-table th:nth-child(9), .payroll-table th:nth-child(10) { text-align: center; }
 .payroll-table td:nth-child(4), .payroll-table td:nth-child(5), .payroll-table td:nth-child(6), .payroll-table td:nth-child(7), .payroll-table td:nth-child(9) { text-align: right; font-variant-numeric: tabular-nums; }
 .payroll-table td:nth-child(4) input, .payroll-table td:nth-child(5) input, .payroll-table td:nth-child(6) input, .payroll-table td:nth-child(7) input { text-align: right; font-variant-numeric: tabular-nums; }
-.payroll-table td:nth-child(8), .payroll-table td:nth-child(10), .payroll-table td:nth-child(11), .payroll-table td:nth-child(12) { text-align: center; }
+.payroll-table td:nth-child(8), .payroll-table td:nth-child(10) { text-align: center; }
+.payroll-checks > div { display: grid; gap: 3px; }
 .payroll-status-field { text-align: center; }
 .dropdown-settings-list { margin: 16px 0; }.dropdown-settings-list h3 { font-size: 13px; margin: 0 0 6px; }.dropdown-settings-list > div { display: grid; gap: 5px; max-width: 430px; }.dropdown-settings-list input { width: 100%; }.dropdown-add { height: 30px; margin-top: 6px; }
 .payroll-type-row td { padding: 5px 9px !important; border-top: 1px solid #9aa7b7; border-bottom: 1px solid #d5dce6; color: #334155; background: #f5f7fa; font-size: 12px; font-weight: 700; text-align: left; }
 .payroll-type-select { width: min(100%, 260px); min-width: 0; font: inherit; font-weight: 700; }
-.payroll-client-order { display: inline-flex; gap: 2px; margin-right: 4px; vertical-align: middle; }
-.payroll-client-order .icon { width: 20px; min-width: 20px; height: 20px; min-height: 20px; padding: 0; }
+.payroll-client-order { display: flex; width: fit-content; margin: 0 0 3px; }
+.payroll-drag-handle { width: 22px; min-width: 22px; height: 20px; min-height: 20px; padding: 0; border: 0; border-radius: 4px; color: #637386; background: #edf1f5; font-size: 17px; line-height: 1; cursor: grab; touch-action: none; }
+.payroll-drag-handle:active { cursor: grabbing; }
+.payroll-table tr.dragging { opacity: .5; }
+.payroll-table tr.drag-over td { box-shadow: inset 0 2px 0 var(--brand); }
 .report-main-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .income-main-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .report-year-label { display: inline-flex; align-items: center; min-height: 30px; padding: 0 10px; color: var(--muted); font-weight: 700; }
@@ -449,7 +454,25 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .month-boundary, .payments-matrix td.month-paid-cell { border-right: 2px solid #b7c2d0; }
 .month-paid-cell { text-align: center; }.month-paid-check { width: 16px; height: 16px; vertical-align: middle; accent-color: #176b58; }
 .payments-matrix .month-value { min-width: 102px; padding: 5px 4px; font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
-.combined-report-toggle { text-align: center; }.combined-report-toggle input { width: 16px; height: 16px; }
+.incomes-matrix .income-value { font-size: 10px; text-align: right; font-variant-numeric: tabular-nums; }
+.combined-reports-table { min-width: 1060px; }
+.combined-reports-table th:nth-child(odd):not(:first-child) { min-width: 112px; text-align: center; }
+.combined-reports-table th:nth-child(even) { min-width: 145px; }
+.combined-report-status-cell { text-align: center; }
+.combined-report-status { min-width: 104px; min-height: 28px; padding: 3px 7px; border: 1px solid #aeb8c6; border-radius: 999px; font: 600 11px inherit; cursor: pointer; }
+.combined-report-status-notReportable { color: #475467; background: #fff; }
+.combined-report-status-notSubmitted { color: #875900; border-color: #e5ba62; background: #fff1c7; }
+.combined-report-status-submitted { color: #1e5bbb; border-color: #a9c9f7; background: #e8f1ff; }
+.combined-report-status-accepted { color: #176b58; border-color: #9dd8bf; background: #e4f7ed; }
+.declarations-table { min-width: 780px; }
+.declarations-table th:nth-child(odd):not(:first-child) { min-width: 112px; text-align: center; }
+.declarations-table th:nth-child(even) { min-width: 145px; }
+.report-filing-status-cell { text-align: center; }
+.report-filing-status { min-width: 104px; min-height: 28px; padding: 3px 7px; border: 1px solid #aeb8c6; border-radius: 999px; font: 600 11px inherit; cursor: pointer; }
+.report-filing-status-notReportable { color: #475467; background: #fff; }
+.report-filing-status-notSubmitted { color: #875900; border-color: #e5ba62; background: #fff1c7; }
+.report-filing-status-submitted { color: #1e5bbb; border-color: #a9c9f7; background: #e8f1ff; }
+.report-filing-status-accepted { color: #176b58; border-color: #9dd8bf; background: #e4f7ed; }
 .task-type { display: inline-block; width: fit-content; border-radius: 99px; padding: 2px 7px; font-size: 10px; font-weight: 700; }
 .task-type-reports { color: #a51d30; background: #ffe5e9; }
 .task-type-taxes { color: #875900; background: #fff1c7; }
@@ -481,10 +504,10 @@ body.auth-locked .employee-card-dialog { display: none; }
 
 /* Єдиний «скляний» стиль для текстових і календарних полів (варіант №19). */
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea {
-  border: 1px solid rgba(255, 255, 255, .9) !important;
+  border: 1px solid rgb(0 0 0 / var(--field-border-opacity, .5)) !important;
   border-radius: var(--field-radius, 5px) !important;
   background: rgb(var(--field-rgb, 255 255 255) / var(--field-opacity, .58)) !important;
-  box-shadow: 0 0 0 1px rgba(148, 163, 184, .8), inset 0 1px 0 rgba(255, 255, 255, .72) !important;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / var(--field-outline-opacity, .28)), inset 0 1px 0 rgba(255, 255, 255, .72) !important;
   backdrop-filter: blur(4px);
 }
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus, select:focus, textarea:focus {
@@ -492,11 +515,11 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus, selec
   outline-offset: 1px;
   box-shadow: 0 0 0 4px rgba(47, 99, 197, .14), inset 0 1px 0 rgba(255, 255, 255, .85) !important;
 }
-.generic-date-control { position: relative; display: inline-flex; width: 100%; min-width: 0; }
-.generic-date-field { width: 100%; min-width: 0; padding-right: 26px !important; }
-.generic-date-picker { position: absolute; right: 2px; top: 2px; width: 22px; min-width: 22px; min-height: 22px; height: 22px; padding: 0; border: 0; color: #526274; background: transparent; font-size: 13px; line-height: 1; }
-.calendar-date-icon { display: block; width: 17px; height: 17px; margin: auto; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
-.calendar-date-icon text { fill: currentColor; stroke: none; font: 700 6.6px/1 system-ui, sans-serif; text-anchor: middle; }
+.generic-date-control { position: relative; display: inline-flex; align-items: stretch; width: max-content; min-width: 0; height: 38px; box-sizing: border-box; border: 1px solid rgb(0 0 0 / var(--field-border-opacity, .5)); border-radius: var(--field-radius, 5px); background: rgb(var(--field-rgb, 255 255 255) / var(--field-opacity, .58)); box-shadow: 0 0 0 1px rgb(0 0 0 / var(--field-outline-opacity, .28)), inset 0 1px 0 rgba(255, 255, 255, .72); }
+.generic-date-control:focus-within { outline: 2px solid rgba(47, 99, 197, .42); outline-offset: 1px; }
+.generic-date-field { box-sizing: content-box; width: var(--date-text-width, 68px) !important; min-width: 0; height: 100%; padding: 0 0 0 12px !important; border: 0 !important; border-radius: inherit; outline: 0; color: var(--ink); background: transparent !important; font: 12px inherit; }
+.generic-date-picker { position: static; transform: none; display: flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 25.3333px; min-width: 25.3333px; min-height: 0; height: 100%; margin: 0 2px 0 12px; padding: 0; border: 0; color: #526274; background: transparent; font-size: 13px; line-height: 1; }
+.calendar-date-icon { display: block; width: auto; height: 66.6667%; aspect-ratio: 1; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
 .date-native { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .appearance-panel { display: grid; gap: 14px; }
 .appearance-panel > label { display: grid; gap: 7px; max-width: 330px; font-weight: 600; }

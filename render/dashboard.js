@@ -34,7 +34,7 @@ function filterMenu(label, key, clients) {
   if (uiState.dashboardFilterOpen !== key) return '';
   const options = [...new Set(clients.map((item) => filterValue(item, key)))].sort((a, b) => String(a).localeCompare(String(b), 'uk'));
   const selected = new Set(uiState.dashboardFilters[key] || options);
-  const sorting = key === 'name' ? `<label class="filter-sort">Сортування<select data-dashboard-sort><option value="name-asc" ${uiState.dashboardSort === 'name-asc' ? 'selected' : ''}>А–Я</option><option value="name-desc" ${uiState.dashboardSort === 'name-desc' ? 'selected' : ''}>Я–А</option></select></label>` : key === 'serviceCost' ? `<label class="filter-sort">Сортування<select data-dashboard-sort><option value="cost-asc" ${uiState.dashboardSort === 'cost-asc' ? 'selected' : ''}>Менша–більша</option><option value="cost-desc" ${uiState.dashboardSort === 'cost-desc' ? 'selected' : ''}>Більша–менша</option></select></label>` : '';
+  const sorting = key === 'name' ? `<label class="filter-sort">Сортування<select data-dashboard-sort><option value="manual" ${uiState.dashboardSort === 'manual' ? 'selected' : ''}>Вручну</option><option value="name-asc" ${uiState.dashboardSort === 'name-asc' ? 'selected' : ''}>А–Я</option><option value="name-desc" ${uiState.dashboardSort === 'name-desc' ? 'selected' : ''}>Я–А</option></select></label>` : key === 'serviceCost' ? `<label class="filter-sort">Сортування<select data-dashboard-sort><option value="manual" ${uiState.dashboardSort === 'manual' ? 'selected' : ''}>Вручну</option><option value="cost-asc" ${uiState.dashboardSort === 'cost-asc' ? 'selected' : ''}>Менша–більша</option><option value="cost-desc" ${uiState.dashboardSort === 'cost-desc' ? 'selected' : ''}>Більша–менша</option></select></label>` : '';
   return `<div class="dashboard-filter-menu" data-dashboard-filter-menu data-filter-key="${escapeHtml(key)}">
     <div class="filter-menu-title">Фільтр: ${escapeHtml(label)}</div>
     ${sorting}
@@ -94,7 +94,7 @@ export function renderDashboard() {
     if (uiState.dashboardSort === 'name-desc') return String(b.name).localeCompare(String(a.name), 'uk');
     if (uiState.dashboardSort === 'cost-asc') return toNumber(a.serviceCost) - toNumber(b.serviceCost) || String(a.name).localeCompare(String(b.name), 'uk');
     if (uiState.dashboardSort === 'cost-desc') return toNumber(b.serviceCost) - toNumber(a.serviceCost) || String(a.name).localeCompare(String(b.name), 'uk');
-    return String(a.name).localeCompare(String(b.name), 'uk');
+    return 0;
   });
   const rows = sortedClients.map((item) => clientRow(item, columns));
   const openColumn = [...FILTER_COLUMNS, ...columns.map((column) => [`custom:${column.id}`, column.name])].find(([key]) => key === uiState.dashboardFilterOpen);
@@ -105,7 +105,6 @@ export function renderDashboard() {
     ...columns.map(customColumnHeader),
   ];
   return `<div class="toolbar">
-      <p class="note">Пошук працює за всіма полями; точні фільтри — у заголовках таблиці.</p>
       <div class="toolbar-actions">
         <label class="dashboard-search"><span class="visually-hidden">Швидкий пошук ФОП</span><input type="search" data-dashboard-search value="${escapeHtml(uiState.dashboardSearch || '')}" placeholder="Пошук ФОП…" autocomplete="off"></label>
         <span class="dashboard-result-count" aria-live="polite">${clients.length} із ${allClients.length}</span>

@@ -18,7 +18,7 @@ export const uiState = {
   dashboardFilters: {},
   dashboardSearch: '',
   dashboardFilterOpen: null,
-  dashboardSort: 'name-asc',
+  dashboardSort: 'manual',
   selectedClientIds: new Set(),
   pendingHighlightClientId: null,
   deletedSectionUnlocked: false,

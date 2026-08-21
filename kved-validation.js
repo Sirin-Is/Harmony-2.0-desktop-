@@ -1,5 +1,7 @@
 import { escapeHtml } from './utils.js';
 import { findActivityByCode, normalizeActivityCode } from './data/activity-reference.js';
+import { readSpreadsheetRows } from './spreadsheet-security.js';
+import { showToast } from './toast.js';
 
 function additional(value) {
   if (Array.isArray(value)) return value;
@@ -46,29 +48,77 @@ export function openKvedResults(title, entries, onlyIssues = false, includeClien
 }
 
 let batchDialog;
+const BATCH_KVED_INITIAL_ROWS = 10;
+
+function batchKvedRowHtml(index, code = '') {
+  return `<tr><td><input class="batch-kved-code" data-batch-kved-code="${index}" placeholder="XX.XX" value="${escapeHtml(code)}" aria-label="Код КВЕД ${index + 1}"></td><td data-batch-kved-name="${index}">—</td><td data-batch-kved-status="${index}">—</td></tr>`;
+}
+
+function batchKvedRows(codes = []) {
+  const count = Math.max(BATCH_KVED_INITIAL_ROWS, codes.length);
+  return Array.from({ length: count }, (_, index) => batchKvedRowHtml(index, codes[index] || '')).join('');
+}
+
+function batchColumn(row, names) {
+  const normalizedNames = new Set(names.map((name) => name.replace(/[_\s]+/g, ' ').trim().toLocaleLowerCase('uk-UA')));
+  const key = Object.keys(row).find((item) => normalizedNames.has(item.replace(/[_\s]+/g, ' ').trim().toLocaleLowerCase('uk-UA')));
+  return key === undefined ? '' : String(row[key] ?? '').trim();
+}
+
+function batchCodesFromSpreadsheet(rows) {
+  const codes = rows.map((row) => {
+    const explicit = batchColumn(row, ['код КВЕД', 'код ВЕД', 'код']);
+    if (explicit) return normalizeActivityCode(explicit);
+    return Object.values(row).map((value) => normalizeActivityCode(value)).find((code) => /^\d{2}(?:\.\d{2})?$/.test(code)) || '';
+  }).filter(Boolean);
+  return [...new Set(codes)];
+}
+
+function refreshBatchKvedCheck() {
+  const group = batchDialog.querySelector('[data-batch-kved-group]').value;
+  batchDialog.querySelectorAll('[data-batch-kved-code]').forEach((input) => {
+    const index = input.dataset.batchKvedCode;
+    const result = input.value.trim() ? validateKved({ group, kvedMainCode: input.value })[0] : null;
+    batchDialog.querySelector(`[data-batch-kved-name="${index}"]`).textContent = result?.name || '—';
+    batchDialog.querySelector(`[data-batch-kved-status="${index}"]`).innerHTML = result ? `<span class="kved-result ${result.kind}">${escapeHtml(result.label)}</span>` : '—';
+  });
+}
+
+function setBatchKvedRows(codes = []) {
+  batchDialog.querySelector('[data-batch-kved-rows]').innerHTML = batchKvedRows(codes);
+  refreshBatchKvedCheck();
+}
+
 export function openBatchKvedCheck() {
   if (!batchDialog) {
     batchDialog = document.createElement('dialog');
     batchDialog.className = 'app-dialog kved-check-dialog';
     document.body.appendChild(batchDialog);
-  }
-  const inputRows = Array.from({ length: 10 }, (_, index) => `<tr><td><input class="batch-kved-code" data-batch-kved-code="${index}" placeholder="XX.XX" aria-label="Код КВЕД ${index + 1}"></td><td data-batch-kved-name="${index}">—</td><td data-batch-kved-status="${index}">—</td></tr>`).join('');
-  batchDialog.innerHTML = `<form method="dialog" class="app-dialog-form"><header><h2>Одночасна перевірка КВЕД</h2><button class="close" type="submit" aria-label="Закрити">×</button></header><div class="batch-kved-controls"><label>Група ЄП<select data-batch-kved-group><option value="1">1 група</option><option value="2">2 група</option><option value="3">3 група</option></select></label></div><div class="kved-result-body"><table class="table batch-kved-table"><thead><tr><th>Код</th><th>Назва</th><th>Статус</th></tr></thead><tbody>${inputRows}</tbody></table></div><footer><button class="secondary" type="button" data-clear-batch-kved>Очистити</button><button class="primary" type="submit">Закрити</button></footer></form>`;
-  const refresh = () => {
-    const group = batchDialog.querySelector('[data-batch-kved-group]').value;
-    batchDialog.querySelectorAll('[data-batch-kved-code]').forEach((input) => {
-      const index = input.dataset.batchKvedCode;
-      const result = input.value.trim() ? validateKved({ group, kvedMainCode: input.value })[0] : null;
-      batchDialog.querySelector(`[data-batch-kved-name="${index}"]`).textContent = result?.name || '—';
-      batchDialog.querySelector(`[data-batch-kved-status="${index}"]`).innerHTML = result ? `<span class="kved-result ${result.kind}">${escapeHtml(result.label)}</span>` : '—';
+    batchDialog.addEventListener('input', (event) => {
+      if (event.target.matches('[data-batch-kved-code]')) refreshBatchKvedCheck();
     });
-  };
-  batchDialog.querySelector('[data-batch-kved-group]').addEventListener('change', refresh);
-  batchDialog.querySelectorAll('[data-batch-kved-code]').forEach((input) => input.addEventListener('input', refresh));
-  batchDialog.querySelector('[data-clear-batch-kved]').addEventListener('click', () => {
-    batchDialog.querySelectorAll('[data-batch-kved-code]').forEach((input) => { input.value = ''; });
-    refresh();
-    batchDialog.querySelector('[data-batch-kved-code]')?.focus();
-  });
+    batchDialog.addEventListener('change', async (event) => {
+      if (event.target.matches('[data-batch-kved-group]')) refreshBatchKvedCheck();
+      if (!event.target.matches('[data-batch-kved-import-file]')) return;
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        const codes = batchCodesFromSpreadsheet(await readSpreadsheetRows(file));
+        if (!codes.length) throw new Error('У файлі не знайдено кодів КВЕД. Використайте колонку «Код КВЕД» або «Код».');
+        setBatchKvedRows(codes);
+        showToast(`Імпортовано ${codes.length} кодів КВЕД.`, 'success');
+      } catch (error) {
+        showToast(error.message || 'Не вдалося прочитати файл КВЕД.', 'error');
+      } finally { event.target.value = ''; }
+    });
+    batchDialog.addEventListener('click', (event) => {
+      if (event.target.closest('[data-import-batch-kved]')) batchDialog.querySelector('[data-batch-kved-import-file]')?.click();
+      if (event.target.closest('[data-clear-batch-kved]')) {
+        setBatchKvedRows();
+        batchDialog.querySelector('[data-batch-kved-code]')?.focus();
+      }
+    });
+  }
+  batchDialog.innerHTML = `<form method="dialog" class="app-dialog-form"><header><h2>Одночасна перевірка КВЕД</h2><button class="close" type="submit" aria-label="Закрити">×</button></header><div class="batch-kved-controls"><label>Група ЄП<select data-batch-kved-group><option value="1">1 група</option><option value="2">2 група</option><option value="3">3 група</option></select></label><button class="secondary" type="button" data-import-batch-kved>Імпорт</button><input type="file" accept=".xlsx,.xls,.csv" data-batch-kved-import-file hidden></div><div class="kved-result-body"><table class="table batch-kved-table"><thead><tr><th>Код</th><th>Назва</th><th>Статус</th></tr></thead><tbody data-batch-kved-rows>${batchKvedRows()}</tbody></table></div><footer><button class="secondary" type="button" data-clear-batch-kved>Очистити</button><button class="primary" type="submit">Закрити</button></footer></form>`;
   batchDialog.showModal();
 }

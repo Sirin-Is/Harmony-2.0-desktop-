@@ -53,12 +53,12 @@ const SYNC_TABLES: string[] = LOCAL_TABLES.filter((table) => table !== 'audit_op
 
 const emptyDatabase = (): AppDatabase => ({
   clients: [], customColumns: [], monthlyPayments: {}, taxRecords: {}, incomeRecords: {}, reportRecords: {}, calendarEvents: [], hrOrders: [], hrMonthlyDocuments: [], payrollRecords: [], auditOperations: [], auditEvents: [],
-  settings: { workingYear: 2026, availableWorkingYears: [2026, 2027], minWage: 8647, monthlyDeadlines: {}, quarterlyDeadlines: { group3: {}, esv: {} }, reportDeadlines: { annual: {}, quarterly: { q1: '', half: '', '9m': '', year: '' }, combined: { q1: '', half: '', '9m': '', year: '' } }, payrollDates: {}, appearance: { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 }, activityReferences: {}, sectionHeadings: {} },
+  settings: { workingYear: 2026, availableWorkingYears: [2026, 2027], minWage: 8647, monthlyDeadlines: {}, quarterlyDeadlines: { group3: {}, esv: {} }, reportDeadlines: { annual: {}, quarterly: { q1: '', half: '', '9m': '', year: '' }, combined: { q1: '', half: '', '9m': '', year: '' } }, payrollDates: {}, appearance: { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0, fieldBorderOpacity: 50 }, activityReferences: {}, sectionHeadings: {} },
 });
 
 function normalizeDatabase(raw: Partial<AppDatabase> | null | undefined): AppDatabase {
   const base = emptyDatabase();
-  const defaultAppearance = { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 };
+  const defaultAppearance = { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0, fieldBorderOpacity: 50 };
   const settings = raw?.settings as Partial<AppDatabase['settings']> | undefined;
   const legacyAnnual = typeof settings?.reportDeadlines?.annual === 'string' ? settings.reportDeadlines.annual : '';
   const workingYear = Math.max(2026, normalizeWorkingYear(settings?.workingYear));
@@ -86,6 +86,7 @@ function normalizeDatabase(raw: Partial<AppDatabase> | null | undefined): AppDat
         fieldColor: settings?.appearance?.fieldColor || defaultAppearance.fieldColor,
         fieldRadius: settings?.appearance?.fieldRadius ?? defaultAppearance.fieldRadius,
         fieldOpacity: [0, 20, 40, 60, 80, 100].includes(Number(settings?.appearance?.fieldOpacity)) ? Number(settings?.appearance?.fieldOpacity) : defaultAppearance.fieldOpacity,
+        fieldBorderOpacity: [0, 20, 40, 60, 80, 100].includes(Number(settings?.appearance?.fieldBorderOpacity)) ? Number(settings?.appearance?.fieldBorderOpacity) : defaultAppearance.fieldBorderOpacity,
       },
       activityReferences: {
         kved: Array.isArray(settings?.activityReferences?.kved) ? settings.activityReferences.kved : undefined,

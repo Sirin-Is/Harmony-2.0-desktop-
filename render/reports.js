@@ -1,55 +1,39 @@
-// render/reports.js
-// Builds the "Декларації" tab: вкладки "1-2 група" (раз на рік) / "3 група"
-// (щоквартально, ті самі періоди, що в Податках). Дедлайни підставляються
-// з db.settings.reportDeadlines, як і в app.js.
+// Декларації: усі релевантні періоди групи в одній таблиці.
 
 import { escapeHtml } from '../utils';
-import { getReportField, getClientsByTaxTab, getEffectiveReportDeadline, getSettings } from '../state.js';
-import { REPORT_GROUPS, reportPeriodsFor, reportStatusPillHtml, reportDaysUntilLabel } from '../report-model.ts';
+import { getReportField, getSettings, getVisibleClients } from '../state.js';
+import { REPORT_GROUPS, reportPeriodsFor } from '../report-model.ts';
 import { table, empty } from './layout.js';
 import { uiState } from '../ui-state.js';
 import { shortClientName, groupAtPeriod } from '../client-model.js';
 
-function reportRow(item, realGroup, record, deadline, isDefaultDeadline) {
-  const clientName = escapeHtml(item.name);
-  return `<tr data-row-id="${escapeHtml(item.id)}">
-    <td class="fop-name-cell">${escapeHtml(shortClientName(item.name))}</td>
-    <td><input type="date" class="report-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(realGroup)}" data-field="submittedDate" value="${escapeHtml(record.submittedDate || '')}" aria-label="Дата подання звіту: ${clientName}"></td>
-    <td class="report-days">${reportDaysUntilLabel(deadline, record)}</td>
-    <td><input type="date" class="report-field ${isDefaultDeadline ? 'tax-field-default' : ''}" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(realGroup)}" data-field="deadline" value="${escapeHtml(deadline)}" title="${isDefaultDeadline ? 'Значення з «Налаштувань». Змініть, щоб задати виняток лише для цього ФОП.' : ''}" aria-label="Дедлайн звіту: ${clientName}"></td>
-    <td class="report-status">${reportStatusPillHtml(record, deadline)}</td>
-    <td><input type="text" class="report-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(realGroup)}" data-field="note" placeholder="Примітка" value="${escapeHtml(record.note || '')}" aria-label="Примітка до звіту: ${clientName}"></td>
-  </tr>`;
+const STATUS = {
+  notReportable: { label: 'Не звітний' },
+  notSubmitted: { label: 'Не подано' },
+  submitted: { label: 'Подано' },
+  accepted: { label: 'Прийнято' },
+};
+
+function statusFor(record) {
+  if (STATUS[record.filingStatus]) return record.filingStatus;
+  if (record.notReportable) return 'notReportable';
+  return record.submittedDate ? 'submitted' : 'notSubmitted';
+}
+
+function periodCells(client, period) {
+  const realGroup = groupAtPeriod(client, period.key);
+  const record = getReportField(client.id, realGroup, period.key);
+  const status = statusFor(record);
+  const name = escapeHtml(client.name);
+  return `<td class="report-filing-status-cell"><button type="button" class="report-filing-status report-filing-status-${status}" data-report-status data-client="${escapeHtml(client.id)}" data-real-group="${escapeHtml(realGroup)}" data-period="${escapeHtml(period.key)}" data-status="${status}" aria-label="${STATUS[status].label}: ${name}" title="Натисніть, щоб змінити статус">${STATUS[status].label}</button></td><td><input type="text" class="report-field" data-client="${escapeHtml(client.id)}" data-real-group="${escapeHtml(realGroup)}" data-period="${escapeHtml(period.key)}" data-field="note" placeholder="Примітка" value="${escapeHtml(record.note || '')}" aria-label="Примітка, ${period.label}: ${name}"></td>`;
 }
 
 export function renderReports() {
-  if (!REPORT_GROUPS.some((g) => g.key === uiState.reportGroup)) uiState.reportGroup = '12';
+  if (!REPORT_GROUPS.some((group) => group.key === uiState.reportGroup)) uiState.reportGroup = '12';
   const periods = reportPeriodsFor(uiState.reportGroup, getSettings().workingYear);
-  if (!uiState.reportPeriod || !periods.some((p) => p.key === uiState.reportPeriod)) {
-    const now = new Date(); const current = now.getFullYear() === getSettings().workingYear ? now.getMonth() : 0;
-    uiState.reportPeriod = uiState.reportGroup === '3' ? periods[Math.max(0, Math.floor(current / 3) - 1)].key : periods[0].key;
-  }
-
-  const clients = getClientsByTaxTab(uiState.reportGroup, uiState.reportPeriod);
-  const rows = clients.map((item) => {
-    const realGroup = groupAtPeriod(item, uiState.reportPeriod);
-    const record = getReportField(item.id, realGroup, uiState.reportPeriod);
-    const deadline = getEffectiveReportDeadline(realGroup, uiState.reportPeriod, record);
-    const isDefault = !record.deadline && Boolean(deadline);
-    return reportRow(item, realGroup, record, deadline, isDefault);
-  });
-
-  const groupTabs = REPORT_GROUPS.map((g) =>
-    `<button class="tab ${g.key === uiState.reportGroup ? 'active' : ''}" data-report-group="${g.key}">${g.label}</button>`,
-  ).join('');
-  const periodTabs = periods.map((p) =>
-    `<button class="tab ${p.key === uiState.reportPeriod ? 'active' : ''}" data-report-period="${p.key}">${p.label}</button>`,
-  ).join('');
-  const body = clients.length
-    ? table(rows, ['ПІБ', 'Дата подання', 'Днів до дедлайну', 'Дедлайн', 'Статус', 'Примітка'])
-    : empty('У цій групі ще немає активних ФОП.');
-
-  const reportPeriodControls = uiState.reportGroup === '12' ? '' : periodTabs;
-  return `<div class="subnav section-control-row section-control-row-primary report-main-nav"><div>${groupTabs}${reportPeriodControls ? '<span class="tab-separator" aria-hidden="true">|</span>' : ''}${reportPeriodControls}</div></div>
-    ${body}`;
+  const clients = getVisibleClients().filter((client) => periods.some((period) => uiState.reportGroup === '3' ? groupAtPeriod(client, period.key) === '3' : ['1', '2'].includes(groupAtPeriod(client, period.key))));
+  const groupTabs = REPORT_GROUPS.map((group) => `<button class="tab ${group.key === uiState.reportGroup ? 'active' : ''}" data-report-group="${group.key}">${group.label}</button>`).join('');
+  const rows = clients.map((client) => `<tr data-row-id="${escapeHtml(client.id)}"><td class="fop-name-cell">${escapeHtml(shortClientName(client.name))}</td>${periods.map((period) => periodCells(client, period)).join('')}</tr>`);
+  const headings = ['ПІБ', ...periods.flatMap((period) => [`${period.label} — статус`, `${period.label} — примітка`])];
+  return `<div class="subnav section-control-row section-control-row-primary report-main-nav"><div>${groupTabs}</div></div>${clients.length ? table(rows, headings, 'declarations-table') : empty('У цій групі ще немає активних ФОП.')}`;
 }
