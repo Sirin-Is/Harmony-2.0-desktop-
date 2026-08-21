@@ -317,10 +317,11 @@ function drawCalendarDeadlineTransfers() {
     if (!statutory || !control) return;
     const from = statutory.getBoundingClientRect(); const to = control.getBoundingClientRect();
     const x1 = from.left - gridRect.left + 8; const x2 = to.right - gridRect.left - 8;
-    const y1 = from.top - gridRect.top + 20; const y2 = to.top - gridRect.top + 20;
-    const curveY = Math.max(4, Math.min(y1, y2) - 13);
+    // Reserve the lower edge of the cells for transfer arrows, so they do
+    // not cross the date number or the deadline cards above.
+    const y = Math.min(from.bottom, to.bottom) - gridRect.top - 18;
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', `M ${x1} ${y1} C ${x1} ${curveY}, ${x2} ${curveY}, ${x2} ${y2}`);
+    path.setAttribute('d', `M ${x1} ${y} L ${x2} ${y}`);
     path.setAttribute('marker-end', 'url(#deadline-arrow)');
     layer.appendChild(path);
   });
@@ -931,7 +932,11 @@ function bindCurrentView() {
         committed = true;
         if (save) {
           const normalized = normalizeNonNegativeAmount(input.value);
-          if (normalized.ok && normalized.value !== '') {
+          if (normalized.ok && normalized.value === '') {
+            setMonthlyPaymentField(toggle.dataset.client, toggle.dataset.month, 'charged', '');
+            setMonthlyPaymentPaidStatus(toggle.dataset.client, toggle.dataset.month, false);
+            setVisualState(false, '');
+          } else if (normalized.ok) {
             if (!setMonthlyPaymentField(toggle.dataset.client, toggle.dataset.month, 'charged', normalized.value)) showToast(invalidAmountMessage, 'error');
             else {
               const active = toggle.dataset.active === 'true';

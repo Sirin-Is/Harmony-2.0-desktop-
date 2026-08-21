@@ -31,7 +31,8 @@ function periodCells(client, period) {
 function declarationsTable(rows, periods) {
   const headings = periods.map((period) => `<th colspan="2" class="report-period-heading">${escapeHtml(period.label)}</th>`).join('');
   const columns = periods.map(() => '<col class="declaration-status-column"><col class="declaration-note-column">').join('');
-  return `<div class="table-wrap"><table class="table declarations-table"><colgroup><col class="declaration-fop-column">${columns}</colgroup><thead><tr><th class="fop-name-cell">ПІБ</th>${headings}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+  const widthClass = periods.length === 1 ? ' declarations-table-single-period' : '';
+  return `<div class="table-wrap"><table class="table declarations-table${widthClass}"><colgroup><col class="declaration-fop-column">${columns}</colgroup><thead><tr><th class="fop-name-cell">ПІБ</th>${headings}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
 }
 
 export function renderReports() {

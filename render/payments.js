@@ -18,9 +18,8 @@ function serviceChargeToggle(item, monthKey) {
   const paid = getMonthlyCellValue(item.id, monthKey, 'paid');
   const hasCharge = charged !== undefined && charged !== '' && charged !== '-';
   const active = hasCharge && String(charged) === String(paid);
-  const fallback = formatEditableAmount(item.serviceCost);
-  const value = formatEditableAmount(hasCharge ? charged : item.serviceCost);
-  return `<td class="month-charge-cell"><button type="button" class="service-charge-toggle ${active ? 'is-active' : ''}" data-service-charge data-client="${escapeHtml(item.id)}" data-month="${escapeHtml(monthKey)}" data-active="${active}" data-value="${escapeHtml(String(hasCharge ? charged : item.serviceCost ?? ''))}" data-default-value="${escapeHtml(String(item.serviceCost ?? ''))}" aria-label="Оплата за ${escapeHtml(monthKey)}, ${escapeHtml(item.name)}" title="Натисніть, щоб позначити сплату; двічі швидко — щоб змінити суму">${escapeHtml(value || fallback || '—')}</button></td>`;
+  const value = formatEditableAmount(hasCharge ? charged : '');
+  return `<td class="month-charge-cell"><button type="button" class="service-charge-toggle ${active ? 'is-active' : ''}" data-service-charge data-client="${escapeHtml(item.id)}" data-month="${escapeHtml(monthKey)}" data-active="${active}" data-value="${escapeHtml(String(hasCharge ? charged : ''))}" data-default-value="${escapeHtml(String(item.serviceCost ?? ''))}" aria-label="Оплата за ${escapeHtml(monthKey)}, ${escapeHtml(item.name)}" title="Натисніть, щоб позначити сплату; двічі швидко — щоб змінити суму">${escapeHtml(value)}</button></td>`;
 }
 
 export function renderPayments() {

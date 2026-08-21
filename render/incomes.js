@@ -8,6 +8,7 @@ import { getVisibleClients, incomeSum, getIncomeValue, getSettings } from '../st
 import { groupLimitAmount } from '../client-model';
 import { shortClientName } from '../client-model.js';
 import { formatEditableAmount } from '../money-validation.js';
+import { uiState } from '../ui-state.js';
 
 function remainingLimitLabel(group, ytdIncome) {
   const limit = groupLimitAmount(group, getSettings().minWage);
