@@ -14,6 +14,7 @@ export const uiState = {
   reportPeriod: null,
   combinedReportPeriod: null,
   incomeGroup: '12',
+  incomeQuarter: null,
   dashboardFilters: {},
   dashboardSearch: '',
   dashboardFilterOpen: null,

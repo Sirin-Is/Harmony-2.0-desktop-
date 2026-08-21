@@ -16,14 +16,14 @@ import { getVisibleClients, getCustomColumns } from '../state.js';
 import { uiState } from '../ui-state.js';
 
 const FILTER_COLUMNS = [
-  ['name', 'ПІБ'], ['groupRate', 'Група / ставка'], ['currency', 'Валюта'], ['phone', 'Телефон'], ['email', 'Email'], ['bankAccess', 'Банк'], ['prro', 'П/РРО'], ['employees', 'Наймані'], ['serviceCost', 'Вартість'], ['kepIssuer', 'КЕП від:'], ['kepExpiry', 'Дійсний'],
+  ['name', 'ПІБ'], ['groupRate', 'Група / ставка'], ['currency', 'Валюта'], ['phone', 'Телефон'], ['bankAccess', 'Банк'], ['prro', 'П/РРО'], ['employees', 'Наймані'], ['serviceCost', 'Вартість'], ['kepIssuer', 'КЕП від:'], ['kepExpiry', 'Дійсний'],
 ];
 
 function filterValue(item, key) {
   if (key.startsWith('custom:')) return item.customFields?.[key.slice(7)] || '';
   return {
     name: item.name || '', groupRate: `${item.group || '-'} / ${rateText(item)}`,
-    currency: item.currency || '-', phone: item.phone || '', email: item.email || '',
+    currency: item.currency || '-', phone: item.phone || '',
     bankAccess: item.bankAccess || '', prro: item.prro || '', employees: Number(item.employeesCount) > 0 ? String(item.employeesCount) : '-',
     serviceCost: String(toNumber(item.serviceCost) || ''), kepIssuer: item.kepIssuer || '',
     kepExpiry: kepDaysLabel(item.kepExpiry),
@@ -69,7 +69,6 @@ function clientRow(item, columns) {
     <td>${escapeHtml(item.group || '-')} / ${rateText(item)}</td>
     <td>${escapeHtml(item.currency || '-')}</td>
     <td>${phoneLines(item.phone)}</td>
-    <td>${escapeHtml(item.email || '-')}</td>
     <td>${escapeHtml(item.bankAccess || '-')}</td>
     <td>${escapeHtml(item.prro || '-')}</td>
     <td>${Number(item.employeesCount) > 0 ? escapeHtml(item.employeesCount) : '-'}</td>

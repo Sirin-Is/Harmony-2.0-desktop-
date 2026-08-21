@@ -841,15 +841,23 @@ function bindCurrentView() {
   }));
 
   // --- Доходи ---
+  document.querySelectorAll('[data-income-quarter]').forEach((button) => button.addEventListener('click', () => {
+    uiState.incomeQuarter = Number(button.dataset.incomeQuarter);
+    render();
+  }));
   const refreshIncomeLimit = (field) => {
     const row = field.closest('tr[data-income-limit]');
     const limitCell = row?.querySelector('.income-limit-cell');
-    if (!row || !limitCell) return;
+    const quarterSumCell = row?.querySelector('.income-quarter-sum');
+    if (!row || !limitCell || !quarterSumCell) return;
     const limit = Number(row.dataset.incomeLimit);
-    if (!limit) { limitCell.textContent = '—'; return; }
+    const otherIncome = Number(row.dataset.incomeOutsideQuarter || 0);
     const values = [...row.querySelectorAll('.income-value')].map((input) => normalizeNonNegativeAmount(input.value));
     if (values.some((value) => !value.ok)) return;
-    const remaining = limit - values.reduce((sum, value) => sum + Number(value.value || 0), 0);
+    const quarterIncome = values.reduce((sum, value) => sum + Number(value.value || 0), 0);
+    quarterSumCell.textContent = moneyFormat.format(quarterIncome);
+    if (!limit) { limitCell.textContent = '—'; return; }
+    const remaining = limit - otherIncome - quarterIncome;
     const pill = document.createElement('span');
     pill.className = `pill ${remaining < 0 ? 'late' : remaining < limit * .1 ? 'warn' : 'ok'}`;
     pill.textContent = moneyFormat.format(remaining);
@@ -882,21 +890,76 @@ function bindCurrentView() {
   });
 
   // --- Оплати ---
-  document.querySelectorAll('.month-value').forEach((field) => field.addEventListener('change', () => {
-    if (!setMonthlyPaymentField(field.dataset.client, field.dataset.month, field.dataset.type, field.value)) showToast(invalidAmountMessage, 'error');
-  }));
-  document.querySelectorAll('.month-paid-check').forEach((field) => field.addEventListener('change', () => {
-    if (!setMonthlyPaymentPaidStatus(field.dataset.client, field.dataset.month, field.checked)) {
-      field.checked = false;
-      showToast('Спочатку вкажіть суму в «Нарах.»', 'info');
-    }
-  }));
+  document.querySelectorAll('[data-service-charge]').forEach((toggle) => {
+    let singleClickTimer;
+    const setVisualState = (active, value) => {
+      toggle.dataset.active = String(active);
+      toggle.dataset.value = value;
+      toggle.classList.toggle('is-active', active);
+      toggle.textContent = formatEditableAmount(value) || '—';
+    };
+    const setPaymentStatus = (paid) => {
+      const value = toggle.dataset.value || toggle.dataset.defaultValue;
+      if (!value) { showToast('У картці ФОП не вказана вартість обслуговування.', 'info'); return false; }
+      if (!setMonthlyPaymentField(toggle.dataset.client, toggle.dataset.month, 'charged', value)) {
+        showToast(invalidAmountMessage, 'error');
+        return false;
+      }
+      if (!setMonthlyPaymentPaidStatus(toggle.dataset.client, toggle.dataset.month, paid)) return false;
+      setVisualState(paid, value);
+      return true;
+    };
+    toggle.addEventListener('click', () => {
+      window.clearTimeout(singleClickTimer);
+      singleClickTimer = window.setTimeout(() => {
+        const isActive = toggle.dataset.active === 'true';
+        setPaymentStatus(!isActive);
+      }, 230);
+    });
+    toggle.addEventListener('dblclick', (event) => {
+      event.preventDefault();
+      window.clearTimeout(singleClickTimer);
+      const input = document.createElement('input');
+      input.type = 'text'; input.inputMode = 'decimal'; input.className = 'service-charge-toggle-edit';
+      input.value = formatEditableAmount(toggle.dataset.value || toggle.dataset.defaultValue);
+      input.setAttribute('aria-label', toggle.getAttribute('aria-label'));
+      toggle.replaceWith(input);
+      input.focus(); input.select();
+      let committed = false;
+      const finish = (save) => {
+        if (committed) return;
+        committed = true;
+        if (save) {
+          const normalized = normalizeNonNegativeAmount(input.value);
+          if (normalized.ok && normalized.value !== '') {
+            if (!setMonthlyPaymentField(toggle.dataset.client, toggle.dataset.month, 'charged', normalized.value)) showToast(invalidAmountMessage, 'error');
+            else {
+              const active = toggle.dataset.active === 'true';
+              if (active) setMonthlyPaymentPaidStatus(toggle.dataset.client, toggle.dataset.month, true);
+              setVisualState(active, normalized.value);
+            }
+          } else showToast(invalidAmountMessage, 'error');
+        }
+        input.replaceWith(toggle);
+      };
+      input.addEventListener('change', () => finish(true));
+      input.addEventListener('blur', () => finish(true));
+      input.addEventListener('keydown', (keyEvent) => {
+        if (keyEvent.key === 'Enter') { keyEvent.preventDefault(); finish(true); }
+        if (keyEvent.key === 'Escape') { keyEvent.preventDefault(); finish(false); }
+      });
+    });
+  });
   document.querySelectorAll('[data-autofill-month]').forEach((button) => button.addEventListener('click', () => {
     const changed = autofillMonthlyCharges(button.dataset.autofillMonth);
     if (!changed) { showToast('У картках ФОП ще немає вартості обслуговування.', 'info'); return; }
-    document.querySelectorAll(`.month-value[data-month="${CSS.escape(button.dataset.autofillMonth)}"][data-type="charged"]`).forEach((field) => {
-      const client = getClientById(field.dataset.client);
-      field.value = String(client?.serviceCost ?? '');
+    document.querySelectorAll(`[data-service-charge][data-month="${CSS.escape(button.dataset.autofillMonth)}"]`).forEach((toggle) => {
+      const client = getClientById(toggle.dataset.client);
+      const value = String(client?.serviceCost ?? '');
+      toggle.dataset.active = 'false';
+      toggle.dataset.value = value;
+      toggle.classList.remove('is-active');
+      toggle.textContent = formatEditableAmount(value) || '—';
     });
     showToast(`Автоматично заповнено нарахування: ${changed}.`, 'success');
   }));
