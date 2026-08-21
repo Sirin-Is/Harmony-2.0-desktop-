@@ -111,6 +111,17 @@ export function shortClientName(name) {
   return String(name || '').trim().split(/\s+/).slice(0, 2).join(' ');
 }
 
+/** Finds a client by the full name stored in the card or by its unique
+ * shortened form displayed in Harmony tables. */
+export function findClientByImportName(db, name) {
+  const normalized = normalizeClientName(name);
+  if (!normalized) return null;
+  const exact = db.clients.find((item) => normalizeClientName(item.name) === normalized);
+  if (exact) return exact;
+  const abbreviated = db.clients.filter((item) => normalizeClientName(shortClientName(item.name)) === normalized);
+  return abbreviated.length === 1 ? abbreviated[0] : null;
+}
+
 /** Group that was effective at the beginning of a tax/report period. */
 export function groupAtPeriod(item, period = '') {
   const changes = [...(item?.groupChanges || [])].filter((change) => change?.effectiveDate && change?.group).sort((a, b) => String(a.effectiveDate).localeCompare(String(b.effectiveDate)));

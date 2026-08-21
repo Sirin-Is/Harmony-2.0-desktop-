@@ -1134,7 +1134,7 @@ export function importIncomeRows(rows, year = getSettings().workingYear) {
   if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return { updated: 0, skipped: 0, unknown: [] }; }
   const changes = []; const unknown = []; let skipped = 0;
   rows.forEach((row) => {
-    const client = clientModel.findClientByName(db, row.name);
+    const client = clientModel.findClientByImportName(db, row.name);
     if (!client) { unknown.push(row.name); return; }
     (row.values || []).slice(0, 12).forEach((rawValue, index) => {
       if (String(rawValue ?? '').trim() === '') return;

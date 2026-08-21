@@ -14,7 +14,7 @@ import { normalizeEmployeeName, validateEmployee } from '../employee-model.js';
 import { defaultPayrollDates, payrollDateForPaymentType, payrollDatesForPeriod, payrollPaymentTypes } from '../payroll-model.js';
 import { isValidIsoDate, isValidMonthPeriodKey, isValidReportPeriodKey, isValidTaxPeriodKey, validateCalendarEvent, validateReportRecordChange, validateTaxRecordChange } from '../workflow-validation.js';
 import { findActivityByCode, loadActivityReference, normalizeActivityCode } from '../data/activity-reference.js';
-import { birthDateFromRnokpp, groupAtPeriod, normalizeClientName } from '../client-model.js';
+import { birthDateFromRnokpp, findClientByImportName, groupAtPeriod, normalizeClientName } from '../client-model.js';
 
 test('політика паролів компенсує недоступну перевірку витоків на Free Plan', () => {
   assert.equal(MIN_PASSWORD_LENGTH, 8);
@@ -336,6 +336,9 @@ test('картка працівника вимагає роботодавця, �
 
 test('імпорт доходів однаково знаходить ПІБ із Excel і Harmony', () => {
   assert.equal(normalizeClientName('  Іванов\u00a0Іван\u200b Іванович  '), normalizeClientName('Іванов Іван Іванович'));
+  const db = { clients: [{ id: 'one', name: 'Іванов Іван Іванович' }, { id: 'two', name: 'Петренко Петро Петрович' }] };
+  assert.equal(findClientByImportName(db, 'Іванов Іван')?.id, 'one');
+  assert.equal(findClientByImportName(db, 'Петренко Петро Петрович')?.id, 'two');
 });
 
 test('етап 2 підключає пошук, очищення фільтрів і доступні стани навігації', () => {

@@ -780,7 +780,6 @@ function bindCurrentView() {
   }));
 
   // --- Доходи ---
-  document.querySelectorAll('[data-income-group]').forEach((b) => b.onclick = () => { uiState.incomeGroup = b.dataset.incomeGroup; render(); });
   document.querySelectorAll('.income-value').forEach((field) => field.addEventListener('change', () => {
     if (!setIncomeValue(field.dataset.client, field.dataset.month, field.value)) showToast(invalidAmountMessage, 'error');
   }));
