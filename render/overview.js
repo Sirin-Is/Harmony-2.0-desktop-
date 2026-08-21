@@ -48,7 +48,7 @@ function reportAlertEntries() {
     let worst = null;
     reportPeriodsFor(realGroup, workingYear).forEach((period) => {
       const record = getReportField(item.id, realGroup, period.key);
-      if (record.submittedDate) return;
+      if (record.notReportable || record.submittedDate) return;
       const deadline = getEffectiveReportDeadline(realGroup, period.key, record);
       if (!deadline) return;
       const days = daysUntil(deadline);
@@ -180,8 +180,7 @@ export function renderOverview() {
   const combinedReportAlerts = combinedReportAlertEntries();
   const serviceAlerts = serviceDebtAlertEntries();
   const hrAlerts = hrDocumentsAlertEntries();
-  return `<p class="note overview-intro">Контроль ситуації</p>
-    ${salaryReminder() ? reminderRow('Виплата ЗП', 'Сьогодні день виплати зарплати') : ''}
+  return `${salaryReminder() ? reminderRow('Виплата ЗП', 'Сьогодні день виплати зарплати') : ''}
     ${overviewRow('Термін дії КЕП', kepAlerts, 'dashboard', 'Найближчим часом не спливає термін дії жодного КЕП', 'Спливає термін дії КЕП: ')}
     ${overviewRow('Сплата послуг', serviceAlerts, 'payments', 'Всі сплатили наші послуги', 'Наші послуги мають ще сплатити: ')}
     ${overviewRow('Сплата податків', taxAlerts, 'taxes', 'Всі податки сплачені', 'Повинні сплатити податки: ')}

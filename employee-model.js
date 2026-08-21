@@ -8,13 +8,13 @@ function isIsoDate(value) {
 export const normalizeEmployeeName = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('uk');
 
 export function validateEmployee(fields) {
-  if (!String(fields?.clientId || '').trim() || !String(fields?.name || '').trim() || !String(fields?.position || '').trim() || !String(fields?.hireDate || '').trim()) {
-    return { ok: false, reason: 'Вкажіть ФОП, ПІБ працівника, посаду та дату прийняття.' };
+  if (!String(fields?.clientId || '').trim() || !String(fields?.name || '').trim() || !String(fields?.position || '').trim()) {
+    return { ok: false, reason: 'Вкажіть ФОП, ПІБ працівника та посаду.' };
   }
-  if (!isIsoDate(fields.hireDate) || (fields.dismissalDate && !isIsoDate(fields.dismissalDate))) {
+  if ((fields.hireDate && !isIsoDate(fields.hireDate)) || (fields.dismissalDate && !isIsoDate(fields.dismissalDate))) {
     return { ok: false, reason: 'Вкажіть коректні дати прийняття та звільнення.' };
   }
-  if (fields.dismissalDate && fields.dismissalDate < fields.hireDate) {
+  if (fields.dismissalDate && fields.hireDate && fields.dismissalDate < fields.hireDate) {
     return { ok: false, reason: 'Дата звільнення не може передувати даті прийняття.' };
   }
   return { ok: true, reason: '' };

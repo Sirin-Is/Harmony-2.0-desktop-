@@ -23,6 +23,14 @@ function amountInput(item, monthKey, type) {
   return `<td><input class="month-value" inputmode="decimal" data-client="${escapeHtml(item.id)}" data-month="${escapeHtml(monthKey)}" data-type="${escapeHtml(type)}" value="${escapeHtml(value)}" aria-label="${typeLabel}, ${escapeHtml(monthKey)}, ${escapeHtml(item.name)}"></td>`;
 }
 
+function paidCheckbox(item, monthKey) {
+  const charged = getMonthlyCellValue(item.id, monthKey, 'charged');
+  const paid = getMonthlyCellValue(item.id, monthKey, 'paid');
+  const hasCharge = charged !== undefined && charged !== '' && charged !== '-';
+  const checked = hasCharge && String(charged) === String(paid);
+  return `<td class="month-paid-cell"><input type="checkbox" class="month-paid-check" data-client="${escapeHtml(item.id)}" data-month="${escapeHtml(monthKey)}" ${checked ? 'checked' : ''} ${hasCharge ? '' : 'disabled'} aria-label="Сплачено повністю, ${escapeHtml(monthKey)}, ${escapeHtml(item.name)}"></td>`;
+}
+
 export function renderPayments() {
   const workingYear = getSettings().workingYear;
   const allMonths = monthsFor(workingYear);
@@ -31,7 +39,7 @@ export function renderPayments() {
   const clients = getVisibleClients();
   const rows = clients.map((item) => {
     const totals = getClientMonthlyTotals(item.id);
-    const monthCells = months.map((month) => `${amountInput(item, month.key, 'charged')}${amountInput(item, month.key, 'paid')}`).join('');
+    const monthCells = months.map((month) => `${amountInput(item, month.key, 'charged')}${paidCheckbox(item, month.key)}`).join('');
     return `<tr>
       <td class="fop-name"><strong>${escapeHtml(shortClientName(item.name))}</strong></td>
       <td class="right amount debt">${moneyFormat.format(totals.charged - totals.paid)}</td>
@@ -39,11 +47,11 @@ export function renderPayments() {
     </tr>`;
   });
   const monthHeadRow = months.map((month) => `<th colspan="2" class="month-head">${month.label}<button type="button" class="auto-charge" data-autofill-month="${escapeHtml(month.key)}" title="Заповнити «Нарах.» за вартістю обслуговування в картках ФОП">Авто</button></th>`).join('');
-  const subHeadRow = months.map(() => '<th>Нарах.</th><th>Сплач.</th>').join('');
+  const subHeadRow = months.map(() => '<th>Нарах.</th><th class="month-boundary">Сплач.</th>').join('');
   const body = rows.length
     ? rows.join('')
     : `<tr><td colspan="${2 + months.length * 2}">${empty('Додайте ФОП на сторінці «Огляд».')}</td></tr>`;
-  return `<div class="toolbar"><p class="note">Для кожного ФОП — нараховано і сплачено по місяцях ${workingYear} року. Порожнє поле означає, що суму ще не внесено. Зміни зберігаються після виходу з поля.</p></div><div class="subnav">${[1,2,3,4].map((quarter) => `<button class="tab ${quarter === uiState.paymentsQuarter ? 'active' : ''}" data-payments-quarter="${quarter}">${quarter} квартал</button>`).join('')}</div>
+  return `<div class="subnav">${[1,2,3,4].map((quarter) => `<button class="tab ${quarter === uiState.paymentsQuarter ? 'active' : ''}" data-payments-quarter="${quarter}">${quarter} квартал</button>`).join('')}</div>
     <div class="table-wrap payments-matrix">
       <table class="table">
         <thead>

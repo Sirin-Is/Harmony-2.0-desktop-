@@ -188,18 +188,20 @@ tr.dragging { opacity: .45; }
 tr.drag-over td { box-shadow: inset 0 2px 0 var(--brand); }
 
 /* Group/period/quarter tabs (Податки, Оплати, Доходи) */
-.subnav { display: flex; gap: 5px; margin-bottom: 6px; flex-wrap: wrap; }
+.subnav { display: flex; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
 .subnav.periods { margin-bottom: 8px; }
 .tab { display: inline-flex; align-items: center; justify-content: center; height: 36px; border: 1px solid #d7dde5; background: #fff; border-radius: 7px; padding: 0 12px; font: 600 11px inherit; cursor: pointer; color: #475467; white-space: nowrap; }
 .tab:hover { border-color: var(--brand); }
 .tab.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.tab-separator { display: inline-flex; align-items: center; color: #98a2b3; font-weight: 700; padding: 0 2px; }
+.report-main-nav > div:first-child, .income-main-nav > div:first-child { display: flex; gap: 8px; }
 
 /* Tax rows */
 .fop-name-cell { font-weight: 600; white-space: nowrap; }
-.exempt-row td { color: #98a2b3; }
+.exempt-row td:not(.fop-name-cell) { color: #98a2b3; }
 .exempt-row.fop-all-exempt td { background: #f3f4f6; }
 .fop-name-cell.fop-fully-exempt { color: #667085; }
-.tax-field, .report-field { border: 1px solid #d7dde5; border-radius: 5px; padding: 5px; font: 12px inherit; color: var(--ink); }
+.tax-field, .report-field, .combined-report-field, .income-value, .month-value { border: 1px solid #d7dde5; border-radius: 5px; padding: 5px; font: 12px inherit; color: var(--ink); background: rgb(var(--field-rgb, 255 255 255) / var(--field-opacity, 1)); }
 select.tax-field { width: 150px; }
 input.tax-field[type="date"], input.report-field[type="date"] { width: 134px; }
 input.tax-field[type="text"], input.report-field[type="text"] { width: 150px; }
@@ -241,6 +243,7 @@ input.tax-field-default { border-style: dashed; background: #fbfdfc; color: #4b6
 .tax-table th:nth-child(9), .tax-table td:nth-child(9) { width: 104px; }
 .tax-table input.tax-field[type="date"] { width: 112px; }
 .tax-table input.tax-field[type="text"], .tax-table select.tax-field { width: 100%; min-width: 0; }
+.tax-table tbody tr:nth-child(3n + 1) td { border-top: 2px solid #b7c2d0; }
 body:has(.tax-table) { overflow: hidden; }
 #content:has(.tax-table) > .table-wrap { max-height: calc(100vh - 285px); }
 /* Large registers own their vertical scrolling; without this the page and
@@ -274,7 +277,7 @@ body:has(.activities-table), body:has(.activities-mapping-table), body:has(.audi
 .compact-date { border: 1px solid #d7dde5; border-radius: 5px; padding: 4px; font: 12px inherit; color: var(--ink); width: 112px; }
 
 /* ===== Доходи ===== */
-.income-value { width: 74px; border: 1px solid #d7dde5; border-radius: 5px; padding: 5px 3px; font-family: inherit; font-size: 12px; text-align: right; color: var(--ink); }
+.income-value { width: 74px; padding: 5px 3px; text-align: right; }
 .income-sum { font-weight: 700; background: #f6f8fb; }
 
 /* ===== Огляд (cross-section summary) ===== */
@@ -345,9 +348,10 @@ dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 
 .calendar-event-completed { opacity: .82; text-decoration: none; }
 .calendar-complete-mark { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-right: 4px; border-radius: 50%; color: #fff; background: #208354; font-weight: 900; line-height: 1; text-decoration: none; }
 .calendar-event-row { display: flex; align-items: center; gap: 2px; }.calendar-event-row .calendar-event { flex: 1; }.calendar-delete { width: 16px; min-width: 16px; min-height: 16px; height: 16px; padding: 0; border: 0; background: transparent; color: #7a8696; font-size: 16px; line-height: 1; box-shadow: none; }.calendar-delete:hover { color: var(--red); background: transparent; }
-.calendar-tabs { display: flex; gap: 6px; margin-bottom: 12px; padding: 4px; border: 1px solid #d4dce8; border-radius: 7px; background: #f3f6fa; width: fit-content; }
-.calendar-tabs button { min-height: 29px; padding: 4px 12px; border: 0; border-radius: 5px; color: #5b687a; background: transparent; box-shadow: none; }
-.calendar-tabs button:hover { color: #264f9f; background: #e4edff; }.calendar-tabs button.active { color: #fff; background: var(--brand); box-shadow: 0 1px 3px #315cba55; }
+.calendar-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+.calendar-tabs button { min-height: 36px; }
+.calendar-scroll { max-height: calc(100vh - 230px); overflow: auto; padding-right: 4px; }
+body:has(.calendar-scroll) { overflow: hidden; }
 .calendar-sticky { position: sticky; top: 78px; z-index: 8; margin: -2px -2px 10px; padding: 2px 2px 8px; background: var(--bg); }
 .calendar-sticky .calendar-tabs { margin-bottom: 8px; }
 .calendar-sticky .toolbar { margin: 0; }
@@ -427,7 +431,7 @@ dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 
 .payroll-table td:nth-child(4) input, .payroll-table td:nth-child(5) input, .payroll-table td:nth-child(6) input, .payroll-table td:nth-child(7) input { text-align: right; font-variant-numeric: tabular-nums; }
 .payroll-table td:nth-child(8), .payroll-table td:nth-child(10), .payroll-table td:nth-child(11), .payroll-table td:nth-child(12) { text-align: center; }
 .payroll-status-field { text-align: center; }
-.dropdown-settings-list { margin: 16px 0; }.dropdown-settings-list h3 { font-size: 13px; margin: 0 0 6px; }.dropdown-settings-list > div { display: grid; gap: 5px; max-width: 430px; }.dropdown-settings-list input { width: 100%; }
+.dropdown-settings-list { margin: 16px 0; }.dropdown-settings-list h3 { font-size: 13px; margin: 0 0 6px; }.dropdown-settings-list > div { display: grid; gap: 5px; max-width: 430px; }.dropdown-settings-list input { width: 100%; }.dropdown-add { height: 30px; margin-top: 6px; }
 .payroll-type-row td { padding: 5px 9px !important; border-top: 1px solid #9aa7b7; border-bottom: 1px solid #d5dce6; color: #334155; background: #f5f7fa; font-size: 12px; font-weight: 700; text-align: left; }
 .payroll-type-select { width: min(100%, 260px); min-width: 0; font: inherit; font-weight: 700; }
 .payroll-client-order { display: inline-flex; gap: 2px; margin-right: 4px; vertical-align: middle; }
@@ -438,7 +442,11 @@ dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 
 .payroll-type-row .payroll-batch-total { text-align: right; font-size: 11px; font-variant-numeric: tabular-nums; }
 .payroll-total-row td { padding-top: 5px; padding-bottom: 6px; color: #334155; background: #fafbfc; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
 .payroll-total-row td:nth-child(2) { text-align: left; }
-.auto-charge { margin-left: 5px; border: 0; border-radius: 4px; padding: 2px 4px; font: 600 9px inherit; color: #176b58; background: #dcf5ea; cursor: pointer; }
+.auto-charge { margin-left: 5px; border: 0; border-radius: 4px; padding: 2px 4px; font: 600 11px inherit; color: #176b58; background: #dcf5ea; cursor: pointer; }
+.month-boundary, .payments-matrix td.month-paid-cell { border-right: 2px solid #b7c2d0; }
+.month-paid-cell { text-align: center; }.month-paid-check { width: 16px; height: 16px; vertical-align: middle; }
+.payments-matrix .month-value { min-width: 102px; padding: 5px 4px; font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+.combined-report-toggle { text-align: center; }.combined-report-toggle input { width: 16px; height: 16px; }
 .task-type { display: inline-block; width: fit-content; border-radius: 99px; padding: 2px 7px; font-size: 10px; font-weight: 700; }
 .task-type-reports { color: #a51d30; background: #ffe5e9; }
 .task-type-taxes { color: #875900; background: #fff1c7; }

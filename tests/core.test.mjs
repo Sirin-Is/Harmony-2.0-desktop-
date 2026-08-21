@@ -14,7 +14,7 @@ import { normalizeEmployeeName, validateEmployee } from '../employee-model.js';
 import { defaultPayrollDates, payrollDateForPaymentType, payrollDatesForPeriod, payrollPaymentTypes } from '../payroll-model.js';
 import { isValidIsoDate, isValidMonthPeriodKey, isValidReportPeriodKey, isValidTaxPeriodKey, validateCalendarEvent, validateReportRecordChange, validateTaxRecordChange } from '../workflow-validation.js';
 import { findActivityByCode, loadActivityReference, normalizeActivityCode } from '../data/activity-reference.js';
-import { birthDateFromRnokpp, groupAtPeriod } from '../client-model.js';
+import { birthDateFromRnokpp, groupAtPeriod, normalizeClientName } from '../client-model.js';
 
 test('політика паролів компенсує недоступну перевірку витоків на Free Plan', () => {
   assert.equal(MIN_PASSWORD_LENGTH, 8);
@@ -121,14 +121,6 @@ test('податкові дедлайни 1–2 груп переносятьс�
   assert.equal(tax.calculatedTaxDeadline('2', 'unified', '2026-06'), '2026-06-19'); // 20 червня — субота
   assert.equal(tax.calculatedTaxDeadline('1', 'military', '2026-09'), '2026-09-18'); // 20 вересня — неділя
   assert.equal(tax.calculatedTaxDeadline('2', 'esv', '2026-03'), '2026-04-20');
-});
-
-test('АвтоОК визначає всі завершені періоди незалежно від відкритої вкладки', () => {
-  const august = new Date(2026, 7, 20);
-  assert.deepEqual(tax.priorTaxPeriods('1', 2026, august).map((period) => period.key), ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07']);
-  assert.deepEqual(tax.priorTaxPeriods('3', 2026, august).map((period) => period.key), ['2026-q1', '2026-half']);
-  assert.equal(tax.taxPeriodStart('2026-02'), '2026-02-01');
-  assert.equal(tax.taxPeriodStart('2026-half'), '2026-04-01');
 });
 
 test('податкові дедлайни 3 групи рахуються від завершення кварталу', () => {
@@ -252,6 +244,7 @@ test('ручне введення дат приймає коректний фо�
 
 test('РНОКПП визначає дату народження з перших п’яти цифр', () => {
   assert.equal(birthDateFromRnokpp('0000100000'), '1900-01-01');
+  assert.equal(birthDateFromRnokpp('1234567890'), '1933-10-19');
   assert.equal(birthDateFromRnokpp('12345'), '');
   assert.equal(birthDateFromRnokpp('12345-67890'), '1933-10-19');
 });
@@ -325,6 +318,7 @@ test('картка працівника вимагає роботодавця, �
   assert.match(validateEmployee({ ...valid, position: '' }).reason, /посаду/);
   assert.match(validateEmployee({ ...valid, dismissalDate: '2026-01-31' }).reason, /не може передувати/);
   assert.match(validateEmployee({ ...valid, hireDate: '2026-02-30' }).reason, /коректні дати/);
+  assert.equal(validateEmployee({ ...valid, hireDate: '' }).ok, true);
   const card = readFileSync(new URL('../employee-card-ui.js', import.meta.url), 'utf8');
   const hr = readFileSync(new URL('../render/hr.js', import.meta.url), 'utf8');
   const bootstrap = readFileSync(new URL('../bootstrap.js', import.meta.url), 'utf8');
@@ -338,6 +332,10 @@ test('картка працівника вимагає роботодавця, �
   assert.match(hr, /data-add-employee/);
   assert.match(hr, /data-open-employee/);
   assert.match(bootstrap, /openEmployeeCard\(button\.dataset\.openEmployee\)/);
+});
+
+test('імпорт доходів однаково знаходить ПІБ із Excel і Harmony', () => {
+  assert.equal(normalizeClientName('  Іванов\u00a0Іван\u200b Іванович  '), normalizeClientName('Іванов Іван Іванович'));
 });
 
 test('етап 2 підключає пошук, очищення фільтрів і доступні стани навігації', () => {
@@ -534,6 +532,7 @@ test('довідник КВЕД завантажується, нормалізу
   await loadActivityReference();
   assert.equal(normalizeActivityCode('1,1'), '01.10');
   assert.equal(normalizeActivityCode('01.11'), '01.11');
+  assert.equal(normalizeActivityCode('_47.91'), '47.91');
   assert.ok(findActivityByCode('kved', '1.11')?.[1]);
 });
 

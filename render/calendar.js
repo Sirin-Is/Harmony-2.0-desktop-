@@ -135,7 +135,7 @@ function derivedEvents(year, month) {
 }
 
 function sectionTabs(section) {
-  return `<div class="section-tabs calendar-tabs"><button class="${section === 'calendar' ? 'active' : ''}" data-calendar-section="calendar">Календар</button><button class="${section === 'tasks' ? 'active' : ''}" data-calendar-section="tasks">Задачі</button></div>`;
+  return `<div class="section-tabs calendar-tabs"><button class="tab ${section === 'calendar' ? 'active' : ''}" data-calendar-section="calendar">Календар</button><button class="tab ${section === 'tasks' ? 'active' : ''}" data-calendar-section="tasks">Задачі</button></div>`;
 }
 
 function renderTasks(year, fallbackDate) {
@@ -172,5 +172,5 @@ export function renderCalendar() {
     cells.push(`<div class="calendar-cell${date === today ? ' today' : ''}${weekend ? ' weekend' : ''}" data-calendar-day="${escapeHtml(date)}" role="button" tabindex="0"><strong>${day}</strong>${dayEvents.map((item) => { const eventId = escapeHtml(item.seriesId || item.id); const completed = isCompleted(item); return `<div class="calendar-event-row"><button class="calendar-event task-type-${typeClass(item.taskType)} ${escapeHtml(item.source || 'note')}${completed ? ' calendar-event-completed' : ''}${item.transferRole ? ` deadline-${item.transferRole}` : ''}" data-calendar-event="${eventId}" data-calendar-occurrence="${escapeHtml(item.occurrenceDate || item.eventDate)}" data-calendar-target="${escapeHtml(item.target || '')}" data-transfer-id="${escapeHtml(item.transferId || '')}" data-transfer-role="${escapeHtml(item.transferRole || '')}" title="${escapeHtml(item.note)}">${completed ? '<span class="calendar-complete-mark" aria-label="Виконано">✓</span>' : ''}${item.eventTime ? `${escapeHtml(item.eventTime)} ` : ''}${item.recurring ? '↻ ' : ''}${escapeHtml(eventLabel(item))}</button>${item.source ? '' : `<button class="icon calendar-delete" data-delete-note="${eventId}" data-delete-note-recurring="${item.recurring ? 'true' : ''}" title="Видалити ${item.recurring ? 'всю серію задач' : 'задачу'}">×</button>`}</div>`; }).join('')}</div>`);
   }
   return `<div class="calendar-sticky">${sectionTabs(section)}<div class="toolbar"><div class="toolbar-actions calendar-navigation"><button class="secondary" data-calendar-prev>←</button><strong class="calendar-period">${MONTH_NAMES_UA[month - 1]} ${year}</strong><button class="secondary" data-calendar-next>→</button><button class="secondary calendar-today" data-calendar-today>Сьогодні</button></div></div></div>
-    <div class="calendar-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Нд</span></div><div class="calendar-grid">${cells.join('')}<svg class="calendar-transfer-layer" aria-hidden="true"></svg></div>`;
+    <div class="calendar-scroll"><div class="calendar-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Нд</span></div><div class="calendar-grid">${cells.join('')}<svg class="calendar-transfer-layer" aria-hidden="true"></svg></div></div>`;
 }

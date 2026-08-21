@@ -115,6 +115,7 @@ export interface ReportRecord {
   submittedDate?: string;
   deadline?: string;
   note?: string;
+  notReportable?: boolean;
 }
 
 export interface MonthlyPaymentCell {
@@ -162,6 +163,8 @@ export interface PayrollRecord {
   clientId: string;
   employeeId: string;
   employeeName: string;
+  clientName?: string;
+  esvRate?: string;
   period: string;
   paymentDate?: string;
   amount?: string;

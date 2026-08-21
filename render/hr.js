@@ -25,13 +25,13 @@ function employees() {
     const documentStatus = linked.length ? `${sent}/${linked.length} надіслано` : 'Немає';
     return `<tr><td>${esc(shortName(client.name))}</td><td><button type="button" class="link-cell" data-open-employee="${esc(employee.id)}"><strong>${esc(employee.name || '-')}</strong></button></td><td>${esc(employee.position || '-')}</td><td>${date(employee.hireDate)}</td><td>${date(employee.dismissalDate)}</td><td>${esc(documentStatus)}</td></tr>`;
   }));
-  return `<div class="toolbar"><p class="note">Окремі картки працівників містять роботодавця, посаду, дати роботи та пов’язані кадрові документи.</p><button class="primary" data-add-employee>+ Працівник</button></div>${rows.length ? table(rows, ['ФОП', 'Працівник', 'Посада', 'Прийнято', 'Звільнено', 'Документи'], 'hr-table') : empty('Найманих працівників поки немає.')}`;
+  return `<div class="toolbar"><button class="primary" data-add-employee>+ Працівник</button></div>${rows.length ? table(rows, ['ФОП', 'Працівник', 'Посада', 'Прийнято', 'Звільнено', 'Документи'], 'hr-table') : empty('Найманих працівників поки немає.')}`;
 }
 
 function orders(period) {
   const clients = new Map(getVisibleClients().map((client) => [client.id, client]));
   const rows = [...getHrOrders()].filter((order) => !period || !order.period || order.period === period).sort((a, b) => String(b.date).localeCompare(String(a.date))).map((order) => { const sent = order.deliveryStatus === 'Надіслано'; const context = `${order.number}, ${clients.get(order.clientId)?.name || 'ФОП'}`; return `<tr><td><strong>${esc(shortName(clients.get(order.clientId)?.name || '-'))}</strong></td><td>${esc(order.number)}</td><td>${date(order.date)}</td><td>${esc(order.subject)}</td><td>${esc(order.employeeName || '-')}</td><td>${date(order.effectiveDate)}</td><td><button class="delivery-status ${sent ? 'sent' : 'pending'}" data-toggle-order-delivery="${esc(order.id)}" title="Змінити статус" aria-pressed="${sent}" aria-label="Статус надсилання документа ${esc(context)}">${sent ? 'Надіслано' : 'Не надіслано'}</button></td><td class="row-actions"><button class="icon" data-edit-hr-order="${esc(order.id)}" title="Редагувати документ" aria-label="Редагувати документ ${esc(context)}">✎</button><button class="icon" data-delete-hr-order="${esc(order.id)}" title="Видалити документ" aria-label="Видалити документ ${esc(context)}">✕</button></td></tr>`; });
-  return `<div class="toolbar"><p class="note">Фіксуйте кадрові документи, які необхідно надіслати конкретному ФОП.</p><button class="primary" data-add-hr-order>+ Документ</button></div>${rows.length ? table(rows, ['ФОП', '№', 'Дата', 'Суть документа', 'Працівник', 'Початок дії', 'Статус', ''], 'hr-table') : empty('Кадрових документів поки немає.')}`;
+  return `<div class="toolbar"><button class="primary" data-add-hr-order>+ Документ</button></div>${rows.length ? table(rows, ['ФОП', '№', 'Дата', 'Суть документа', 'Працівник', 'Початок дії', 'Статус', ''], 'hr-table') : empty('Кадрових документів поки немає.')}`;
 }
 
 function statusButton(clientId, period, field, value, clientName, label) {
@@ -55,7 +55,6 @@ function documents() {
     return `<tr><td><strong>${esc(shortName(client.name))}</strong></td><td>${statusButton(client.id, period, 'timesheetStatus', record.timesheetStatus, client.name, 'Табель робочого часу')}</td><td>${statusButton(client.id, period, 'payrollStatus', record.payrollStatus, client.name, 'Розрахунково-платіжна відомість')}</td><td>${cashDocument}</td></tr>`;
   });
   return `<div class="toolbar"><div class="toolbar-actions"><button class="secondary" data-hr-doc-prev ${month === 1 ? 'disabled' : ''} aria-label="Попередній місяць">←</button><strong class="calendar-period">${MONTH_NAMES_UA[month - 1]} ${settings.workingYear}</strong><button class="secondary" data-hr-doc-next ${month === 12 ? 'disabled' : ''} aria-label="Наступний місяць">→</button></div></div>
-    <p class="note">Натисніть статус, щоб позначити документ як надісланий або не надісланий.</p>
     ${rows.length ? table(rows, ['ФОП', 'Табель робочого часу', 'Розрахунково-платіжна відомість', 'Відомість на виплату готівки'], 'hr-documents-table') : empty('ФОП із найманими працівниками поки немає.')}
     <section class="hr-orders-section"><h3>Накази</h3>${orders(period)}</section>`;
 }
@@ -75,7 +74,7 @@ function salary() {
   if (!uiState.payrollMonth) uiState.payrollMonth = new Date().getFullYear() === settings.workingYear ? new Date().getMonth() + 1 : 1;
   const month = uiState.payrollMonth;
   const period = monthPeriodKey(settings.workingYear, month);
-  const clients = getVisibleClients().filter((client) => (client.employees || []).length);
+  const clients = getVisibleClients();
   const names = new Map(clients.map((client) => [client.id, client.name]));
   const employees = new Map(clients.flatMap((client) => (client.employees || []).map((employee) => [employee.id, employee])));
   const paymentType = (type) => type || `Виплата ЗП за другу половину ${MONTH_NAMES_GENITIVE_UA[month === 1 ? 11 : month - 2]}`;
@@ -104,23 +103,21 @@ function salary() {
   });
   const rows = [...byPaymentBatch.values()].sort((a, b) => groupChronology([a.type, a.records], [b.type, b.records])).flatMap(({ type, records: batchRecords }) => {
     const byClient = new Map(); batchRecords.forEach((record) => { const list = byClient.get(record.clientId) || []; list.push(record); byClient.set(record.clientId, list); });
-    const total = (field) => batchRecords.reduce((sum, record) => sum + money(record[field]), 0);
-    const totalGross = batchRecords.reduce((sum, record) => sum + money(record.amount) / 0.77, 0);
-    const formatTotal = payrollMoney;
     const typeOptions = payrollPaymentTypes(period);
     const typeSelect = `<select class="payroll-type-select" data-payroll-type-id="${esc(batchRecords[0].id)}" aria-label="Тип виплати"><option value="${esc(type)}">${esc(type)}</option>${typeOptions.filter((option) => !type.includes(option)).map((option) => `<option value="${esc(option)}">${esc(option)}</option>`).join('')}</select>`;
-    const headerRow = `<tr class="payroll-type-row"><td colspan="2"></td><td>${typeSelect}</td><td class="payroll-batch-total">${formatTotal(total('amount'))}</td><td class="payroll-batch-total">${formatTotal(total('pdfo'))}</td><td class="payroll-batch-total">${formatTotal(total('vz'))}</td><td class="payroll-batch-total">${formatTotal(total('esv'))}</td><td></td><td class="payroll-batch-total">${formatTotal(totalGross)}</td><td></td><td></td><td></td></tr>`;
+    const headerRow = `<tr class="payroll-type-row"><td colspan="12"><span>Тип виплати:</span>${typeSelect}</td></tr>`;
     return [headerRow, ...[...byClient.values()].sort(clientChronology).flatMap((records) => records.sort(chronology).map((record, index) => {
     const clientId = record.clientId;
     const gross = money(record.amount) / 0.77;
     const check = (rate, value) => gross * rate - money(value);
     const result = (rate, value) => gross ? `<span class="payroll-check ${Math.abs(check(rate, value)) < 1 ? 'ok' : 'warn'}">${payrollMoney(check(rate, value))}</span>` : '-';
-    const esvRate = Number(employees.get(record.employeeId)?.esvRate || 22) / 100;
+    const esvRate = Number(employees.get(record.employeeId)?.esvRate || record.esvRate || 22) / 100;
     const moveControls = `<span class="payroll-client-order"><button class="icon" data-move-payroll-client="${esc(record.id)}" data-move-direction="-1" title="Перемістити ФОП вище">↑</button><button class="icon" data-move-payroll-client="${esc(record.id)}" data-move-direction="1" title="Перемістити ФОП нижче">↓</button></span>`;
-    return `<tr>${index === 0 ? `<td rowspan="${records.length}" class="payroll-date">${input(record, 'paymentDate')}</td><td rowspan="${records.length}" class="payroll-client">${moveControls}<strong>${esc(shortName(names.get(clientId) || '-'))}</strong></td>` : ''}<td><button class="icon payroll-delete" data-delete-payroll="${esc(record.id)}" data-payroll-employee="${esc(record.employeeName || 'Працівник')}" data-payroll-type="${esc(type)}" data-payroll-amount="${esc(record.amount || '')}" title="Видалити рядок" aria-label="Видалити зарплатний рядок: ${esc(record.employeeName || 'працівник')}">✕</button>${esc(employeePayrollName(record.employeeName))}</td><td>${input(record, 'amount')}</td><td>${input(record, 'pdfo')}</td><td>${input(record, 'vz')}</td><td>${input(record, 'esv')}</td><td><select class="payroll-field payroll-status-field" data-payroll-id="${esc(record.id)}" data-payroll-field="status" aria-label="Статус виплати: ${esc(record.employeeName || 'працівник')}"><option value="" ${record.status ? '' : 'selected'}></option>${['Набрано','Сплачено','Повідомлено','Сплачено невчасно'].map((s) => `<option ${record.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td><td>${gross ? payrollMoney(gross) : '-'}</td><td>${result(.18, record.pdfo)}</td><td>${result(.05, record.vz)}</td><td>${result(esvRate, record.esv)}</td></tr>`;
+    const statusCell = index === 0 ? `<td rowspan="${records.length}"><select class="payroll-field payroll-status-field" data-payroll-id="${esc(record.id)}" data-payroll-field="status" aria-label="Статус виплати: ${esc(names.get(clientId) || record.clientName || 'ФОП')}"><option value="" ${record.status ? '' : 'selected'}></option>${['Набрано','Сплачено','Повідомлено','Сплачено невчасно'].map((s) => `<option ${record.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td>` : '';
+    return `<tr>${index === 0 ? `<td rowspan="${records.length}" class="payroll-date">${input(record, 'paymentDate')}</td><td rowspan="${records.length}" class="payroll-client">${moveControls}<strong>${esc(shortName(names.get(clientId) || record.clientName || '-'))}</strong></td>` : ''}<td><button class="icon payroll-delete" data-delete-payroll="${esc(record.id)}" data-payroll-employee="${esc(record.employeeName || 'Працівник')}" data-payroll-type="${esc(type)}" data-payroll-amount="${esc(record.amount || '')}" title="Видалити рядок" aria-label="Видалити зарплатний рядок: ${esc(record.employeeName || 'працівник')}">✕</button>${esc(employeePayrollName(record.employeeName))}</td><td>${input(record, 'amount')}</td><td>${input(record, 'pdfo')}</td><td>${input(record, 'vz')}</td><td>${input(record, 'esv')}</td>${statusCell}<td>${gross ? payrollMoney(gross) : '-'}</td><td>${result(.18, record.pdfo)}</td><td>${result(.05, record.vz)}</td><td>${result(esvRate, record.esv)}</td></tr>`;
     }))];
   });
-  return `<div class="toolbar"><div class="toolbar-actions"><button class="secondary" data-payroll-prev ${month === 1 ? 'disabled' : ''} aria-label="Попередній місяць">←</button><strong class="calendar-period">${MONTH_NAMES_UA[month - 1]} ${settings.workingYear}</strong><button class="secondary" data-payroll-next ${month === 12 ? 'disabled' : ''} aria-label="Наступний місяць">→</button><button class="primary" data-add-payroll-client>+ Додати виплату</button><button class="secondary" data-add-payroll-employee>+ Працівник</button></div></div><p class="note">Сума виплати вказується «на руки». Контрольні значення рахуються за ставками ПДФО 18%, ВЗ 5% та ЄСВ 22% або 8,41% із картки працівника.</p>${rows.length ? table(rows, ['Дата','ПІБ ФОП','ПІБ працівника','Сума виплати','ПДФО','ВЗ','ЄСВ','Статус','До оподатк.','Перев. ПДФО','Перев. ВЗ','Перев. ЄСВ'], 'payroll-table') : empty('Додайте виплату — усі працівники вибраного ФОП з’являться окремими рядками.')}`;
+  return `<div class="toolbar"><div class="toolbar-actions"><button class="secondary" data-payroll-prev ${month === 1 ? 'disabled' : ''} aria-label="Попередній місяць">←</button><strong class="calendar-period">${MONTH_NAMES_UA[month - 1]} ${settings.workingYear}</strong><button class="secondary" data-payroll-next ${month === 12 ? 'disabled' : ''} aria-label="Наступний місяць">→</button><button class="primary" data-add-payroll-client>+ Додати виплату</button><button class="secondary" data-add-payroll-employee>+ Працівник</button></div></div>${rows.length ? table(rows, ['Дата','ПІБ ФОП','ПІБ працівника','Сума виплати','ПДФО','ВЗ','ЄСВ','Статус','До оподатк.','Перев. ПДФО','Перев. ВЗ','Перев. ЄСВ'], 'payroll-table') : empty('Додайте виплату — усі працівники вибраного ФОП з’являться окремими рядками.')}`;
 }
 
 export function renderHR() {

@@ -184,13 +184,13 @@ function headingsPanel() {
     const value = configured[key] || {};
     return `<tr><td>${escapeHtml(defaultCrumb)}</td><td><input data-section-heading="${key}" data-heading-part="crumb" value="${escapeHtml(value.crumb || defaultCrumb)}" aria-label="Назва розділу ${escapeHtml(defaultCrumb)}"></td><td><input data-section-heading="${key}" data-heading-part="title" value="${escapeHtml(value.title || defaultTitle)}" aria-label="Пояснення до розділу ${escapeHtml(defaultCrumb)}"></td></tr>`;
   }).join('');
-  return `<div class="panel settings-panel"><h2>Шапки розділів</h2><p class="note">Змініть назву розділу й текст у великому заголовку. Налаштування застосовуються для всіх користувачів.</p><div class="table-wrap"><table class="table settings-table"><thead><tr><th>Розділ</th><th>Назва</th><th>Заголовок</th></tr></thead><tbody>${rows}</tbody></table></div><div class="toolbar-actions" style="margin-top:12px"><button type="button" class="primary" data-save-section-headings>Зберегти</button></div></div>`;
+  return `<div class="panel settings-panel"><h2>Шапки розділів</h2><div class="table-wrap"><table class="table settings-table"><thead><tr><th>Розділ</th><th>Назва</th><th>Заголовок</th></tr></thead><tbody>${rows}</tbody></table></div><div class="toolbar-actions" style="margin-top:12px"><button type="button" class="primary" data-save-section-headings>Зберегти</button></div></div>`;
 }
 
 function dropdownsPanel() {
   const options = getSettings().dropdownOptions || {};
-  const field = (key, label) => `<section class="dropdown-settings-list"><h3>${label}</h3><div>${[...(options[key] || []), ''].map((value) => `<input class="dropdown-options" data-dropdown-options="${key}" value="${escapeHtml(value)}" placeholder="Новий варіант">`).join('')}</div></section>`;
-  return `<div class="panel settings-panel"><h2>Випадаючі списки</h2><p class="note">Кожен варіант — в окремому полі. Порожнє останнє поле призначене для нового значення.</p>${field('prro', 'ПРРО / РРО')}${field('currency', 'Валюта')}${field('kepIssuer', 'Видавці КЕП')}</div>`;
+  const field = (key, label) => `<section class="dropdown-settings-list"><h3>${label}</h3><div data-dropdown-list="${key}">${[...(options[key] || []), ''].map((value) => `<input class="dropdown-options" data-dropdown-options="${key}" value="${escapeHtml(value)}" placeholder="Новий варіант">`).join('')}</div><button type="button" class="secondary dropdown-add" data-add-dropdown-option="${key}">Додати</button></section>`;
+  return `<div class="panel settings-panel"><h2>Випадаючі списки</h2><p class="note">Кожен варіант — в окремому полі. Додавайте нові поля кнопкою «Додати».</p>${field('prro', 'ПРРО / РРО')}${field('currency', 'Валюта')}${field('kepIssuer', 'Видавці КЕП')}</div>`;
 }
 
 function activityReferencesPanel() {

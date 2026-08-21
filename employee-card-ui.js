@@ -155,7 +155,7 @@ export function openEmployeeCard(employeeId = null) {
     field('ФОП-роботодавець', clientSelect),
     field('ПІБ працівника', input('name', employee.name, { required: true })),
     field('Посада', input('position', employee.position, { required: true })),
-    field('Дата прийняття', input('hireDate', employee.hireDate, { type: 'date', required: true })),
+    field('Дата прийняття', input('hireDate', employee.hireDate, { type: 'date' })),
     field('Дата звільнення', input('dismissalDate', employee.dismissalDate, { type: 'date' })),
     field('Виплата ЗП', select('salaryPaymentMethod', employee.salaryPaymentMethod || 'Безготівкою', ['Безготівкою', 'Готівка'])),
     field('Ставка ЄСВ', select('esvRate', String(employee.esvRate || '22'), [{ value: '22', label: '22%' }, { value: '8.41', label: '8,41%' }])),
@@ -219,6 +219,7 @@ export function openEmployeeCard(employeeId = null) {
       hireDate: String(formData.get('hireDate') || ''),
       dismissalDate: String(formData.get('dismissalDate') || ''),
       salaryPaymentMethod: String(formData.get('salaryPaymentMethod') || 'Безготівкою'),
+      esvRate: String(formData.get('esvRate') || '22'),
     };
     const validation = validateEmployee(values);
     if (!validation.ok) { showToast(validation.reason, 'error'); return; }

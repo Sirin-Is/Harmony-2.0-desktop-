@@ -52,7 +52,7 @@ let validationFeedback = null;
 function val(id) { return document.getElementById(id)?.value.trim() ?? ''; }
 
 function additionalKved(value) {
-  if (Array.isArray(value)) return value.map((item) => ({ id: item?.id || uid(), code: item?.code || '', name: item?.name || '' }));
+  if (Array.isArray(value)) return value.map((item) => ({ id: item?.id || uid(), code: normalizeActivityCode(item?.code || ''), name: item?.name || '' }));
   if (!value) return [];
   try {
     const parsed = JSON.parse(value);
@@ -92,6 +92,31 @@ function inputDate(value) {
 function currencyCode(value) {
   const code = String(value || '').match(/\b(980|978|840)\b/)?.[1];
   return ({ 980: 'UAH', 978: 'EUR', 840: 'USD' })[code] || String(value || '').trim();
+}
+
+function currenciesFromAccounts(accounts) {
+  return [...new Set((accounts || [])
+    .map((account) => currencyCode(account?.currency).toUpperCase())
+    .filter((currency) => currency && currency !== 'UAH'))]
+    .join(', ');
+}
+
+function readAccounts() {
+  const previous = draft.accounts || [];
+  draft.accounts = Array.from(overlay.querySelectorAll('.cc-acc')).reduce((items, input) => {
+    const index = Number(input.dataset.i);
+    if (!Number.isInteger(index)) return items;
+    items[index] = items[index] || { ...(previous[index] || {}), id: previous[index]?.id || uid() };
+    items[index][input.dataset.k] = input.value.trim();
+    return items;
+  }, []).filter((account) => account.bankName || account.code || account.currency || account.iban || account.openDate);
+}
+
+function syncCurrencyFromAccounts() {
+  const currency = currenciesFromAccounts(draft.accounts);
+  draft.currency = currency;
+  const field = document.getElementById('cc_currency');
+  if (field) field.value = currency;
 }
 
 function notifyChanged() {
@@ -165,11 +190,12 @@ function bodyHtml() {
       </fieldset>
 
       <fieldset><legend>Обрані коди КВЕД</legend>
-        <label>Основний КВЕД</label>
+        <label>Основний код КВЕД</label>
         <div class="cc-kved-pair is-primary">
           <input class="cc-kved-code" id="cc_kvedMainCode" placeholder="XX.XX" value="${esc(d.kvedMainCode)}" aria-label="Основний код КВЕД">
           <textarea class="cc-kved-name" id="cc_kvedMainName" rows="1" placeholder="Назва основного виду діяльності" aria-label="Назва основного КВЕД">${esc(d.kvedMainName)}</textarea>
         </div>
+        <p class="cc-kved-additional-label">Додаткові коди КВЕД</p>
         <div class="cc-kved-list" id="cc_kvedAdditional">${additional.map(kvedRowHtml).join('')}</div>
         <div class="cc-inline-actions"><button type="button" class="secondary cc-kved-add-btn" id="cc_addKved">+ КВЕД</button><button type="button" class="secondary cc-kved-import-btn" id="cc_importKved">Імпорт КВЕД</button><button type="button" class="secondary" id="cc_checkKved">Перевірити КВЕД</button></div>
         <input id="cc_kvedFile" type="file" accept=".xlsx,.xls" hidden>
@@ -196,10 +222,15 @@ function readForm() {
     'prroName', 'currency', 'kepIssuer', 'kepExpiry', 'registrationAddress', 'taxOffice',
     'kvedMainCode', 'kvedMainName', 'additionalInfo', 'rnokpp', 'birthDate']
     .forEach((k) => { draft[k] = val(`cc_${k}`); });
+  draft.kvedMainCode = normalizeActivityCode(draft.kvedMainCode);
+  readAccounts();
+  syncCurrencyFromAccounts();
   draft.kvedAdditional = Array.from(overlay.querySelectorAll('[data-kved-index]')).reduce((items, input) => {
     const index = Number(input.dataset.kvedIndex);
     items[index] = items[index] || { id: input.dataset.kvedId || uid(), code: '', name: '' };
-    items[index][input.dataset.kvedField] = input.value.trim();
+    items[index][input.dataset.kvedField] = input.dataset.kvedField === 'code'
+      ? normalizeActivityCode(input.value)
+      : input.value.trim();
     return items;
   }, []).filter((item) => item.code || item.name);
   draft.employees = Array.from(overlay.querySelectorAll('[data-employee-index]')).reduce((items, input) => {
@@ -248,7 +279,7 @@ function bindKved() {
     try {
       const rows = await getSpreadsheetRows(file);
       const imported = rows.map((row) => ({
-        code: column(row, ['код вед', 'код квед']),
+        code: normalizeActivityCode(column(row, ['код вед', 'код квед'])),
         name: column(row, ['найменування вед', 'найменування квед', 'назва вед']),
         main: ['1', 'так', 'true', 'yes'].includes(column(row, ['основна']).toLowerCase()),
       })).filter((item) => item.code || item.name);
@@ -314,10 +345,11 @@ function bindAccounts() {
     readForm();
     paint();
   });
-  overlay.querySelectorAll('.cc-acc').forEach((input) => input.addEventListener('change', () => {
+  overlay.querySelectorAll('.cc-acc').forEach((input) => input.addEventListener('input', () => {
     const i = Number(input.dataset.i);
     draft.accounts[i] = draft.accounts[i] || {};
     draft.accounts[i][input.dataset.k] = input.value;
+    syncCurrencyFromAccounts();
   }));
   overlay.querySelectorAll('[data-remove-acc]').forEach((btn) => btn.addEventListener('click', () => {
     readForm();
@@ -349,6 +381,7 @@ function bindAccounts() {
       showToast(error.message || 'Не вдалося прочитати файл рахунків.', 'error');
     } finally { event.target.value = ''; }
   });
+  syncCurrencyFromAccounts();
 }
 
 function bindEmployees() {

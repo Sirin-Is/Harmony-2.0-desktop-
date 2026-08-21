@@ -67,8 +67,7 @@ export function renderTaxes() {
 
   const hasPreviousPeriod = Boolean(previousPeriodKey(periods, uiState.taxPeriod));
 
-  return `<p class="note">Дедлайни підставляються автоматично з «Налаштувань» (пунктирна рамка). Рядки та ПІБ сірі лише коли ФОП звільнений від усіх податків.</p>
-    <div class="subnav tax-main-nav"><div>${groupTabs}</div><div class="toolbar-actions"><button class="secondary" data-tax-auto-ok${clients.length ? '' : ' disabled'} title="Заповнює лише порожні дати в усіх періодах до поточного.">АвтоОК</button><button class="secondary" data-copy-previous-period${hasPreviousPeriod && clients.length ? '' : ' disabled'}>Скопіювати з попереднього періоду</button></div></div>
+  return `<div class="subnav tax-main-nav"><div>${groupTabs}</div><div class="toolbar-actions"><button class="secondary" data-copy-previous-period${hasPreviousPeriod && clients.length ? '' : ' disabled'}>Скопіювати з попереднього періоду</button></div></div>
     <div class="subnav periods">${periodTabs}</div>
     ${body}`;
 }

@@ -9,8 +9,8 @@
 import { $, todayIso } from './utils';
 import { uiState } from './ui-state.js';
 import {
-  db, initDatabase, lockDatabase, refreshDatabaseFromSync, prepareDatabaseSwitch, undoLastAction, setAuditActor, setAccessRole, getClientById, deleteClientPermanently, purgeDeletedTestClients, archiveClient, requestClientDeletion, setClientLifecycle, reorderClients, setCustomFieldValue, replaceDatabase,
-  setMonthlyPaymentField, autofillMonthlyCharges, setTaxField, setReportField, setCombinedReportField, setIncomeValue, importIncomeRows, autoCompleteTaxPeriod, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline, getEffectiveCombinedReportDeadline,
+  db, initDatabase, lockDatabase, refreshDatabaseFromSync, prepareDatabaseSwitch, undoLastAction, setAuditActor, setAccessRole, getClientById, deleteClientPermanently, purgeDeletedClients, archiveClient, requestClientDeletion, setClientLifecycle, reorderClients, setCustomFieldValue, replaceDatabase,
+  setMonthlyPaymentField, setMonthlyPaymentPaidStatus, autofillMonthlyCharges, setTaxField, setReportField, setCombinedReportField, setIncomeValue, importIncomeRows, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline, getEffectiveCombinedReportDeadline,
   setWorkingYear, createWorkingYear, setMinWage, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, setSectionHeadings, setDropdownOptions, setActivityReference, getSettings,
   deleteCustomColumn, getCustomColumns,
   copyTaxPeriodForward, getVisibleClients, getClientsByTaxTab, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, canRollbackChanges, rollbackChangesAfter, rollbackRetentionStart, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField, setPayrollPaymentType, movePayrollClientInBatch,
@@ -327,8 +327,11 @@ function applyRoleAccess() {
 
 function applyAppearance(appearance = getSettings()?.appearance || { fieldColor: '#ffffff', fieldRadius: 5, fieldOpacity: 0 }, target = document.documentElement) {
   const hex = String(appearance.fieldColor || '#ffffff').replace('#', '');
-  const rgb = hex.length === 6 ? `${parseInt(hex.slice(0, 2), 16)} ${parseInt(hex.slice(2, 4), 16)} ${parseInt(hex.slice(4, 6), 16)}` : '255 255 255';
+  const channels = hex.length === 6 ? [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)] : [255, 255, 255];
+  const rgb = channels.join(' ');
+  const pageRgb = channels.map((channel) => Math.round(channel * 0.18 + 255 * 0.82)).join(' ');
   target.style.setProperty('--field-rgb', rgb);
+  target.style.setProperty('--bg', `rgb(${pageRgb})`);
   target.style.setProperty('--field-opacity', String(1 - Number(appearance.fieldOpacity ?? 0) / 100));
   target.style.setProperty('--field-radius', `${Number(appearance.fieldRadius ?? 5)}px`);
 }
@@ -738,19 +741,6 @@ function bindCurrentView() {
       rows.forEach((item) => item.classList.toggle('fop-all-exempt', fullyExempt && item.classList.contains('exempt-row')));
     }
   }));
-  $('[data-tax-auto-ok]')?.addEventListener('click', async () => {
-    const clients = getVisibleClients();
-    const result = await openAppDialog({
-      title: 'АвтоОК — податки', message: 'Оберіть ФОП. У всіх завершених періодах поточної групи будуть заповнені лише порожні поля «Набрано в банку» та «Дата сплати» — 01 число відповідного періоду.',
-      fields: [{ key: 'clients', label: 'ФОП', type: 'checkboxes', options: clients.map((client) => ({ value: client.id, label: client.name, checked: true })) }], confirmText: 'Заповнити', cancelText: 'Закрити',
-    });
-    if (!result) return;
-    const selected = result.clients || [];
-    const selectedClients = clients.filter((client) => selected.includes(client.id));
-    const changed = autoCompleteTaxPeriod(selectedClients.map((client) => client.id), uiState.taxGroup, TAX_TYPES.map((tax) => tax.key));
-    showToast(changed ? `Заповнено ${changed} порожніх дат для ${selectedClients.length} ФОП.` : selectedClients.length ? 'У завершених періодах немає порожніх дат для заповнення.' : 'ФОП не обрано.', changed ? 'success' : 'info');
-    render();
-  });
   $('[data-copy-previous-period]')?.addEventListener('click', () => {
     const periods = taxPeriodsFor(uiState.taxGroup === '3' ? '3' : '1', getSettings().workingYear);
     const fromPeriod = previousPeriodKey(periods, uiState.taxPeriod);
@@ -780,8 +770,10 @@ function bindCurrentView() {
   }));
   document.querySelectorAll('[data-combined-report-period]').forEach((button) => button.addEventListener('click', () => { uiState.combinedReportPeriod = button.dataset.combinedReportPeriod; render(); }));
   document.querySelectorAll('.combined-report-field').forEach((field) => field.addEventListener('change', () => {
-    const record = setCombinedReportField(field.dataset.client, uiState.combinedReportPeriod, field.dataset.field, field.value);
+    const value = field.dataset.field === 'notReportable' ? field.checked : field.value;
+    const record = setCombinedReportField(field.dataset.client, uiState.combinedReportPeriod, field.dataset.field, value);
     if (!record) { showToast('Вкажіть коректне значення звітності.', 'error'); return; }
+    if (field.dataset.field === 'notReportable') { render(); return; }
     const row = field.closest('tr'); const deadline = getEffectiveCombinedReportDeadline(uiState.combinedReportPeriod, record);
     const days = row?.querySelector('.report-days'); if (days) days.innerHTML = reportDaysUntilLabel(deadline, record);
     const status = row?.querySelector('.report-status'); if (status) status.innerHTML = reportStatusPillHtml(record, deadline);
@@ -814,6 +806,12 @@ function bindCurrentView() {
   document.querySelectorAll('[data-payments-quarter]').forEach((button) => button.addEventListener('click', () => { uiState.paymentsQuarter = Number(button.dataset.paymentsQuarter); render(); }));
   document.querySelectorAll('.month-value').forEach((field) => field.addEventListener('change', () => {
     if (!setMonthlyPaymentField(field.dataset.client, field.dataset.month, field.dataset.type, field.value)) showToast(invalidAmountMessage, 'error');
+  }));
+  document.querySelectorAll('.month-paid-check').forEach((field) => field.addEventListener('change', () => {
+    if (!setMonthlyPaymentPaidStatus(field.dataset.client, field.dataset.month, field.checked)) {
+      field.checked = false;
+      showToast('Спочатку вкажіть суму в «Нарах.»', 'info');
+    }
   }));
   document.querySelectorAll('[data-autofill-month]').forEach((button) => button.addEventListener('click', () => {
     const changed = autofillMonthlyCharges(button.dataset.autofillMonth);
@@ -902,6 +900,18 @@ function bindCurrentView() {
   document.querySelectorAll('[data-dropdown-options]').forEach((field) => field.addEventListener('change', () => {
     const values = [...document.querySelectorAll(`[data-dropdown-options="${CSS.escape(field.dataset.dropdownOptions)}"]`)].map((item) => item.value).filter(Boolean).join('\n');
     if (!setDropdownOptions(field.dataset.dropdownOptions, values)) showToast('Не вдалося зберегти список.', 'error');
+  }));
+  document.querySelectorAll('[data-add-dropdown-option]').forEach((button) => button.addEventListener('click', () => {
+    const key = button.dataset.addDropdownOption;
+    const list = document.querySelector(`[data-dropdown-list="${CSS.escape(key)}"]`);
+    if (!list) return;
+    const field = document.createElement('input');
+    field.className = 'dropdown-options'; field.dataset.dropdownOptions = key; field.placeholder = 'Новий варіант';
+    field.addEventListener('change', () => {
+      const values = [...document.querySelectorAll(`[data-dropdown-options="${CSS.escape(key)}"]`)].map((item) => item.value).filter(Boolean).join('\n');
+      setDropdownOptions(key, values);
+    });
+    list.appendChild(field); field.focus();
   }));
   document.querySelectorAll('[data-settings-section]').forEach((button) => button.addEventListener('click', async () => {
     uiState.settingsSection = button.dataset.settingsSection;
@@ -1217,7 +1227,7 @@ function wireGlobalControls() {
       showBootOverlay(true);
       await initDatabase(profile.workspaceId);
       setAccessRole(profile.role);
-      purgeDeletedTestClients();
+      purgeDeletedClients();
       setAuditActor(profile.displayName);
       setAccessRole(profile.role);
       setAuthButtonLabel(`Вийти (${profile.displayName})`);
@@ -1300,7 +1310,7 @@ async function boot() {
     uiState.currentUser = profile;
     await initDatabase(profile.workspaceId);
     setAccessRole(profile.role);
-    purgeDeletedTestClients();
+    purgeDeletedClients();
     try { uiState.localStorageProtection = await getLocalStorageProtection(); }
     catch (error) { uiState.localStorageProtection = { enabled: false, detail: error.message || String(error) }; }
     try { await loadActivityReference(); }

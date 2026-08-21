@@ -39,7 +39,8 @@ export function validateTaxRecordChange(record, field, value) {
 }
 
 export function validateReportRecordChange(field, value) {
-  if (!['submittedDate', 'deadline', 'note'].includes(field)) return { ok: false, reason: 'Невідоме поле звітності.' };
+  if (!['submittedDate', 'deadline', 'note', 'notReportable'].includes(field)) return { ok: false, reason: 'Невідоме поле звітності.' };
+  if (field === 'notReportable' && typeof value !== 'boolean') return { ok: false, reason: 'Некоректна ознака звітного періоду.' };
   if (['submittedDate', 'deadline'].includes(field) && !isValidOptionalIsoDate(value)) {
     return { ok: false, reason: 'Вкажіть коректну дату звітності.' };
   }

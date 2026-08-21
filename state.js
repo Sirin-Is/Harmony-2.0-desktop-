@@ -12,7 +12,7 @@
 
 import * as storage from './storage.js';
 import * as clientModel from './client-model';
-import { getTaxRecord, effectiveDeadline as effectiveTaxDeadline, getDefaultDeadline as getDefaultTaxDeadline, exemptionOptions, taxPeriodsFor, priorTaxPeriods } from './tax-model.ts';
+import { getTaxRecord, effectiveDeadline as effectiveTaxDeadline, getDefaultDeadline as getDefaultTaxDeadline, exemptionOptions, taxPeriodsFor } from './tax-model.ts';
 import { getReportRecord, effectiveReportDeadline, effectiveCombinedReportDeadline } from './report-model.ts';
 import { toNumber, generateId } from './utils';
 import { normalizeNonNegativeAmount } from './money-validation.js';
@@ -69,7 +69,9 @@ export async function initDatabase(workspaceId = null) {
   const normalizedTaxExemptions = normalizeLegacyTaxExemptions(db);
   lastSnapshot = cloneValue(db); lastBusinessSnapshot = businessSnapshot(db); undoStack.length = 0;
   if (normalizedNestedIds || normalizedAuditLabels || suppressedAuditNoise || prunedRollbackSnapshots || normalizedTaxExemptions) storage.scheduleSave(db);
+  const permanentlyRemoved = purgeDeletedClients();
   if (clientModel.advanceScheduledDeletions(db)) save();
+  if (permanentlyRemoved) storage.scheduleSave(db);
   return db;
 }
 
@@ -507,10 +509,10 @@ export const getDeletedClients = () => {
   if (clientModel.advanceScheduledDeletions(db)) save();
   return clientModel.deletedClients(db);
 };
-export function purgeDeletedTestClients() {
-  const ids = db.clients.filter((item) => item.isTestRecord && clientModel.lifecycleOf(item) === 'deleted').map((item) => item.id);
+export function purgeDeletedClients() {
+  const ids = db.clients.filter((item) => clientModel.lifecycleOf(item) === 'deleted').map((item) => item.id);
   ids.forEach((id) => clientModel.deleteClient(db, id));
-  if (ids.length) save('Очищено тестові ФОП із видалених', 'Видалення');
+  if (ids.length) save('Остаточно очищено «Видалені»', 'Видалення');
   return ids.length;
 }
 export const getClientById = (id) => clientModel.findClientById(db, id);
@@ -730,6 +732,7 @@ export const getPayrollRecords = () => db.payrollRecords || [];
 
 const makePayrollRecord = (clientId, employee, period, paymentType, paymentDate = '') => ({
   id: generateId(), clientId, employeeId: employee.id, employeeName: employee.name || '', period,
+  clientName: getClientById(clientId)?.name || '', esvRate: String(employee.esvRate || '22'),
   paymentType: String(paymentType || '').trim(), paymentDate: paymentDate || payrollDateForPaymentType(db.settings, period, paymentType),
   status: '', amount: '', pdfo: '', vz: '', esv: '', clientOrder: 0,
 });
@@ -786,15 +789,15 @@ export function setPayrollField(id, field, value) {
   if (numeric && !amount.ok) return false;
   const normalized = numeric ? amount.value : value;
   const formatted = numeric && normalized ? new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(normalized)).replace(/\u00a0/g, ' ') : normalized;
-  const affected = field === 'paymentDate'
-    ? db.payrollRecords.filter((item) => item.clientId === record.clientId && item.period === record.period && (item.paymentType || '') === (record.paymentType || ''))
+  const affected = field === 'paymentDate' || field === 'status'
+    ? db.payrollRecords.filter((item) => item.clientId === record.clientId && item.period === record.period && item.paymentDate === record.paymentDate && (item.paymentType || '') === (record.paymentType || ''))
     : [record];
   const changes = affected.map((item) => ({
     path: ['payrollRecords', item.id, field], clientId: item.clientId,
     before: cloneValue(item[field]), beforeExisted: Object.prototype.hasOwnProperty.call(item, field),
-    after: field === 'paymentDate' ? value : formatted, afterExisted: true,
+    after: field === 'paymentDate' || field === 'status' ? value : formatted, afterExisted: true,
   }));
-  affected.forEach((item) => { item[field] = field === 'paymentDate' ? value : formatted; });
+  affected.forEach((item) => { item[field] = field === 'paymentDate' || field === 'status' ? value : formatted; });
   saveTargetedChanges(changes, 'Змінено запис виплати зарплати', 'Зарплата');
   return true;
 }
@@ -952,6 +955,14 @@ export function setTaxField(clientId, realGroup, period, taxType, field, value) 
   return record;
 }
 
+/** A checked payment box means the client paid exactly the accrued amount. */
+export function setMonthlyPaymentPaidStatus(clientId, monthKey, paid) {
+  if (!clientModel.findClientById(db, clientId) || !isValidMonthPeriodKey(monthKey)) return false;
+  const charged = db.monthlyPayments[clientId]?.[monthKey]?.charged;
+  if (paid && (!charged || charged === '-')) return false;
+  return setMonthlyPaymentField(clientId, monthKey, 'paid', paid ? charged : '');
+}
+
 export function getEffectiveTaxDeadline(realGroup, taxType, period, record) {
   return effectiveTaxDeadline(db, realGroup, taxType, period, record);
 }
@@ -1040,38 +1051,6 @@ export function setCombinedReportField(clientId, period, field, value) {
   record[field] = value;
   saveTargetedChanges([change], 'Змінено об’єднаний звіт', 'Об’єднані звіти');
   return record;
-}
-
-/** Marks selected clients' empty tax dates in every completed period. Each
- * period receives its own first calendar day (e.g. February → 01.02). */
-export function autoCompleteTaxPeriod(clientIds, tabGroup, taxTypeKeys, referenceDate = new Date()) {
-  if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return 0; }
-  const changes = [];
-  const taxGroup = String(tabGroup) === '3' ? '3' : '1';
-  const periods = priorTaxPeriods(taxGroup, getSettings().workingYear, referenceDate);
-  clientIds.forEach((clientId) => {
-    const client = clientModel.findClientById(db, clientId);
-    if (!client) return;
-    periods.forEach((entry) => {
-      const realGroup = clientModel.groupAtPeriod(client, entry.key);
-      const belongsToTab = taxGroup === '3' ? realGroup === '3' : ['1', '2'].includes(realGroup);
-      if (!belongsToTab) return;
-      const date = /^\d{4}-\d{2}$/.test(entry.key)
-        ? `${entry.key}-01`
-        : `${entry.key.slice(0, 4)}-${({ q1: '01', half: '04', '9m': '07', year: '10' })[entry.key.slice(5)]}-01`;
-      taxTypeKeys.forEach((taxType) => {
-        const record = getTaxRecord(db, clientId, realGroup, entry.key, taxType);
-        const key = `${clientId}|${realGroup}|${entry.key}|${taxType}`;
-        ['queuedDate', 'paidDate'].forEach((field) => {
-          if (record[field]) return;
-          changes.push({ path: ['taxRecords', key, field], clientId, before: '', beforeExisted: false, after: date, afterExisted: true });
-          record[field] = date;
-        });
-      });
-    });
-  });
-  saveTargetedChanges(changes, 'Автоматично заповнено податки', 'Податки');
-  return changes.length;
 }
 
 export function getEffectiveReportDeadline(realGroup, period, record) {
@@ -1221,7 +1200,7 @@ export function setSectionHeadings(headings) {
   const allowed = ['overview', 'dashboard', 'payments', 'taxes', 'incomes', 'reports', 'combinedReports', 'calendar', 'activities', 'hr', 'audit', 'inactive', 'deleted', 'settings'];
   const sanitized = Object.fromEntries(allowed.map((key) => {
     const source = headings[key] || {};
-    return [key, { crumb: String(source.crumb || '').trim().slice(0, 80), title: String(source.title || '').trim().slice(0, 140) }];
+    return [key, { crumb: String(source.crumb || '').trim().slice(0, 80), title: String(source.title || '').trim().slice(0, 140), intro: key === 'overview' ? String(source.intro || '').trim().slice(0, 140) : '' }];
   }));
   changeSetting(['sectionHeadings'], sanitized, 'Змінено заголовки розділів');
   return true;

@@ -84,9 +84,18 @@ export function kepStatusLabel(dateStr) {
 }
 
 export const findClientById = (db, id) => db.clients.find((item) => item.id === id);
+/** Spreadsheet programs often introduce non-breaking or invisible spaces on
+ * copy/paste. Treat these as ordinary whitespace when matching a FOP name. */
+export const normalizeClientName = (name) => String(name || '')
+  .normalize('NFC')
+  .replace(/[\u00a0\u200b-\u200d\ufeff]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLocaleLowerCase('uk');
+
 export const findClientByName = (db, name) => {
-  const normalized = name.trim().toLowerCase();
-  return db.clients.find((item) => item.name?.trim().toLowerCase() === normalized);
+  const normalized = normalizeClientName(name);
+  return db.clients.find((item) => normalizeClientName(item.name) === normalized);
 };
 export const visibleClients = (db) => db.clients.filter((item) => lifecycleOf(item) === 'active');
 export const archivedClients = (db) => db.clients.filter((item) => lifecycleOf(item) === 'inactive');

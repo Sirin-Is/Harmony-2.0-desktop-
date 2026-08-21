@@ -20,7 +20,11 @@ let reference = { kved: [], nace: [], mapping: [] };
 let loadError = '';
 
 export function normalizeActivityCode(value) {
-  const compact = String(value || '').trim().replace(/\s+/g, '').replace(',', '.');
+  const compact = String(value || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/^_+/, '')
+    .replace(',', '.');
   const match = compact.match(/^(\d{1,2})(?:\.(\d{1,2}))?$/);
   if (!match) return compact.toLocaleUpperCase('uk-UA');
   return `${match[1].padStart(2, '0')}${match[2] ? `.${match[2].padEnd(2, '0')}` : ''}`;

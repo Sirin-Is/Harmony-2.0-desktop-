@@ -49,9 +49,7 @@ export function renderReports() {
     ? table(rows, ['ПІБ', 'Дата подання', 'Днів до дедлайну', 'Дедлайн', 'Статус', 'Примітка'])
     : empty('У цій групі ще немає активних ФОП.');
 
-  const reportPeriodControls = uiState.reportGroup === '12' ? periodTabs : `<span class="report-year-label">${getSettings().workingYear}</span>`;
-  return `<div class="toolbar"><p class="note">1-2 групи подають звіт раз на рік; 3 група — щоквартально. Дедлайни підставляються з «Налаштувань», якщо не вказано власного значення.</p></div>
-    <div class="subnav report-main-nav"><div>${groupTabs}</div><div>${reportPeriodControls}</div></div>
-    ${uiState.reportGroup === '3' ? `<div class="subnav periods">${periodTabs}</div>` : ''}
+  const reportPeriodControls = uiState.reportGroup === '12' ? '' : periodTabs;
+  return `<div class="subnav report-main-nav"><div>${groupTabs}${reportPeriodControls ? '<span class="tab-separator" aria-hidden="true">|</span>' : ''}${reportPeriodControls}</div></div>
     ${body}`;
 }
