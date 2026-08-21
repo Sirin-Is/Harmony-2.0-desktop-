@@ -51,7 +51,7 @@ export function renderPayments() {
   const body = rows.length
     ? rows.join('')
     : `<tr><td colspan="${2 + months.length * 2}">${empty('Додайте ФОП на сторінці «Огляд».')}</td></tr>`;
-  return `<div class="subnav">${[1,2,3,4].map((quarter) => `<button class="tab ${quarter === uiState.paymentsQuarter ? 'active' : ''}" data-payments-quarter="${quarter}">${quarter} квартал</button>`).join('')}</div>
+  return `<div class="subnav section-control-row section-control-row-primary">${[1,2,3,4].map((quarter) => `<button class="tab ${quarter === uiState.paymentsQuarter ? 'active' : ''}" data-payments-quarter="${quarter}">${quarter} квартал</button>`).join('')}</div>
     <div class="table-wrap payments-matrix">
       <table class="table">
         <thead>

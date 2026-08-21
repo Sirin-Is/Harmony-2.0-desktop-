@@ -3,7 +3,7 @@
 // "Залишок ліміту" = the active group's limit minus income since the
 // beginning of the selected year.
 
-import { escapeHtml, MONTH_SHORT_UA, monthPeriodKey } from '../utils';
+import { escapeHtml, moneyFormat, MONTH_SHORT_UA, monthPeriodKey } from '../utils';
 import { getVisibleClients, incomeSum, getIncomeValue, getSettings } from '../state.js';
 import { groupLimitAmount } from '../client-model';
 import { shortClientName } from '../client-model.js';
@@ -40,6 +40,6 @@ export function renderIncomes() {
     ? `<div class="table-wrap incomes-matrix"><table class="table income-group-all"><thead><tr>${headCells}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
     : `<p class="empty">Активних ФОП поки немає.</p>`;
 
-  return `<div class="subnav income-main-nav"><div class="toolbar-actions"><span class="report-year-label">${workingYear}</span><button class="secondary" data-import-incomes>Імпорт</button><input id="incomeImportFile" type="file" accept=".xlsx,.xls,.csv" hidden></div></div>
+  return `<div class="subnav section-control-row section-control-row-primary income-main-nav"><div class="toolbar-actions"><span class="report-year-label">${workingYear}</span><button class="secondary" data-import-incomes>Імпорт</button><input id="incomeImportFile" type="file" accept=".xlsx,.xls,.csv" hidden></div></div>
     ${body}`;
 }

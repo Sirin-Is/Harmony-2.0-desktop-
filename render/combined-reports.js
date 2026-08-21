@@ -34,5 +34,5 @@ export function renderCombinedReports() {
   });
   const tabs = periods.map((period) => `<button class="tab ${period.key === uiState.combinedReportPeriod ? 'active' : ''}" data-combined-report-period="${period.key}">${period.label}</button>`).join('');
   const body = clients.length ? table(rows, ['ПІБ', 'Не звітний', 'Дата подання', 'Днів до дедлайну', 'Дедлайн', 'Статус', 'Примітка']) : empty('Активних ФОП поки немає.');
-  return `<div class="subnav periods">${tabs}</div>${body}`;
+  return `<div class="subnav section-control-row section-control-row-primary periods">${tabs}</div>${body}`;
 }

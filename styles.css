@@ -188,8 +188,10 @@ tr.dragging { opacity: .45; }
 tr.drag-over td { box-shadow: inset 0 2px 0 var(--brand); }
 
 /* Group/period/quarter tabs (Податки, Оплати, Доходи) */
-.subnav { display: flex; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.subnav { display: flex; align-items: center; min-height: 42px; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; box-sizing: border-box; }
 .subnav.periods { margin-bottom: 8px; }
+.section-control-row { display: flex; align-items: center; min-height: 42px; box-sizing: border-box; }
+.section-control-row .toolbar-actions { min-height: 32px; }
 .tab { display: inline-flex; align-items: center; justify-content: center; height: 32px; border: 1px solid #d7dde5; background: #fff; border-radius: 7px; padding: 0 11px; font: 600 11px inherit; cursor: pointer; color: #475467; white-space: nowrap; }
 .tab:hover { border-color: var(--brand); }
 .tab.active { background: var(--brand); border-color: var(--brand); color: #fff; }
@@ -443,9 +445,9 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .payroll-type-row .payroll-batch-total { text-align: right; font-size: 11px; font-variant-numeric: tabular-nums; }
 .payroll-total-row td { padding-top: 5px; padding-bottom: 6px; color: #334155; background: #fafbfc; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
 .payroll-total-row td:nth-child(2) { text-align: left; }
-.auto-charge { margin-left: 5px; border: 0; border-radius: 4px; padding: 2px 4px; font: 600 11px inherit; color: #176b58; background: #dcf5ea; cursor: pointer; }
+.auto-charge { margin-left: 5px; border: 0; border-radius: 4px; padding: 2px 4px; font: inherit; font-weight: 600; color: #176b58; background: #dcf5ea; cursor: pointer; }
 .month-boundary, .payments-matrix td.month-paid-cell { border-right: 2px solid #b7c2d0; }
-.month-paid-cell { text-align: center; }.month-paid-check { width: 16px; height: 16px; vertical-align: middle; }
+.month-paid-cell { text-align: center; }.month-paid-check { width: 16px; height: 16px; vertical-align: middle; accent-color: #176b58; }
 .payments-matrix .month-value { min-width: 102px; padding: 5px 4px; font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
 .combined-report-toggle { text-align: center; }.combined-report-toggle input { width: 16px; height: 16px; }
 .task-type { display: inline-block; width: fit-content; border-radius: 99px; padding: 2px 7px; font-size: 10px; font-weight: 700; }
@@ -543,7 +545,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus, selec
 
 #content > .toolbar:first-child, #content > .subnav { position: sticky; top: 70px; z-index: 7; padding: 5px 0; background: var(--bg); }
 #content > .subnav { top: 70px; }
-#content > .subnav + .subnav { top: 108px; }
+#content > .subnav + .subnav { top: 112px; }
 
 /* ===== Responsive ===== */
 @media (max-width: 850px) {

@@ -67,7 +67,7 @@ export function renderTaxes() {
 
   const hasPreviousPeriod = Boolean(previousPeriodKey(periods, uiState.taxPeriod));
 
-  return `<div class="subnav tax-main-nav"><div>${groupTabs}</div><div class="toolbar-actions"><button class="secondary" data-copy-previous-period${hasPreviousPeriod && clients.length ? '' : ' disabled'}>Скопіювати з попереднього періоду</button></div></div>
-    <div class="subnav periods">${periodTabs}</div>
+  return `<div class="subnav section-control-row section-control-row-primary tax-main-nav"><div>${groupTabs}</div><div class="toolbar-actions"><button class="secondary" data-copy-previous-period${hasPreviousPeriod && clients.length ? '' : ' disabled'}>Скопіювати з попереднього періоду</button></div></div>
+    <div class="subnav section-control-row section-control-row-secondary periods">${periodTabs}</div>
     ${body}`;
 }

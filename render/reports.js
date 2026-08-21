@@ -50,6 +50,6 @@ export function renderReports() {
     : empty('У цій групі ще немає активних ФОП.');
 
   const reportPeriodControls = uiState.reportGroup === '12' ? '' : periodTabs;
-  return `<div class="subnav report-main-nav"><div>${groupTabs}${reportPeriodControls ? '<span class="tab-separator" aria-hidden="true">|</span>' : ''}${reportPeriodControls}</div></div>
+  return `<div class="subnav section-control-row section-control-row-primary report-main-nav"><div>${groupTabs}${reportPeriodControls ? '<span class="tab-separator" aria-hidden="true">|</span>' : ''}${reportPeriodControls}</div></div>
     ${body}`;
 }

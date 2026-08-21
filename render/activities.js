@@ -39,10 +39,10 @@ export function renderActivities() {
   const selectedKind = section === 'nace' ? 'nace' : 'kved';
   const loaded = section === 'mapping' ? Boolean(data.mapping.length) : Boolean(data[selectedKind].length);
   const content = !loaded ? empty(referenceStatus.error ? `Не вдалося завантажити цей довідник: ${esc(referenceStatus.error)}. Імпортуйте актуальний файл у «Налаштуваннях».` : 'Завантаження довідника…') : section === 'mapping' ? correspondence() : codeGroups(selectedKind);
-  return `<div class="subnav" role="tablist">
+  return `<div class="subnav section-control-row section-control-row-primary" role="tablist">
     <button class="tab ${section === 'kved' ? 'active' : ''}" data-activities-section="kved">КВЕД і групи ЄП</button>
     <button class="tab ${section === 'mapping' ? 'active' : ''}" data-activities-section="mapping">Відповідність КВЕД — NACE</button>
     <button class="tab ${section === 'nace' ? 'active' : ''}" data-activities-section="nace">NACE і групи ЄП</button>
   </div>
-  <div class="toolbar"><div class="toolbar-actions"><input id="activitiesSearch" class="search-input" value="${esc(uiState.activitiesSearch || '')}" placeholder="Пошук за кодом або назвою"><button type="button" class="secondary" data-batch-activity-check>Одночасна перевірка</button></div></div>${content}`;
+  <div class="toolbar section-control-row section-control-row-secondary"><div class="toolbar-actions"><input id="activitiesSearch" class="search-input" value="${esc(uiState.activitiesSearch || '')}" placeholder="Пошук за кодом або назвою"><button type="button" class="secondary" data-batch-activity-check>Одночасна перевірка</button></div></div>${content}`;
 }
