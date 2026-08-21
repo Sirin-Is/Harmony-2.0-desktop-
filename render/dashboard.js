@@ -63,8 +63,7 @@ function customColumnCells(item, columns) {
 
 function clientRow(item, columns) {
   return `<tr data-client-row data-row-id="${escapeHtml(item.id)}">
-    <td class="drag-cell"><span class="drag-handle" data-drag-handle title="Перетягніть або використайте стрілки ↑ ↓" role="button" tabindex="0" aria-keyshortcuts="ArrowUp ArrowDown" aria-label="Змінити порядок ФОП: стрілка вгору або вниз">⋮⋮</span></td>
-    <td><button type="button" class="link-cell" data-open-card="${escapeHtml(item.id)}"><strong>${escapeHtml(shortClientName(item.name))}</strong></button></td>
+    <td class="dashboard-client-name"><span class="drag-handle" data-drag-handle title="Перетягніть або використайте стрілки ↑ ↓" role="button" tabindex="0" aria-keyshortcuts="ArrowUp ArrowDown" aria-label="Змінити порядок ФОП: стрілка вгору або вниз">⋮⋮</span><button type="button" class="link-cell" data-open-card="${escapeHtml(item.id)}"><strong>${escapeHtml(shortClientName(item.name))}</strong></button></td>
     <td>${escapeHtml(item.group || '-')} / ${rateText(item)}</td>
     <td>${escapeHtml(item.currency || '-')}</td>
     <td>${phoneLines(item.phone)}</td>
@@ -99,15 +98,11 @@ export function renderDashboard() {
   const activeFilterCount = Object.keys(uiState.dashboardFilters).length;
   const hasQuery = Boolean(search || activeFilterCount);
   const headings = [
-    '', ...FILTER_COLUMNS.map(([key, label]) => filterHeader(label, key)),
+    ...FILTER_COLUMNS.map(([key, label]) => filterHeader(label, key)),
     ...columns.map(customColumnHeader),
   ];
-  // colgroup is the reliable source of width for a fixed-layout table.  Without
-  // it, the browser could distribute the unused table width into this empty
-  // header column instead of keeping the drag handle compact.
-  const colgroup = `<colgroup><col class="dashboard-drag-column">${FILTER_COLUMNS.map(([key]) => `<col class="dashboard-column-${key}">`).join('')}${columns.map(() => '<col class="dashboard-custom-column">').join('')}</colgroup>`;
   const tableRows = rows.length ? rows.join('') : `<tr><td colspan="${headings.length}" class="empty-cell">${hasQuery ? 'За пошуком або вибраними фільтрами записів немає.' : 'Активних ФОП поки немає.'}</td></tr>`;
-  const dashboardTable = `<div class="table-wrap"><table class="table dashboard-table">${colgroup}<thead><tr>${headings.map((heading) => `<th>${heading}</th>`).join('')}</tr></thead><tbody>${tableRows}</tbody></table></div>`;
+  const dashboardTable = `<div class="table-wrap"><table class="table dashboard-table"><thead><tr>${headings.map((heading) => `<th>${heading}</th>`).join('')}</tr></thead><tbody>${tableRows}</tbody></table></div>`;
   return `<div class="toolbar">
       <div class="toolbar-actions">
         <label class="dashboard-search"><span class="visually-hidden">Швидкий пошук ФОП</span><input type="search" data-dashboard-search value="${escapeHtml(uiState.dashboardSearch || '')}" placeholder="Пошук ФОП…" autocomplete="off"></label>

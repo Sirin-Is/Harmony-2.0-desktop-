@@ -312,16 +312,17 @@ function drawCalendarDeadlineTransfers() {
   layer.innerHTML = '<defs><marker id="deadline-arrow" viewBox="0 0 12 12" markerWidth="12" markerHeight="12" refX="10.5" refY="6" orient="auto"><path d="M1.5,1.5 L10.5,6 L1.5,10.5"></path></marker></defs>';
   const ids = new Set([...grid.querySelectorAll('[data-transfer-role="statutory"]')].map((item) => item.dataset.transferId));
   ids.forEach((id) => {
-    const statutory = grid.querySelector(`[data-transfer-id="${CSS.escape(id)}"][data-transfer-role="statutory"]`)?.closest('.calendar-cell');
-    const control = grid.querySelector(`[data-transfer-id="${CSS.escape(id)}"][data-transfer-role="control"]`)?.closest('.calendar-cell');
+    const statutory = grid.querySelector(`[data-transfer-id="${CSS.escape(id)}"][data-transfer-role="statutory"]`);
+    const control = grid.querySelector(`[data-transfer-id="${CSS.escape(id)}"][data-transfer-role="control"]`);
     if (!statutory || !control) return;
     const from = statutory.getBoundingClientRect(); const to = control.getBoundingClientRect();
-    const x1 = from.left - gridRect.left + 8; const x2 = to.right - gridRect.left - 8;
-    // Reserve the lower edge of the cells for transfer arrows, so they do
-    // not cross the date number or the deadline cards above.
-    const y = Math.min(from.bottom, to.bottom) - gridRect.top - 18;
+    // Connect the middle of the two deadline cards themselves: the transfer
+    // leaves the statutory card through its left edge and enters the internal
+    // deadline through its right edge.
+    const x1 = from.left - gridRect.left; const y1 = from.top - gridRect.top + from.height / 2;
+    const x2 = to.right - gridRect.left; const y2 = to.top - gridRect.top + to.height / 2;
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', `M ${x1} ${y} L ${x2} ${y}`);
+    path.setAttribute('d', `M ${x1} ${y1} L ${x2} ${y2}`);
     path.setAttribute('marker-end', 'url(#deadline-arrow)');
     layer.appendChild(path);
   });

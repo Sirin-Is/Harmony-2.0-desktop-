@@ -35,7 +35,7 @@ export function renderPayments() {
       ${monthCells}
     </tr>`;
   });
-  const monthHeadRow = months.map((month) => `<th class="month-head">${month.label}<button type="button" class="auto-charge" data-autofill-month="${escapeHtml(month.key)}" title="Заповнити за вартістю обслуговування в картках ФОП" aria-label="Автоматично заповнити ${month.label}">✓</button></th>`).join('');
+  const monthHeadRow = months.map((month) => `<th class="month-head"><span>${month.label}</span><button type="button" class="auto-charge" data-autofill-month="${escapeHtml(month.key)}" title="Заповнити за вартістю обслуговування в картках ФОП" aria-label="Автоматично заповнити ${month.label}">✓</button></th>`).join('');
   const body = rows.length
     ? rows.join('')
     : `<tr><td colspan="${2 + months.length}">${empty('Додайте ФОП на сторінці «Огляд».')}</td></tr>`;

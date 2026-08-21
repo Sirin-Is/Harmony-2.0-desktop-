@@ -164,7 +164,10 @@ export function renderCalendar() {
   const section = uiState.calendarSection || 'calendar';
   const defaultTaskDate = new Date().getFullYear() === year ? `${year}-${pad(new Date().getMonth() + 1)}-${pad(new Date().getDate())}` : `${year}-${pad(month)}-01`;
   if (section === 'tasks') return renderTasks(year, defaultTaskDate);
-  const events = [...recurringEventsForMonth(getCalendarEvents(), year, month), ...derivedEvents(year, month)].sort((a, b) => String(a.eventTime || '').localeCompare(String(b.eventTime || '')) || String(a.note).localeCompare(String(b.note), 'uk'));
+  const events = [...recurringEventsForMonth(getCalendarEvents(), year, month), ...derivedEvents(year, month)].sort((a, b) => {
+    const transferPriority = Number(Boolean(b.transferRole)) - Number(Boolean(a.transferRole));
+    return transferPriority || String(a.eventTime || '').localeCompare(String(b.eventTime || '')) || String(a.note).localeCompare(String(b.note), 'uk');
+  });
   const firstDay = new Date(year, month - 1, 1).getDay() || 7;
   const days = new Date(year, month, 0).getDate();
   const cells = Array.from({ length: firstDay - 1 }, () => '<div class="calendar-cell blank"></div>');

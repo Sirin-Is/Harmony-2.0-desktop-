@@ -19,5 +19,5 @@ export function formatEditableAmount(rawValue) {
   if (rawValue === undefined || rawValue === null || rawValue === '' || rawValue === '-') return '';
   const amount = normalizeNonNegativeAmount(rawValue);
   if (!amount.ok || amount.value === '') return '';
-  return Number(amount.value).toLocaleString('uk-UA', { maximumFractionDigits: 2 });
+  return Number(amount.value).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
