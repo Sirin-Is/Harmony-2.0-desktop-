@@ -30,6 +30,15 @@ export function normalizeActivityCode(value) {
   return `${match[1].padStart(2, '0')}${match[2] ? `.${match[2].padEnd(2, '0')}` : ''}`;
 }
 
+/** Normalize the different spellings used in imported activity references. */
+export function activityPermission(value) {
+  const normalized = String(value || '').trim().toLocaleLowerCase('uk-UA');
+  if (['ні', 'не дозволено', 'заборонено', 'no', 'false', '0'].includes(normalized) || /не\s*дозвол/.test(normalized)) return 'blocked';
+  if (/обмеж|частков|умов/.test(normalized)) return 'partial';
+  if (['так', 'дозволено', 'yes', 'true', '1'].includes(normalized) || /дозвол/.test(normalized)) return 'allowed';
+  return 'unknown';
+}
+
 export function findActivityByCode(kind, code) {
   const normalized = normalizeActivityCode(code);
   return (reference[kind] || []).find((row) => normalizeActivityCode(row[0]) === normalized) || null;

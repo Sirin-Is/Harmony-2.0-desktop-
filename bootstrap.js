@@ -10,7 +10,7 @@ import { $, todayIso, moneyFormat } from './utils';
 import { uiState } from './ui-state.js';
 import {
   db, initDatabase, lockDatabase, refreshDatabaseFromSync, prepareDatabaseSwitch, undoLastAction, setAuditActor, setAccessRole, getClientById, deleteClientPermanently, purgeDeletedClients, archiveClient, requestClientDeletion, setClientLifecycle, reorderClients, setCustomFieldValue, replaceDatabase,
-  setMonthlyPaymentField, setMonthlyPaymentPaidStatus, autofillMonthlyCharges, setTaxField, setReportField, setCombinedReportField, setIncomeValue, importIncomeRows, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline, getEffectiveCombinedReportDeadline,
+  setMonthlyPaymentField, setMonthlyPaymentPaidStatus, autofillMonthlyCharges, setTaxField, setReportField, setCombinedReportField, setIncomeValue, importIncomeRows, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline, getEffectiveCombinedReportDeadline, getClientMonthlyTotals,
   setWorkingYear, createWorkingYear, setMinWage, setPayrollScheduleDay, setMonthlyTaxDeadline, setQuarterlyTaxDeadline, setReportDeadline, setAppearanceSetting, setSectionHeadings, setDropdownOptions, setActivityReference, getSettings,
   deleteCustomColumn, getCustomColumns,
   copyTaxPeriodForward, getVisibleClients, getClientsByTaxTab, saveCalendarEvent, deleteCalendarEvent, toggleCalendarTask, addCalendarSubtask, toggleCalendarSubtask, deleteCalendarSubtask, canRollbackChanges, rollbackChangesAfter, rollbackRetentionStart, getCalendarEvents, getHrOrders, saveHrOrder, deleteHrOrder, setHrMonthlyDocumentStatus, addPayrollForClient, addPayrollEmployee, deletePayrollRecord, setPayrollField, setPayrollPaymentType,
@@ -31,7 +31,7 @@ import { renderCalendar } from './render/calendar.js';
 import { renderActivities } from './render/activities.js';
 import { renderHR } from './render/hr.js';
 import { renderAudit } from './render/audit.js';
-import { applyActivityReferenceOverrides, loadActivityReference, normalizeActivityCode } from './data/activity-reference.js';
+import { activityPermission, applyActivityReferenceOverrides, loadActivityReference, normalizeActivityCode } from './data/activity-reference.js';
 import { renderInactive } from './render/inactive.js';
 import { renderDeleted } from './render/deleted.js';
 import { renderSettings } from './render/settings.js';
@@ -867,6 +867,12 @@ function bindCurrentView() {
   // --- Оплати ---
   document.querySelectorAll('[data-service-charge]').forEach((toggle) => {
     let singleClickTimer;
+    const refreshDebt = () => {
+      const debtCell = toggle.closest('tr')?.querySelector('.debt');
+      if (!debtCell) return;
+      const totals = getClientMonthlyTotals(toggle.dataset.client);
+      debtCell.textContent = moneyFormat.format(totals.charged - totals.paid);
+    };
     const setVisualState = (active, value) => {
       toggle.dataset.active = String(active);
       toggle.dataset.value = value;
@@ -882,6 +888,7 @@ function bindCurrentView() {
       }
       if (!setMonthlyPaymentPaidStatus(toggle.dataset.client, toggle.dataset.month, paid)) return false;
       setVisualState(paid, value);
+      refreshDebt();
       return true;
     };
     toggle.addEventListener('click', () => {
@@ -920,6 +927,7 @@ function bindCurrentView() {
           } else showToast(invalidAmountMessage, 'error');
         }
         input.replaceWith(toggle);
+        refreshDebt();
       };
       input.addEventListener('change', () => finish(true));
       input.addEventListener('blur', () => finish(true));
@@ -1144,13 +1152,7 @@ function bindCurrentView() {
         const entry = Object.entries(row).find(([key]) => names.includes(String(key).trim().toLocaleLowerCase('uk-UA')));
         return String(entry?.[1] ?? '').trim();
       };
-      const permission = (value) => {
-        const normalized = String(value || '').trim().toLocaleLowerCase('uk-UA');
-        if (['ні', 'не дозволено', 'заборонено', 'no', 'false', '0'].includes(normalized)) return 'ні';
-        if (['так', 'дозволено', 'yes', 'true', '1'].includes(normalized)) return 'так';
-        return normalized;
-      };
-      const rows = source.map((row) => [normalizeActivityCode(field(row, ['код', 'код квед', 'код nace'])), field(row, ['назва', 'найменування', 'назва квед', 'назва nace']), permission(field(row, ['1 група', 'група 1'])), permission(field(row, ['2 група', 'група 2'])), permission(field(row, ['3 група', 'група 3'])), field(row, ['примітка', 'обмеження'])]).filter((row) => row[0] && row[1]);
+      const rows = source.map((row) => [normalizeActivityCode(field(row, ['код', 'код квед', 'код nace'])), field(row, ['назва', 'найменування', 'назва квед', 'назва nace']), activityPermission(field(row, ['1 група', 'група 1'])), activityPermission(field(row, ['2 група', 'група 2'])), activityPermission(field(row, ['3 група', 'група 3'])), field(row, ['примітка', 'обмеження'])]).filter((row) => row[0] && row[1]);
       if (!rows.length) throw new Error('Не знайдено рядків з обов’язковими колонками «Код» і «Назва».');
       if (!setActivityReference(activityReferenceKind, rows)) throw new Error('Не вдалося зберегти довідник.');
       applyActivityReferenceOverrides({ [activityReferenceKind]: rows });

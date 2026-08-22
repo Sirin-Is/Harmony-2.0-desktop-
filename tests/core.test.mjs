@@ -13,7 +13,7 @@ import { normalizeHrOrderNumber, validateHrOrder } from '../hr-order-model.js';
 import { normalizeEmployeeName, validateEmployee } from '../employee-model.js';
 import { defaultPayrollDates, payrollDateForPaymentType, payrollDatesForPeriod, payrollPaymentTypes } from '../payroll-model.js';
 import { isValidIsoDate, isValidMonthPeriodKey, isValidReportPeriodKey, isValidTaxPeriodKey, validateCalendarEvent, validateReportRecordChange, validateTaxRecordChange } from '../workflow-validation.js';
-import { findActivityByCode, loadActivityReference, normalizeActivityCode } from '../data/activity-reference.js';
+import { activityPermission, findActivityByCode, loadActivityReference, normalizeActivityCode } from '../data/activity-reference.js';
 import { birthDateFromRnokpp, findClientByImportName, groupAtPeriod, normalizeClientName } from '../client-model.js';
 
 test('політика паролів компенсує недоступну перевірку витоків на Free Plan', () => {
@@ -256,6 +256,8 @@ test('історія групи показує ФОП у групі, що дія
     { previousGroup: '3', group: '2', effectiveDate: '2026-07-01' },
   ] };
   assert.equal(groupAtPeriod(client, '2026-03'), '2');
+  assert.equal(groupAtPeriod(client, '2026-03-31'), '2');
+  assert.equal(groupAtPeriod(client, '2026-04-01'), '3');
   assert.equal(groupAtPeriod(client, '2026-half'), '3');
   assert.equal(groupAtPeriod(client, '2026-9m'), '2');
 });
@@ -550,6 +552,12 @@ test('довідник КВЕД завантажується, нормалізу
   assert.equal(normalizeActivityCode('01.11'), '01.11');
   assert.equal(normalizeActivityCode('_47.91'), '47.91');
   assert.ok(findActivityByCode('kved', '1.11')?.[1]);
+});
+
+test('довідник КВЕД розпізнає обмеження лише для відповідної групи', () => {
+  assert.equal(activityPermission('дозволено з обмеженнями'), 'partial');
+  assert.equal(activityPermission('дозволено'), 'allowed');
+  assert.equal(activityPermission('не дозволено'), 'blocked');
 });
 
 test('резервна копія шифрується, відновлюється правильним паролем і відхиляє неправильний', async () => {

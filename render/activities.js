@@ -1,13 +1,14 @@
 import { escapeHtml } from '../utils.js';
-import { getActivityReference, getActivityReferenceStatus } from '../data/activity-reference.js';
+import { activityPermission, getActivityReference, getActivityReferenceStatus } from '../data/activity-reference.js';
 import { uiState } from '../ui-state.js';
 import { empty, table } from './layout.js';
 
 const esc = escapeHtml;
 const status = (value, note) => {
-  const limited = Boolean(note);
-  if (value === 'так') return `<span class="activity-status allowed">${limited ? 'Так, з обмеженнями' : 'Дозволено'}</span>`;
-  if (value === 'ні') return `<span class="activity-status forbidden">${limited ? 'Ні, з обмеженнями' : 'Заборонено'}</span>`;
+  const permission = activityPermission(value);
+  if (permission === 'partial') return `<span class="activity-status limited" title="${esc(note || 'Є обмеження')}">Обмежено дозволено</span>`;
+  if (permission === 'allowed') return '<span class="activity-status allowed">Дозволено</span>';
+  if (permission === 'blocked') return '<span class="activity-status forbidden">Заборонено</span>';
   return '-';
 };
 

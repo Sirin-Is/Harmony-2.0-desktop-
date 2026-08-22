@@ -10,7 +10,7 @@
 // 'harmony:changed', на яку bootstrap.js підписаний і перемальовує
 // поточний вигляд.
 
-import { escapeHtml, generateId } from './utils';
+import { escapeHtml, generateId, todayIso } from './utils';
 import { getClientById, getVisibleClients, getSettings, upsertClient, archiveClient, clientGroupPeriods, setClientGroupPeriods } from './state.js';
 import { openAppDialog, openGroupPeriodsDialog } from './app-dialog.js';
 import { enhanceDateInputs } from './date-input.js';
@@ -18,7 +18,7 @@ import { showToast } from './toast.js';
 import { validateKved, openKvedResults } from './kved-validation.js';
 import { findActivityByCode, normalizeActivityCode } from './data/activity-reference.js';
 import { validateClient } from './validation.js';
-import { birthDateFromRnokpp } from './client-model.js';
+import { birthDateFromRnokpp, groupAtPeriod } from './client-model.js';
 import { readSpreadsheetRows } from './spreadsheet-security.js';
 
 const esc = escapeHtml;
@@ -108,13 +108,6 @@ function currencyCode(value) {
   return ({ 980: 'UAH', 978: 'EUR', 840: 'USD' })[code] || String(value || '').trim();
 }
 
-function currenciesFromAccounts(accounts) {
-  return [...new Set((accounts || [])
-    .map((account) => currencyCode(account?.currency).toUpperCase())
-    .filter((currency) => currency && currency !== 'UAH'))]
-    .join(', ');
-}
-
 function readAccounts() {
   const previous = draft.accounts || [];
   draft.accounts = Array.from(overlay.querySelectorAll('.cc-acc')).reduce((items, input) => {
@@ -124,13 +117,6 @@ function readAccounts() {
     items[index][input.dataset.k] = input.value.trim();
     return items;
   }, []).filter((account) => account.bankName || account.code || account.currency || account.iban || account.openDate);
-}
-
-function syncCurrencyFromAccounts() {
-  const currency = currenciesFromAccounts(draft.accounts);
-  draft.currency = currency;
-  const field = document.getElementById('cc_currency');
-  if (field) field.value = currency;
 }
 
 function notifyChanged() {
@@ -240,7 +226,6 @@ function readForm() {
     .forEach((k) => { draft[k] = val(`cc_${k}`); });
   draft.kvedMainCode = normalizeActivityCode(draft.kvedMainCode);
   readAccounts();
-  syncCurrencyFromAccounts();
   draft.kvedAdditional = Array.from(overlay.querySelectorAll('[data-kved-index]')).reduce((items, input) => {
     const index = Number(input.dataset.kvedIndex);
     items[index] = items[index] || { id: input.dataset.kvedId || uid(), code: '', name: '' };
@@ -276,7 +261,8 @@ function employeeRowHtml(employee, index) {
 function bindKved() {
   document.getElementById('cc_checkKved')?.addEventListener('click', () => {
     readForm();
-    openKvedResults(`Перевірка КВЕД: ${draft.name || 'новий ФОП'}`, validateKved(draft));
+    const currentGroup = groupAtPeriod(draft, todayIso());
+    openKvedResults(`Перевірка КВЕД: ${draft.name || 'новий ФОП'}`, validateKved({ ...draft, group: currentGroup }));
   });
   document.getElementById('cc_addKved')?.addEventListener('click', () => {
     readForm();
@@ -365,7 +351,6 @@ function bindAccounts() {
     const i = Number(input.dataset.i);
     draft.accounts[i] = draft.accounts[i] || {};
     draft.accounts[i][input.dataset.k] = input.value;
-    syncCurrencyFromAccounts();
   }));
   overlay.querySelectorAll('[data-remove-acc]').forEach((btn) => btn.addEventListener('click', () => {
     readForm();
@@ -397,7 +382,6 @@ function bindAccounts() {
       showToast(error.message || 'Не вдалося прочитати файл рахунків.', 'error');
     } finally { event.target.value = ''; }
   });
-  syncCurrencyFromAccounts();
 }
 
 function bindEmployees() {

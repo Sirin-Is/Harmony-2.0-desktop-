@@ -28,6 +28,19 @@ const IMPORT_COLUMNS = [
   { header: 'КЕП дійсний до (дата, РРРР-ММ-ДД)', key: 'kepExpiry' },
 ];
 
+// The import still recognizes legacy "Статус" sheets, but the current
+// export intentionally omits this internal lifecycle field.
+const EXPORT_COLUMNS = IMPORT_COLUMNS.filter((column) => column.key !== 'status');
+
+function employeeNames(value) {
+  if (!Array.isArray(value)) return String(value || '').trim();
+  return value
+    .map((employee) => typeof employee === 'string' ? employee : employee?.name)
+    .map((name) => String(name || '').trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
 export async function exportClientsToExcel(onlyIds = null) {
   const XLSX = await loadSpreadsheetLibrary();
   const columns = getCustomColumns();
@@ -37,9 +50,9 @@ export async function exportClientsToExcel(onlyIds = null) {
     showToast('Немає ФОП для експорту.', 'error');
     return;
   }
-  const headerRow = [...IMPORT_COLUMNS.map((column) => column.header), ...columns.map((column) => column.name)];
+  const headerRow = [...EXPORT_COLUMNS.map((column) => column.header), ...columns.map((column) => column.name)];
   const dataRows = clients.map((item) => [
-    ...IMPORT_COLUMNS.map((column) => item[column.key] ?? ''),
+    ...EXPORT_COLUMNS.map((column) => column.key === 'employees' ? employeeNames(item.employees) : item[column.key] ?? ''),
     ...columns.map((column) => item.customFields?.[column.id] ?? ''),
   ]);
   const sheet = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);

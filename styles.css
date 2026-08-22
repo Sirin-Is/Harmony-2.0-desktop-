@@ -169,8 +169,8 @@ h2 { font-size: 15px; margin: 0; }
 .dashboard-table th, .dashboard-table td { padding: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dashboard-name-column { width: 20%; }
 .dashboard-group-rate-column { width: 9%; }
-.dashboard-currency-column { width: 6%; }
-.dashboard-phone-column { width: 18%; }
+.dashboard-currency-column { width: 11%; }
+.dashboard-phone-column { width: 19ch; min-width: 19ch; }
 .dashboard-bank-column { width: 8%; }
 .dashboard-prro-column { width: 6%; }
 .dashboard-employees-column { width: 5%; }
@@ -303,6 +303,8 @@ body:has(.tax-table) { overflow: hidden; }
    the register both show a scrollbar for the same records. */
 body:has(.activities-table), body:has(.activities-mapping-table), body:has(.audit-table) { overflow: hidden; }
 #content:has(.activities-table) > .table-wrap, #content:has(.activities-mapping-table) > .table-wrap, #content:has(.audit-table) > .table-wrap { max-height: calc(100vh - 210px); }
+body:has(.dashboard-table) { overflow: hidden; }
+#content:has(.dashboard-table) > .table-wrap { max-height: calc(100vh - 210px); }
 
 /* ===== Misc cards / widgets kept for upcoming modules (Звітність, …) ===== */
 .client-card { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; margin-bottom: 8px; background: #fff; }
@@ -454,6 +456,7 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .cc-employee-row { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(160px, .7fr) auto; gap: 8px; align-items: stretch; margin-bottom: 8px; }
 .activity-status { display: inline-block; padding: 3px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; }
 .activity-status.allowed { background: #e4f7ed; color: #187344; }
+.activity-status.limited { background: #fff1d6; color: #895900; }
 .activity-status.forbidden { background: #fdeaea; color: #aa3131; }
 .activities-table th:nth-child(1), .activities-table td:nth-child(1), .activities-mapping-table th:nth-child(1), .activities-mapping-table td:nth-child(1), .activities-mapping-table th:nth-child(3), .activities-mapping-table td:nth-child(3) { width: 82px; }
 .activities-table th:nth-child(2), .activities-table td:nth-child(2), .activities-mapping-table th:nth-child(2), .activities-mapping-table td:nth-child(2), .activities-mapping-table th:nth-child(4), .activities-mapping-table td:nth-child(4) { width: 31%; }
@@ -479,6 +482,7 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .batch-kved-divider { color: #98a2b3; font-size: 17px; line-height: 1; }
 .kved-result.allowed { color: #187344; }
 .kved-result.partial { padding: 3px 6px; border-radius: 4px; background: #fff1d6; color: #895900; }
+.kved-result.partial[data-kved-note] { border: 0; font: inherit; font-weight: 700; cursor: pointer; }
 .kved-result.blocked, .kved-result.unknown { padding: 3px 6px; border-radius: 4px; background: #fdeaea; color: #aa3131; }
 .kved-results-table th:nth-child(1), .kved-results-table td:nth-child(1) { width: 75px; }
 .kved-results-table th:nth-child(2), .kved-results-table td:nth-child(2) { width: 26%; }
@@ -595,6 +599,7 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .report-filing-status-cell { text-align: center; }
 .report-filing-status { min-width: 86px; min-height: 28px; padding: 3px 5px; border: 1px solid #aeb8c6; border-radius: 999px; font: 600 11px inherit; cursor: pointer; }
 .report-filing-status-notReportable { color: #475467; background: #fff; }
+.report-filing-status-notReportable:not(button) { display: inline-flex; align-items: center; justify-content: center; cursor: default; }
 .report-filing-status-notSubmitted { color: #875900; border-color: #e5ba62; background: #fff1c7; }
 .report-filing-status-submitted { color: #1e5bbb; border-color: #a9c9f7; background: #e8f1ff; }
 .report-filing-status-accepted { color: #176b58; border-color: #9dd8bf; background: #e4f7ed; }

@@ -1,5 +1,5 @@
 import { escapeHtml } from './utils.js';
-import { findActivityByCode, normalizeActivityCode } from './data/activity-reference.js';
+import { activityPermission, findActivityByCode, normalizeActivityCode } from './data/activity-reference.js';
 import { readSpreadsheetRows } from './spreadsheet-security.js';
 import { showToast } from './toast.js';
 
@@ -19,10 +19,11 @@ export function validateKved(client) {
     const code = normalizeActivityCode(item.code);
     const row = findActivityByCode('kved', code);
     if (!groupIndex || !row) return { code, name: item.name || '', kind: 'unknown', label: !groupIndex ? 'Групу не обрано' : 'Код не знайдено у довіднику', note: '' };
-    const permission = row[groupIndex];
+    const permission = activityPermission(row[groupIndex]);
     const note = String(row[5] || '').trim();
-    if (note) return { code, name: row[1] || item.name || '', kind: 'partial', label: 'Обмежено дозволено', note };
-    if (permission === 'ні') return { code, name: row[1] || item.name || '', kind: 'blocked', label: 'Не дозволено', note: '' };
+    if (permission === 'partial') return { code, name: row[1] || item.name || '', kind: 'partial', label: 'Обмежено дозволено', note };
+    if (permission === 'blocked') return { code, name: row[1] || item.name || '', kind: 'blocked', label: 'Не дозволено', note: '' };
+    if (permission !== 'allowed') return { code, name: row[1] || item.name || '', kind: 'unknown', label: 'Статус не вказано у довіднику', note: '' };
     return { code, name: row[1] || item.name || '', kind: 'allowed', label: 'Дозволено', note: '' };
   });
 }
@@ -80,7 +81,10 @@ function refreshBatchKvedCheck() {
     const index = input.dataset.batchKvedCode;
     const result = input.value.trim() ? validateKved({ group, kvedMainCode: input.value })[0] : null;
     batchDialog.querySelector(`[data-batch-kved-name="${index}"]`).textContent = result?.name || '—';
-    batchDialog.querySelector(`[data-batch-kved-status="${index}"]`).innerHTML = result ? `<span class="kved-result ${result.kind}">${escapeHtml(result.label)}</span>` : '—';
+    const status = result?.kind === 'partial' && result.note
+      ? `<button type="button" class="kved-result partial" data-kved-note="${escapeHtml(result.note)}" title="Натисніть, щоб переглянути примітку">${escapeHtml(result.label)}</button>`
+      : result ? `<span class="kved-result ${result.kind}">${escapeHtml(result.label)}</span>` : '—';
+    batchDialog.querySelector(`[data-batch-kved-status="${index}"]`).innerHTML = status;
   });
 }
 
@@ -126,6 +130,8 @@ export function openBatchKvedCheck() {
     batchDialog.addEventListener('click', (event) => {
       const groupOption = event.target.closest('[data-batch-kved-group-option]');
       if (groupOption) setBatchKvedGroup(groupOption.dataset.batchKvedGroupOption);
+      const note = event.target.closest('[data-kved-note]')?.dataset.kvedNote;
+      if (note) showToast(note, 'info', 8000);
       if (event.target.closest('[data-import-batch-kved]')) batchDialog.querySelector('[data-batch-kved-import-file]')?.click();
       if (event.target.closest('[data-clear-batch-kved]')) {
         setBatchKvedRows();
