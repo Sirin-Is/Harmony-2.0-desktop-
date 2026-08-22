@@ -7,7 +7,7 @@ import { escapeHtml, monthPeriodKey, daysUntil } from '../utils';
 import { getVisibleClients, getTaxField, getEffectiveTaxDeadline, getReportField, getEffectiveReportDeadline, getCombinedReportField, getEffectiveCombinedReportDeadline, getMonthlyCellValue, getIncomeValue, getHrMonthlyDocuments, getSettings } from '../state.js';
 import { TAX_TYPES, taxPeriodsFor } from '../tax-model';
 import { reportPeriodsFor, combinedReportPeriodsFor } from '../report-model';
-import { groupLimitAmount, GROUP_MZP_MULTIPLIERS, shortClientName } from '../client-model';
+import { groupAtPeriod, groupLimitAmount, GROUP_MZP_MULTIPLIERS, shortClientName } from '../client-model';
 import { isIncomeLimitWarning } from '../income-model.js';
 import { payrollDatesForPeriod } from '../payroll-model.js';
 
@@ -21,10 +21,17 @@ function kepAlertEntries() {
 function taxAlertEntries() {
   const workingYear = getSettings().workingYear;
   const entries = [];
-  getVisibleClients().filter((item) => ['1', '2', '3'].includes(String(item.group))).forEach((item) => {
-    const realGroup = String(item.group);
+  getVisibleClients().forEach((item) => {
     let worst = null;
-    taxPeriodsFor(realGroup, workingYear).forEach((period) => {
+    const periods = [
+      ...taxPeriodsFor('1', workingYear),
+      ...taxPeriodsFor('3', workingYear),
+    ];
+    periods.forEach((period) => {
+      const realGroup = groupAtPeriod(item, period.key);
+      const isQuarterPeriod = /^\d{4}-(q1|half|9m|year)$/.test(period.key);
+      if (!['1', '2', '3'].includes(realGroup)) return;
+      if ((realGroup === '3') !== isQuarterPeriod) return;
       TAX_TYPES.forEach((taxType) => {
         const record = getTaxField(item.id, realGroup, period.key, taxType.key);
         if (record.exemption || record.paidDate) return;
@@ -32,10 +39,10 @@ function taxAlertEntries() {
         if (!deadline) return;
         const days = daysUntil(deadline);
         if (days === null || days > 5) return;
-        if (!worst || days < worst.days) worst = { period: period.key, days };
+        if (!worst || days < worst.days) worst = { period: period.key, days, realGroup };
       });
     });
-    if (worst) entries.push({ id: item.id, name: shortClientName(item.name), group: realGroup === '3' ? '3' : '12', period: worst.period });
+    if (worst) entries.push({ id: item.id, name: shortClientName(item.name), group: worst.realGroup === '3' ? '3' : '12', period: worst.period });
   });
   return entries;
 }
@@ -43,19 +50,26 @@ function taxAlertEntries() {
 function reportAlertEntries() {
   const workingYear = getSettings().workingYear;
   const entries = [];
-  getVisibleClients().filter((item) => ['1', '2', '3'].includes(String(item.group))).forEach((item) => {
-    const realGroup = String(item.group);
+  getVisibleClients().forEach((item) => {
     let worst = null;
-    reportPeriodsFor(realGroup, workingYear).forEach((period) => {
+    const periods = [
+      ...reportPeriodsFor('1', workingYear),
+      ...reportPeriodsFor('3', workingYear),
+    ];
+    periods.forEach((period) => {
+      const realGroup = groupAtPeriod(item, period.key);
+      const isQuarterPeriod = /^\d{4}-(q1|half|9m|year)$/.test(period.key);
+      if (!['1', '2', '3'].includes(realGroup)) return;
+      if ((realGroup === '3') !== isQuarterPeriod) return;
       const record = getReportField(item.id, realGroup, period.key);
       if (record.notReportable || ['submitted', 'accepted'].includes(record.filingStatus) || record.submittedDate) return;
       const deadline = getEffectiveReportDeadline(realGroup, period.key, record);
       if (!deadline) return;
       const days = daysUntil(deadline);
       if (days === null || days > 5) return;
-      if (!worst || days < worst.days) worst = { period: period.key, days };
+      if (!worst || days < worst.days) worst = { period: period.key, days, realGroup };
     });
-    if (worst) entries.push({ id: item.id, name: shortClientName(item.name), group: realGroup === '3' ? '3' : '12', period: worst.period });
+    if (worst) entries.push({ id: item.id, name: shortClientName(item.name), group: worst.realGroup === '3' ? '3' : '12', period: worst.period });
   });
   return entries;
 }

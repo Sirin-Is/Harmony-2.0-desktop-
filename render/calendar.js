@@ -4,6 +4,7 @@ import { uiState } from '../ui-state.js';
 import { statutoryTaxDeadline, taxPeriodsFor, TAX_TYPES } from '../tax-model.ts';
 import { annualPropertyIncomeDeclarationDeadline, reportPeriodsFor, getDefaultReportDeadline, statutoryReportDeadline } from '../report-model.ts';
 import { payrollDatesForPeriod, payrollPartForPaymentType } from '../payroll-model.js';
+import { groupAtPeriod } from '../client-model.js';
 
 const pad = (value) => String(value).padStart(2, '0');
 
@@ -89,11 +90,11 @@ function derivedEvents(year, month) {
   const events = [];
   const activeClients = getVisibleClients();
   const taxComplete = (clients, periods, taxTypes) => clients.every((client) => periods.every((period) => taxTypes.every((taxType) => {
-    const record = getTaxField(client.id, String(client.group), period, taxType);
+    const record = getTaxField(client.id, groupAtPeriod(client, period), period, taxType);
     return Boolean(record.exemption || record.paidDate);
   })));
   const reportComplete = (clients, period) => clients.every((client) => {
-    const record = getReportField(client.id, String(client.group), period);
+    const record = getReportField(client.id, groupAtPeriod(client, period), period);
     return Boolean(record.notReportable || ['submitted', 'accepted'].includes(record.filingStatus) || record.submittedDate);
   });
   const quarterMonths = (period) => {
@@ -107,20 +108,20 @@ function derivedEvents(year, month) {
     if (statutory?.startsWith(prefix)) events.push({ ...item, id: `${item.id}:statutory`, eventDate: statutory, note: `Законодавчий дедлайн: ${item.note}`, transferId, transferRole: 'statutory' });
   };
   taxPeriodsFor('1', year).forEach(({ key: period }) => { const deadline = getEffectiveTaxDeadline('1', 'unified', period, {});
-    const clients = activeClients.filter((client) => ['1', '2'].includes(String(client.group)));
+    const clients = activeClients.filter((client) => ['1', '2'].includes(groupAtPeriod(client, period)));
     addDeadline({ id: `tax-default:${period}`, note: 'Останній день для сплати ЄП та ВЗ по 2 групі', source: 'tax', taskType: 'Податки', completed: taxComplete(clients, [period], ['unified', 'military']), target: `tax|12|${period}` }, statutoryTaxDeadline('1', 'unified', period), deadline);
   });
   taxPeriodsFor('3', year).forEach(({ key: period }) => { const deadline = getEffectiveTaxDeadline('3', 'esv', period, {});
-    const clients12 = activeClients.filter((client) => ['1', '2'].includes(String(client.group)));
-    const clients3 = activeClients.filter((client) => String(client.group) === '3');
+    const clients12 = activeClients.filter((client) => ['1', '2'].includes(groupAtPeriod(client, quarterMonths(period)[0])));
+    const clients3 = activeClients.filter((client) => groupAtPeriod(client, period) === '3');
     const completed = taxComplete(clients12, quarterMonths(period), ['esv']) && taxComplete(clients3, [period], ['esv']);
     addDeadline({ id: `tax-esv:${period}`, note: 'Останній день для сплати ЄСВ', source: 'tax', taskType: 'Податки', completed, target: `tax|3|${period}` }, statutoryTaxDeadline('3', 'esv', period), deadline);
   });
   reportPeriodsFor('1', year).forEach(({ key: period }) => { const deadline = getDefaultReportDeadline(db, '1', period);
-    addDeadline({ id: `report-annual:${period}`, note: 'Звітність 1-2 група', source: 'report', taskType: 'Звіти', completed: reportComplete(activeClients.filter((client) => ['1', '2'].includes(String(client.group))), period) }, statutoryReportDeadline('1', period), deadline);
+    addDeadline({ id: `report-annual:${period}`, note: 'Звітність 1-2 група', source: 'report', taskType: 'Звіти', completed: reportComplete(activeClients.filter((client) => ['1', '2'].includes(groupAtPeriod(client, period))), period) }, statutoryReportDeadline('1', period), deadline);
   });
   reportPeriodsFor('3', year).forEach(({ key: period }) => { const deadline = getDefaultReportDeadline(db, '3', period);
-    addDeadline({ id: `report-quarterly:${period}`, note: 'Звітність 3 група', source: 'report', taskType: 'Звіти', completed: reportComplete(activeClients.filter((client) => String(client.group) === '3'), period) }, statutoryReportDeadline('3', period), deadline);
+    addDeadline({ id: `report-quarterly:${period}`, note: 'Звітність 3 група', source: 'report', taskType: 'Звіти', completed: reportComplete(activeClients.filter((client) => groupAtPeriod(client, period) === '3'), period) }, statutoryReportDeadline('3', period), deadline);
   });
   const propertyIncomeDeadline = annualPropertyIncomeDeclarationDeadline(year);
   if (propertyIncomeDeadline.startsWith(prefix)) events.push({ id: `report-property-income:${year}`, eventDate: propertyIncomeDeadline, note: 'Декларація про майновий стан і доходи', source: 'report', taskType: 'Звіти' });
