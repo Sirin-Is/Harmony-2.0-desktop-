@@ -42,7 +42,7 @@ export function renderPayments() {
   return `<div class="table-wrap payments-matrix">
       <table class="table">
         <thead>
-          <tr><th class="fop-name">ПІБ</th><th class="debt">Загальний борг</th>${monthHeadRow}</tr>
+          <tr><th class="fop-name">ПІБ</th><th class="debt">Борг</th>${monthHeadRow}</tr>
         </thead>
         <tbody>${body}</tbody>
       </table>

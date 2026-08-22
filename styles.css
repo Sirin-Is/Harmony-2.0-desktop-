@@ -495,13 +495,13 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .payroll-type-row .payroll-batch-total { text-align: right; font-size: 11px; font-variant-numeric: tabular-nums; }
 .payroll-total-row td { padding-top: 5px; padding-bottom: 6px; color: #334155; background: #fafbfc; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
 .payroll-total-row td:nth-child(2) { text-align: left; }
-.payments-matrix { --payments-name-width: 190px; --payments-debt-width: 120px; }
+.payments-matrix { --payments-name-width: 170px; --payments-debt-width: 90px; }
 .payments-matrix .table { min-width: 0; table-layout: auto; }
 .payments-matrix .table th, .payments-matrix .table td { padding-left: 2px; padding-right: 2px; }
 .payments-matrix .fop-name { position: sticky; left: 0; z-index: 2; width: var(--payments-name-width); min-width: var(--payments-name-width); overflow: visible; text-overflow: clip; white-space: nowrap; background: var(--bg); }
 .payments-matrix .debt { position: sticky; left: var(--payments-name-width); z-index: 2; width: var(--payments-debt-width); min-width: var(--payments-debt-width); background: var(--bg); box-shadow: 4px 0 6px -4px rgba(23, 32, 51, .18); }
 .payments-matrix thead .fop-name, .payments-matrix thead .debt { z-index: 3; }
-.payments-matrix .month-head, .payments-matrix .month-charge-cell { width: 78px; min-width: 78px; overflow: visible; text-overflow: clip; }
+.payments-matrix .month-head, .payments-matrix .month-charge-cell { width: 72px; min-width: 72px; overflow: visible; text-overflow: clip; }
 .payments-matrix .month-head { border-left: 1px solid var(--line); text-align: center; }
 .payments-matrix .month-head-content { display: inline-flex; align-items: center; gap: 2px; }
 .auto-charge { display: inline-grid; width: 16px; height: 16px; margin: 0; padding: 0; place-items: center; border: 0; border-radius: 4px; font: 700 12px/1 inherit; color: #176b58; background: #dcf5ea; cursor: pointer; }
