@@ -62,8 +62,7 @@ export function renderTaxes() {
     `<button class="tab ${p.key === uiState.taxPeriod ? 'active' : ''}" data-tax-period="${p.key}">${p.label}</button>`,
   ).join('');
   const hasPreviousPeriod = Boolean(previousPeriodKey(periods, uiState.taxPeriod));
-  const copyPreviousButton = `<button type="button" class="auto-charge tax-copy-previous-period" data-copy-previous-period${hasPreviousPeriod && clients.length ? '' : ' disabled'} title="Перенести дані з попереднього періоду" aria-label="Перенести дані з попереднього періоду">✓</button>`;
-  const reasonHeading = `<span class="tax-exemption-heading">${copyPreviousButton}<span>Причина звільнення</span></span>`;
+  const reasonHeading = `<button type="button" class="tax-exemption-heading" data-copy-previous-period${hasPreviousPeriod && clients.length ? '' : ' disabled'} title="Двічі натисніть, щоб перенести дані з попереднього періоду" aria-label="Двічі натисніть, щоб перенести дані з попереднього періоду">Причина звільнення</button>`;
   const body = clients.length
     ? table(rows, ['ПІБ', 'Податок', 'Набрано в банку', 'Дата сплати', 'Залишок', 'Дедлайн', 'Статус', reasonHeading, 'Примітка'], 'tax-table')
     : empty('У цій групі ще немає активних ФОП.');

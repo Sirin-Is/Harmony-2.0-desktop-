@@ -112,6 +112,7 @@ nav button:disabled { color: #719092; cursor: not-allowed; }
 main { width: calc(100% - 224px); margin-left: 224px; padding: 22px 30px 44px; max-width: 1600px; }
 header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; position: sticky; top: 0; z-index: 10; padding: 12px 0; background: var(--bg); }
 header p { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 3px; }
+.section-hint { margin: 3px 0 0; color: var(--muted); font-size: 11px; text-transform: none; letter-spacing: 0; }
 h1 { font-size: 23px; letter-spacing: -.6px; margin: 0; }
 #title:focus { outline: none; }
 h2 { font-size: 15px; margin: 0; }
@@ -280,8 +281,8 @@ input.tax-field-default { border-style: dashed; background: #fbfdfc; color: #4b6
 .tax-table th:nth-child(9), .tax-table td:nth-child(9) { width: 104px; }
 .tax-table input.tax-field[type="date"] { width: 112px; }
 .tax-table input.tax-field[type="text"], .tax-table select.tax-field { width: 100%; min-width: 0; }
-.tax-exemption-heading { display: inline-flex; align-items: center; gap: 4px; }
-.tax-copy-previous-period:disabled { cursor: not-allowed; opacity: .45; }
+.tax-exemption-heading { border: 0; padding: 0; color: inherit; background: transparent; font: inherit; font-weight: 600; cursor: pointer; }
+.tax-exemption-heading:disabled { cursor: not-allowed; opacity: .45; }
 .tax-table tbody tr:nth-child(3n + 1) td { border-top: 2px solid #b7c2d0; }
 body:has(.tax-table) { overflow: hidden; }
 #content:has(.tax-table) > .table-wrap { max-height: calc(100vh - 285px); }
@@ -519,8 +520,7 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .payments-matrix thead .fop-name, .payments-matrix thead .debt { z-index: 3; }
 .payments-matrix .month-head, .payments-matrix .month-charge-cell { width: 72px; min-width: 72px; overflow: visible; text-overflow: clip; }
 .payments-matrix .month-head { border-left: 1px solid var(--line); text-align: center; }
-.payments-matrix .month-head-content { display: inline-flex; align-items: center; gap: 2px; }
-.auto-charge { display: inline-grid; width: 16px; height: 16px; margin: 0; padding: 0; place-items: center; border: 0; border-radius: 4px; font: 700 12px/1 inherit; color: #176b58; background: #dcf5ea; cursor: pointer; }
+.payments-matrix .month-autofill-label { border: 0; padding: 0; color: inherit; background: transparent; font: inherit; font-weight: 600; cursor: pointer; }
 .month-charge-cell { text-align: center; }
 .service-charge-toggle { width: 64px; min-width: 64px; min-height: 28px; border: 1px solid #c8d3df; border-radius: 999px; padding: 3px; color: #334155; background: #fff; font: 600 11px inherit; font-variant-numeric: tabular-nums; cursor: pointer; }
 .service-charge-toggle.is-active { border-color: #8fd0b4; color: #176b58; background: #e4f7ed; }

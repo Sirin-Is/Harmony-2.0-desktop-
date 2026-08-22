@@ -243,6 +243,9 @@ export function render({ preserveViewport = true } = {}) {
   const title = configured.title || defaults[1];
   $('#crumb').textContent = crumb;
   $('#title').textContent = title;
+  const sectionHint = $('#sectionHint');
+  sectionHint.hidden = uiState.view !== 'payments';
+  sectionHint.textContent = uiState.view === 'payments' ? 'Двічі натисніть на назву місяця, щоб автоматично заповнити суми.' : '';
   document.title = `${title} — Harmony`;
   document.querySelectorAll('#nav button').forEach((item) => {
     const current = item.dataset.view === uiState.view;
@@ -776,7 +779,7 @@ function bindCurrentView() {
       rows.forEach((item) => item.classList.toggle('fop-all-exempt', fullyExempt && item.classList.contains('exempt-row')));
     }
   }));
-  $('[data-copy-previous-period]')?.addEventListener('click', () => {
+  $('[data-copy-previous-period]')?.addEventListener('dblclick', () => {
     const periods = taxPeriodsFor(uiState.taxGroup === '3' ? '3' : '1', getSettings().workingYear);
     const fromPeriod = previousPeriodKey(periods, uiState.taxPeriod);
     if (!fromPeriod) return;
@@ -926,7 +929,7 @@ function bindCurrentView() {
       });
     });
   });
-  document.querySelectorAll('[data-autofill-month]').forEach((button) => button.addEventListener('click', () => {
+  document.querySelectorAll('[data-autofill-month]').forEach((button) => button.addEventListener('dblclick', () => {
     const changed = autofillMonthlyCharges(button.dataset.autofillMonth);
     if (!changed) { showToast('У картках ФОП ще немає вартості обслуговування.', 'info'); return; }
     document.querySelectorAll(`[data-service-charge][data-month="${CSS.escape(button.dataset.autofillMonth)}"]`).forEach((toggle) => {
