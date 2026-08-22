@@ -558,6 +558,10 @@ test('довідник КВЕД розпізнає обмеження лише �
   assert.equal(activityPermission('дозволено з обмеженнями'), 'partial');
   assert.equal(activityPermission('дозволено'), 'allowed');
   assert.equal(activityPermission('не дозволено'), 'blocked');
+  // The importer stores these canonical statuses for both KVED and NACE.
+  assert.equal(activityPermission('allowed'), 'allowed');
+  assert.equal(activityPermission('partial'), 'partial');
+  assert.equal(activityPermission('blocked'), 'blocked');
 });
 
 test('резервна копія шифрується, відновлюється правильним паролем і відхиляє неправильний', async () => {

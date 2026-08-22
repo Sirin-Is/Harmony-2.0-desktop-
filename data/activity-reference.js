@@ -33,6 +33,7 @@ export function normalizeActivityCode(value) {
 /** Normalize the different spellings used in imported activity references. */
 export function activityPermission(value) {
   const normalized = String(value || '').trim().toLocaleLowerCase('uk-UA');
+  if (['allowed', 'blocked', 'partial'].includes(normalized)) return normalized;
   if (['ні', 'не дозволено', 'заборонено', 'no', 'false', '0'].includes(normalized) || /не\s*дозвол/.test(normalized)) return 'blocked';
   if (/обмеж|частков|умов/.test(normalized)) return 'partial';
   if (['так', 'дозволено', 'yes', 'true', '1'].includes(normalized) || /дозвол/.test(normalized)) return 'allowed';
