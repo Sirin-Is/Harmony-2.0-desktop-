@@ -251,9 +251,19 @@ test('РНОКПП визначає дату народження з перши�
 });
 
 test('історія групи показує ФОП у групі, що діяла на початок періоду', () => {
-  const client = { group: '3', groupChanges: [{ previousGroup: '2', group: '3', effectiveDate: '2026-07-01' }] };
-  assert.equal(groupAtPeriod(client, '2026-06'), '2');
-  assert.equal(groupAtPeriod(client, '2026-9m'), '3');
+  const client = { group: '2', groupChanges: [
+    { previousGroup: '2', group: '3', effectiveDate: '2026-04-01' },
+    { previousGroup: '3', group: '2', effectiveDate: '2026-07-01' },
+  ] };
+  assert.equal(groupAtPeriod(client, '2026-03'), '2');
+  assert.equal(groupAtPeriod(client, '2026-half'), '3');
+  assert.equal(groupAtPeriod(client, '2026-9m'), '2');
+});
+
+test('статус 3 групи використовує збережену дату сплати, а не поточну групу ФОП', () => {
+  const record = { queuedDate: '2026-07-07', paidDate: '2026-08-10' };
+  assert.deepEqual(tax.taxStatus(record, '2026-08-19'), { text: 'Вчасно', cls: 'ok' });
+  assert.match(tax.daysUntilLabel('2026-08-19', record), /9 дн\./);
 });
 
 test('валідація картки ФОП не пропускає критичні помилки, але попереджає про дублікати', () => {
@@ -414,7 +424,7 @@ test('mutation boundary перевіряє клієнта, поле, періо�
   assert.match(state, /!\['charged', 'paid'\]\.includes\(type\)/);
   assert.match(state, /!\['paymentDate', 'amount', 'pdfo', 'vz', 'esv', 'status'\]\.includes\(field\)/);
   assert.match(state, /!\['timesheetStatus', 'payrollStatus', 'cashStatementStatus'\]\.includes\(field\)/);
-  assert.match(state, /String\(client\.group\) !== String\(realGroup\)/);
+  assert.match(state, /clientModel\.groupAtPeriod\(client, period\) !== String\(realGroup\)/);
   assert.match(state, /db\.customColumns\.some\(\(column\) => column\.id === columnId\)/);
 });
 

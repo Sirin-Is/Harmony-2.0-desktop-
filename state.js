@@ -1067,7 +1067,7 @@ export function getTaxField(clientId, realGroup, period, taxType) {
 export function setTaxField(clientId, realGroup, period, taxType, field, value) {
   if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return false; }
   const client = clientModel.findClientById(db, clientId);
-  if (!client || String(client.group) !== String(realGroup) || !isValidTaxPeriodKey(realGroup, period) || !['unified', 'military', 'esv'].includes(taxType)) return false;
+  if (!client || clientModel.groupAtPeriod(client, period) !== String(realGroup) || !isValidTaxPeriodKey(realGroup, period) || !['unified', 'military', 'esv'].includes(taxType)) return false;
   const record = getTaxRecord(db, clientId, realGroup, period, taxType);
   const validation = validateTaxRecordChange(record, field, value);
   if (!validation.ok) return false;
@@ -1145,7 +1145,7 @@ export function getReportField(clientId, realGroup, period) {
 export function setReportField(clientId, realGroup, period, field, value) {
   if (!canEditData()) { window.dispatchEvent(new CustomEvent('harmony:access-denied')); return false; }
   const client = clientModel.findClientById(db, clientId);
-  if (!client || String(client.group) !== String(realGroup) || !isValidReportPeriodKey(realGroup, period)) return false;
+  if (!client || clientModel.groupAtPeriod(client, period) !== String(realGroup) || !isValidReportPeriodKey(realGroup, period)) return false;
   const record = getReportRecord(db, clientId, realGroup, period);
   const validation = validateReportRecordChange(field, value);
   if (!validation.ok) return false;

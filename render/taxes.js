@@ -10,26 +10,26 @@ import { shortClientName, groupAtPeriod } from '../client-model.js';
 import { table, empty } from './layout.js';
 import { uiState } from '../ui-state.js';
 
-function exemptionSelect(item, taxType, record) {
+function exemptionSelect(item, realGroup, taxType, record) {
   const options = exemptionOptions(uiState.taxGroup, taxType.key).map((opt) =>
     `<option value="${escapeHtml(opt)}" ${record.exemption === opt ? 'selected' : ''}>${opt || '—'}</option>`,
   ).join('');
-  return `<select class="tax-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(item.group)}" data-tax="${escapeHtml(taxType.key)}" data-field="exemption" aria-label="Причина звільнення: ${escapeHtml(taxType.label)}, ${escapeHtml(item.name)}">${options}</select>`;
+  return `<select class="tax-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(realGroup)}" data-tax="${escapeHtml(taxType.key)}" data-field="exemption" aria-label="Причина звільнення: ${escapeHtml(taxType.label)}, ${escapeHtml(item.name)}">${options}</select>`;
 }
 
-function taxRow(item, taxType, index, record, deadline, isDefaultDeadline, fullyExempt) {
+function taxRow(item, realGroup, taxType, index, record, deadline, isDefaultDeadline, fullyExempt) {
   const nameCell = index === 0 ? `<td rowspan="3" class="fop-name-cell${fullyExempt ? ' fop-fully-exempt' : ''}">${escapeHtml(shortClientName(item.name))}</td>` : '';
   const context = `${escapeHtml(taxType.label)}, ${escapeHtml(item.name)}`;
   return `<tr class="${record.exemption ? `exempt-row${fullyExempt ? ' fop-all-exempt' : ''}` : ''}" data-row-id="${escapeHtml(item.id)}">
     ${nameCell}
     <td>${taxType.label}</td>
-    <td><input type="date" class="tax-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(item.group)}" data-tax="${escapeHtml(taxType.key)}" data-field="queuedDate" value="${escapeHtml(record.queuedDate || '')}" aria-label="Набрано в банку: ${context}"></td>
-    <td><input type="date" class="tax-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(item.group)}" data-tax="${escapeHtml(taxType.key)}" data-field="paidDate" value="${escapeHtml(record.paidDate || '')}" aria-label="Дата сплати: ${context}"></td>
+    <td><input type="date" class="tax-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(realGroup)}" data-tax="${escapeHtml(taxType.key)}" data-field="queuedDate" value="${escapeHtml(record.queuedDate || '')}" aria-label="Набрано в банку: ${context}"></td>
+    <td><input type="date" class="tax-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(realGroup)}" data-tax="${escapeHtml(taxType.key)}" data-field="paidDate" value="${escapeHtml(record.paidDate || '')}" aria-label="Дата сплати: ${context}"></td>
     <td class="tax-days">${record.exemption ? '-' : daysUntilLabel(deadline, record)}</td>
-    <td><input type="date" class="tax-field ${isDefaultDeadline ? 'tax-field-default' : ''}" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(item.group)}" data-tax="${escapeHtml(taxType.key)}" data-field="deadline" value="${escapeHtml(deadline)}" title="${isDefaultDeadline ? 'Значення з «Налаштувань». Змініть, щоб задати виняток лише для цього ФОП.' : ''}" aria-label="Дедлайн: ${context}"></td>
+    <td><input type="date" class="tax-field ${isDefaultDeadline ? 'tax-field-default' : ''}" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(realGroup)}" data-tax="${escapeHtml(taxType.key)}" data-field="deadline" value="${escapeHtml(deadline)}" title="${isDefaultDeadline ? 'Значення з «Налаштувань». Змініть, щоб задати виняток лише для цього ФОП.' : ''}" aria-label="Дедлайн: ${context}"></td>
     <td class="tax-status">${statusPillHtml(record, deadline)}</td>
-    <td>${exemptionSelect(item, taxType, record)}</td>
-    <td><input type="text" class="tax-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(item.group)}" data-tax="${escapeHtml(taxType.key)}" data-field="note" placeholder="Примітка" value="${escapeHtml(record.note || '')}" aria-label="Примітка: ${context}"></td>
+    <td>${exemptionSelect(item, realGroup, taxType, record)}</td>
+    <td><input type="text" class="tax-field" data-client="${escapeHtml(item.id)}" data-real-group="${escapeHtml(realGroup)}" data-tax="${escapeHtml(taxType.key)}" data-field="note" placeholder="Примітка" value="${escapeHtml(record.note || '')}" aria-label="Примітка: ${context}"></td>
   </tr>`;
 }
 
@@ -51,7 +51,7 @@ export function renderTaxes() {
       const record = records[index];
       const deadline = getEffectiveTaxDeadline(realGroup, taxType.key, uiState.taxPeriod, record);
       const isDefault = !record.deadline && Boolean(deadline);
-      rows.push(taxRow(item, taxType, index, record, deadline, isDefault, fullyExempt));
+      rows.push(taxRow(item, realGroup, taxType, index, record, deadline, isDefault, fullyExempt));
     });
   });
 

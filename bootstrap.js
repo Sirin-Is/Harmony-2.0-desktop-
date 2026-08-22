@@ -18,6 +18,7 @@ import {
 } from './state.js';
 import { TAX_TYPES, previousPeriodKey, taxPeriodsFor, statusPillHtml, daysUntilLabel } from './tax-model.ts';
 import { reportStatusPillHtml, reportDaysUntilLabel } from './report-model.ts';
+import { groupAtPeriod } from './client-model.js';
 import { setupTopScrollbars, bindTopScrollbarResize } from './render/layout.js';
 import { renderOverview } from './render/overview.js';
 import { renderDashboard } from './render/dashboard.js';
@@ -779,11 +780,9 @@ function bindCurrentView() {
     const periods = taxPeriodsFor(uiState.taxGroup === '3' ? '3' : '1', getSettings().workingYear);
     const fromPeriod = previousPeriodKey(periods, uiState.taxPeriod);
     if (!fromPeriod) return;
-    const clients = uiState.taxGroup === '3'
-      ? getVisibleClients().filter((c) => String(c.group) === '3')
-      : getVisibleClients().filter((c) => ['1', '2'].includes(String(c.group)));
+    const clients = getClientsByTaxTab(uiState.taxGroup, uiState.taxPeriod);
     const clientIds = clients.map((c) => c.id);
-    const realGroups = clients.map((c) => String(c.group));
+    const realGroups = clients.map((c) => groupAtPeriod(c, uiState.taxPeriod));
     const filled = copyTaxPeriodForward(clientIds, realGroups, fromPeriod, uiState.taxPeriod, TAX_TYPES.map((t) => t.key));
     showToast(filled ? `Скопійовано ${filled} значень із попереднього періоду.` : 'Немає порожніх полів для копіювання.', filled ? 'success' : 'info');
     render();
