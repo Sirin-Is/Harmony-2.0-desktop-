@@ -66,7 +66,7 @@ const TITLES = {
   activities: ['Види діяльності', 'Довідники КВЕД-2010 та NACE 2.1-UA'],
   hr: ['Кадри', 'Наймані працівники та кадрові документи'],
   audit: ['Журнал подій', 'Історія змін і відкат'],
-  inactive: ['Неактивні', 'Приховані ФОП'],
+  inactive: ['Приховані ФОП', 'Приховані ФОП'],
   deleted: ['Видалені', 'Кошик — відновлення ФОП'],
   settings: ['Налаштування', 'Налаштування'],
 };
@@ -551,40 +551,11 @@ function bindCurrentView() {
     deletePayrollRecord(button.dataset.deletePayroll);
     render();
   }));
-  const payrollDateToIso = (value) => {
-    const parts = value.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-    if (!parts) return null;
-    const iso = `${parts[3]}-${parts[2]}-${parts[1]}`;
-    const parsed = new Date(`${iso}T00:00:00`);
-    return parsed.getFullYear() === Number(parts[3]) && parsed.getMonth() + 1 === Number(parts[2]) && parsed.getDate() === Number(parts[1]) ? iso : null;
-  };
   const invalidAmountMessage = 'Вкажіть невід’ємну суму в допустимому числовому форматі.';
-  const savePayrollDate = (field, iso) => { setPayrollField(field.dataset.payrollId, 'paymentDate', iso); };
-  document.querySelectorAll('.payroll-date-field').forEach((field) => field.addEventListener('input', () => {
-    const digitPosition = field.value.slice(0, field.selectionStart || 0).replace(/\D/g, '').length;
-    const digits = field.value.replace(/\D/g, '').slice(0, 8);
-    const formatted = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean).join('.');
-    field.value = formatted;
-    const cursor = digitPosition <= 2 ? digitPosition : digitPosition <= 4 ? digitPosition + 1 : digitPosition + 2;
-    field.setSelectionRange(cursor, cursor);
-    if (digits.length === 8) {
-      const iso = payrollDateToIso(formatted);
-      if (iso) savePayrollDate(field, iso);
-    }
-  }));
-  document.querySelectorAll('[data-payroll-picker]').forEach((button) => button.addEventListener('click', () => {
-    const nativeField = document.querySelector(`[data-payroll-native-date="${button.dataset.payrollPicker}"]`);
-    if (!nativeField) return;
-    if (typeof nativeField.showPicker === 'function') nativeField.showPicker();
-    else nativeField.click();
-  }));
-  document.querySelectorAll('[data-payroll-native-date]').forEach((field) => field.addEventListener('change', () => savePayrollDate(field, field.value)));
   document.querySelectorAll('.payroll-field').forEach((field) => field.addEventListener('change', () => {
     let value = field.value;
     if (field.dataset.payrollField === 'paymentDate') {
-      const iso = value ? payrollDateToIso(value) : '';
-      if (value && !iso) { showToast('Вкажіть дату у форматі дд.мм.рррр.', 'error'); return; }
-      value = iso;
+      value = field.value;
     }
     if (!setPayrollField(field.dataset.payrollId, field.dataset.payrollField, value)) {
       showToast(invalidAmountMessage, 'error');

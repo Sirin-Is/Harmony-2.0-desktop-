@@ -18,6 +18,16 @@ const FILTER_COLUMNS = [
   ['name', 'ПІБ'], ['groupRate', 'Група / ставка'], ['currency', 'Валюта'], ['phone', 'Телефон'], ['bankAccess', 'Банк'], ['prro', 'П/РРО'], ['employees', 'Наймані'], ['serviceCost', 'Вартість'], ['kepIssuer', 'КЕП від:'], ['kepExpiry', 'Дійсний'],
 ];
 
+const DASHBOARD_COLUMN_CLASSES = {
+  name: 'dashboard-name-column', groupRate: 'dashboard-group-rate-column', currency: 'dashboard-currency-column', phone: 'dashboard-phone-column',
+  bankAccess: 'dashboard-bank-column', prro: 'dashboard-prro-column', employees: 'dashboard-employees-column', serviceCost: 'dashboard-service-cost-column',
+  kepIssuer: 'dashboard-kep-issuer-column', kepExpiry: 'dashboard-kep-expiry-column',
+};
+
+function dashboardColumnClass(key) {
+  return DASHBOARD_COLUMN_CLASSES[key] || 'dashboard-custom-column';
+}
+
 function filterValue(item, key) {
   if (key.startsWith('custom:')) return item.customFields?.[key.slice(7)] || '';
   return {
@@ -57,22 +67,22 @@ function customColumnCells(item, columns) {
   return columns.map((column) => {
     const inputType = column.type === 'number' ? 'number' : column.type === 'date' ? 'date' : 'text';
     const value = item.customFields?.[column.id] || '';
-    return `<td><input class="custom-cell" data-client="${escapeHtml(item.id)}" data-column="${escapeHtml(column.id)}" type="${inputType}" placeholder="-" value="${escapeHtml(value)}" aria-label="${escapeHtml(column.name)}: ${escapeHtml(item.name)}"></td>`;
+    return `<td class="dashboard-custom-column"><input class="custom-cell" data-client="${escapeHtml(item.id)}" data-column="${escapeHtml(column.id)}" type="${inputType}" placeholder="-" value="${escapeHtml(value)}" aria-label="${escapeHtml(column.name)}: ${escapeHtml(item.name)}"></td>`;
   }).join('');
 }
 
 function clientRow(item, columns) {
   return `<tr data-client-row data-row-id="${escapeHtml(item.id)}">
-    <td class="dashboard-client-name"><span class="drag-handle" data-drag-handle title="Перетягніть або використайте стрілки ↑ ↓" role="button" tabindex="0" aria-keyshortcuts="ArrowUp ArrowDown" aria-label="Змінити порядок ФОП: стрілка вгору або вниз">⋮⋮</span><button type="button" class="link-cell" data-open-card="${escapeHtml(item.id)}"><strong>${escapeHtml(shortClientName(item.name))}</strong></button></td>
-    <td>${escapeHtml(item.group || '-')} / ${rateText(item)}</td>
-    <td>${escapeHtml(item.currency || '-')}</td>
-    <td>${phoneLines(item.phone)}</td>
-    <td>${escapeHtml(item.bankAccess || '-')}</td>
-    <td>${escapeHtml(item.prro || '-')}</td>
-    <td>${Number(item.employeesCount) > 0 ? escapeHtml(item.employeesCount) : '-'}</td>
-    <td class="right">${moneyFormat.format(toNumber(item.serviceCost))}</td>
-    <td>${escapeHtml(item.kepIssuer || '-')}</td>
-    <td>${kepStatusLabel(item.kepExpiry)}</td>
+    <td class="dashboard-client-name dashboard-name-column"><span class="drag-handle" data-drag-handle title="Перетягніть або використайте стрілки ↑ ↓" role="button" tabindex="0" aria-keyshortcuts="ArrowUp ArrowDown" aria-label="Змінити порядок ФОП: стрілка вгору або вниз">⋮⋮</span><button type="button" class="link-cell" data-open-card="${escapeHtml(item.id)}"><strong>${escapeHtml(shortClientName(item.name))}</strong></button></td>
+    <td class="dashboard-group-rate-column">${escapeHtml(item.group || '-')} / ${rateText(item)}</td>
+    <td class="dashboard-currency-column">${escapeHtml(item.currency || '-')}</td>
+    <td class="dashboard-phone-column">${phoneLines(item.phone)}</td>
+    <td class="dashboard-bank-column">${escapeHtml(item.bankAccess || '-')}</td>
+    <td class="dashboard-prro-column">${escapeHtml(item.prro || '-')}</td>
+    <td class="dashboard-employees-column">${Number(item.employeesCount) > 0 ? escapeHtml(item.employeesCount) : '-'}</td>
+    <td class="dashboard-service-cost-column">${moneyFormat.format(toNumber(item.serviceCost))}</td>
+    <td class="dashboard-kep-issuer-column">${escapeHtml(item.kepIssuer || '-')}</td>
+    <td class="dashboard-kep-expiry-column">${kepStatusLabel(item.kepExpiry)}</td>
     ${customColumnCells(item, columns)}
   </tr>`;
 }
@@ -97,12 +107,10 @@ export function renderDashboard() {
   const openColumn = [...FILTER_COLUMNS, ...columns.map((column) => [`custom:${column.id}`, column.name])].find(([key]) => key === uiState.dashboardFilterOpen);
   const activeFilterCount = Object.keys(uiState.dashboardFilters).length;
   const hasQuery = Boolean(search || activeFilterCount);
-  const headings = [
-    ...FILTER_COLUMNS.map(([key, label]) => filterHeader(label, key)),
-    ...columns.map(customColumnHeader),
-  ];
+  const dashboardColumns = [...FILTER_COLUMNS, ...columns.map((column) => [`custom:${column.id}`, column.name])];
+  const headings = dashboardColumns.map(([key, label]) => ({ key, className: dashboardColumnClass(key), html: key.startsWith('custom:') ? customColumnHeader(columns.find((column) => `custom:${column.id}` === key)) : filterHeader(label, key) }));
   const tableRows = rows.length ? rows.join('') : `<tr><td colspan="${headings.length}" class="empty-cell">${hasQuery ? 'За пошуком або вибраними фільтрами записів немає.' : 'Активних ФОП поки немає.'}</td></tr>`;
-  const dashboardTable = `<div class="table-wrap"><table class="table dashboard-table"><thead><tr>${headings.map((heading) => `<th>${heading}</th>`).join('')}</tr></thead><tbody>${tableRows}</tbody></table></div>`;
+  const dashboardTable = `<div class="table-wrap"><table class="table dashboard-table"><colgroup>${headings.map((heading) => `<col class="${heading.className}">`).join('')}</colgroup><thead><tr>${headings.map((heading) => `<th class="${heading.className}">${heading.html}</th>`).join('')}</tr></thead><tbody>${tableRows}</tbody></table></div>`;
   return `<div class="toolbar">
       <div class="toolbar-actions">
         <label class="dashboard-search"><span class="visually-hidden">Швидкий пошук ФОП</span><input type="search" data-dashboard-search value="${escapeHtml(uiState.dashboardSearch || '')}" placeholder="Пошук ФОП…" autocomplete="off"></label>
