@@ -14,6 +14,7 @@
   --control-radius: 7px;
   --control-gap: 8px;
   --date-control-height: 38px;
+  --fop-row-height: 52px;
 }
 
 * { box-sizing: border-box; }
@@ -283,6 +284,18 @@ input.tax-field-default { border-style: dashed; background: #fbfdfc; color: #4b6
 .tax-table input.tax-field[type="text"], .tax-table select.tax-field { width: 100%; min-width: 0; }
 .tax-exemption-heading { border: 0; padding: 0; color: inherit; background: transparent; font: inherit; font-weight: 600; cursor: pointer; }
 .tax-exemption-heading:disabled { cursor: not-allowed; opacity: .45; }
+.dashboard-table tbody tr,
+.payments-matrix tbody tr,
+.tax-table tbody tr,
+.income-group-quarter tbody tr,
+.declarations-table tbody tr,
+.combined-reports-table tbody tr { height: var(--fop-row-height); }
+.dashboard-table tbody td,
+.payments-matrix tbody td,
+.tax-table tbody td,
+.income-group-quarter tbody td,
+.declarations-table tbody td,
+.combined-reports-table tbody td { height: var(--fop-row-height); }
 .tax-table tbody tr:nth-child(3n + 1) td { border-top: 2px solid #b7c2d0; }
 body:has(.tax-table) { overflow: hidden; }
 #content:has(.tax-table) > .table-wrap { max-height: calc(100vh - 285px); }
@@ -528,7 +541,7 @@ body:has(.calendar-scroll) { overflow: hidden; }
 .income-main-nav > div:first-child { display: flex; gap: 8px; }
 .incomes-matrix { max-height: calc(100vh - 250px); }
 .income-group-quarter { width: 100%; min-width: 0; table-layout: fixed; font-size: 13px; }
-.income-group-quarter th, .income-group-quarter td { padding: 10px 8px; text-align: center; }
+.income-group-quarter th, .income-group-quarter td { padding: 7px 8px; text-align: center; }
 .income-group-quarter .fop-name { text-align: left; }
 .income-group-quarter th:first-child, .income-group-quarter td:first-child { width: 17%; }
 .income-group-quarter th:nth-child(2), .income-group-quarter td:nth-child(2) { width: 16%; }
