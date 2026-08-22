@@ -61,13 +61,14 @@ export function renderTaxes() {
   const periodTabs = periods.map((p) =>
     `<button class="tab ${p.key === uiState.taxPeriod ? 'active' : ''}" data-tax-period="${p.key}">${p.label}</button>`,
   ).join('');
+  const hasPreviousPeriod = Boolean(previousPeriodKey(periods, uiState.taxPeriod));
+  const copyPreviousButton = `<button type="button" class="auto-charge tax-copy-previous-period" data-copy-previous-period${hasPreviousPeriod && clients.length ? '' : ' disabled'} title="Перенести дані з попереднього періоду" aria-label="Перенести дані з попереднього періоду">✓</button>`;
+  const reasonHeading = `<span class="tax-exemption-heading">${copyPreviousButton}<span>Причина звільнення</span></span>`;
   const body = clients.length
-    ? table(rows, ['ПІБ', 'Податок', 'Набрано в банку', 'Дата сплати', 'Залишок', 'Дедлайн', 'Статус', 'Причина звільнення', 'Примітка'], 'tax-table')
+    ? table(rows, ['ПІБ', 'Податок', 'Набрано в банку', 'Дата сплати', 'Залишок', 'Дедлайн', 'Статус', reasonHeading, 'Примітка'], 'tax-table')
     : empty('У цій групі ще немає активних ФОП.');
 
-  const hasPreviousPeriod = Boolean(previousPeriodKey(periods, uiState.taxPeriod));
-
-  return `<div class="subnav section-control-row section-control-row-primary tax-main-nav"><div>${groupTabs}</div><div class="toolbar-actions"><button class="secondary" data-copy-previous-period${hasPreviousPeriod && clients.length ? '' : ' disabled'}>Скопіювати з попереднього періоду</button></div></div>
+  return `<div class="subnav section-control-row section-control-row-primary tax-main-nav"><div>${groupTabs}</div></div>
     <div class="subnav section-control-row section-control-row-secondary periods">${periodTabs}</div>
     ${body}`;
 }

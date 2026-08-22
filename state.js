@@ -535,6 +535,89 @@ export function changeClientGroup(id, group, effectiveDate) {
   return client;
 }
 
+function groupStateAtDate(client, date) {
+  const changes = [...(client.groupChanges || [])]
+    .filter((change) => change?.effectiveDate && change?.group)
+    .sort((a, b) => String(a.effectiveDate).localeCompare(String(b.effectiveDate)));
+  const initial = changes[0] || {};
+  const applied = changes.filter((change) => String(change.effectiveDate) <= date).at(-1);
+  return {
+    group: String(applied?.group || initial.previousGroup || client.group || ''),
+    rate: String(applied?.rate ?? initial.previousRate ?? client.rate ?? ''),
+  };
+}
+
+/** Returns the group and rate effective at the start of each supplied period. */
+export function clientGroupPeriods(id, periods = []) {
+  const client = getClientById(id);
+  if (!client) return [];
+  return periods.map((period) => ({
+    ...period,
+    ...groupStateAtDate(client, period.startDate),
+  }));
+}
+
+/**
+ * Replaces a selected set of group/rate periods while retaining transitions
+ * outside those periods.  The compact transition history remains compatible
+ * with existing tax and reporting views that use `groupChanges`.
+ */
+export function setClientGroupPeriods(id, periods = []) {
+  const client = getClientById(id);
+  const allowedGroups = new Set(['1', '2', '3', 'Загальна']);
+  const normalized = periods.map((period) => ({
+    startDate: String(period?.startDate || ''),
+    endDate: String(period?.endDate || ''),
+    group: String(period?.group || ''),
+    rate: String(period?.rate ?? ''),
+  })).sort((a, b) => a.startDate.localeCompare(b.startDate));
+  if (!client || normalized.length !== 4 || normalized.some((period) => (
+    !allowedGroups.has(period.group)
+    || !isValidOptionalIsoDate(period.startDate)
+    || !isValidOptionalIsoDate(period.endDate)
+    || period.startDate > period.endDate
+  ))) return null;
+  if (normalized.some((period, index) => index > 0 && period.startDate <= normalized[index - 1].endDate)) return null;
+
+  const before = cloneValue(client);
+  const allChanges = [...(client.groupChanges || [])]
+    .filter((change) => change?.effectiveDate && change?.group)
+    .sort((a, b) => String(a.effectiveDate).localeCompare(String(b.effectiveDate)));
+  const firstStart = normalized[0].startDate;
+  const lastEnd = normalized.at(-1).endDate;
+  const initialGroup = String(allChanges[0]?.previousGroup || client.group || '');
+  const initialRate = String(allChanges[0]?.previousRate ?? client.rate ?? '');
+  const retained = allChanges.filter((change) => change.effectiveDate < firstStart || change.effectiveDate > lastEnd);
+  const firstStartMoment = new Date(`${firstStart}T00:00:00Z`);
+  firstStartMoment.setUTCDate(firstStartMoment.getUTCDate() - 1);
+  const beforeFirstStart = firstStartMoment.toISOString().slice(0, 10);
+  let previous = groupStateAtDate(client, beforeFirstStart);
+  const configured = [];
+  normalized.forEach((period) => {
+    if (period.group !== previous.group || period.rate !== previous.rate) {
+      configured.push({ group: period.group, rate: period.rate, effectiveDate: period.startDate });
+    }
+    previous = period;
+  });
+  const timeline = [...retained, ...configured].sort((a, b) => String(a.effectiveDate).localeCompare(String(b.effectiveDate)));
+  let currentGroup = initialGroup;
+  let currentRate = initialRate;
+  client.groupChanges = timeline.reduce((changes, change) => {
+    const nextGroup = String(change.group || currentGroup);
+    const nextRate = String(change.rate ?? currentRate);
+    if (nextGroup !== currentGroup || nextRate !== currentRate) {
+      changes.push({ previousGroup: currentGroup, previousRate: currentRate, group: nextGroup, rate: nextRate, effectiveDate: change.effectiveDate });
+    }
+    currentGroup = nextGroup;
+    currentRate = nextRate;
+    return changes;
+  }, []);
+  client.group = currentGroup;
+  client.rate = currentRate;
+  saveTargetedEntity('clients', id, before, client, 'Налаштовано періоди перебування на групах ЄП', 'ФОП', id);
+  return client;
+}
+
 export function upsertClient(fields, existingId) {
   const before = existingId ? cloneValue(clientModel.findClientById(db, existingId)) : null;
   const result = clientModel.upsertClient(db, fields, existingId);

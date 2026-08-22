@@ -30,6 +30,13 @@
 .cc-body input, .cc-body select, .cc-body textarea { min-height: var(--control-height); border: 1px solid #d7dde5; border-radius: var(--control-radius); padding: 5px 7px; font: 12px inherit; color: #172033; font-weight: 400; }
 .cc-body textarea { min-height: 42px; resize: vertical; }
 .cc-body input[readonly] { background: #f3f5f8; color: #667085; }
+.cc-group-rate-row { display: grid; grid-template-columns: 88px minmax(108px, 132px); gap: var(--control-gap); align-items: end; margin-bottom: 7px; }
+.cc-group-rate-row label { min-width: 0; margin-bottom: 0; }
+.cc-group-rate-row select { width: 100%; }
+.cc-group-periods-button { width: 100%; min-height: var(--control-height); height: auto; justify-content: flex-start; margin: 0 0 7px; padding-block: 6px; text-align: left; white-space: normal; }
+.cc-birth-date-row { display: flex; align-items: center; gap: var(--control-gap); min-width: 0; }
+.cc-birth-date-row .generic-date-control { flex: 1 1 auto; min-width: 0; }
+.cc-birth-date-row .secondary { flex: 0 0 auto; }
 .cc-body [aria-invalid="true"] { border-color: #c0394b !important; box-shadow: 0 0 0 2px rgb(192 57 75 / 16%) !important; }
 .cc-validation { margin-bottom: 12px; padding: 10px 12px; border: 1px solid #f0b8c1; border-radius: 7px; background: #fff5f6; color: #8f2637; font-size: 12px; }
 .cc-validation strong { display: block; }
@@ -59,7 +66,7 @@
 .cc-kved-display { min-height: 36px; display: flex; align-items: center; padding: 8px 10px; border-radius: 6px; background: #f4fbf7; color: #176b58; font-weight: 700; border: 1px solid #cfe9dc; }
 .cc-kved-add-btn, .cc-kved-import-btn, .cc-acc-import-btn { margin-top: 0; }
 .cc-inline-actions { align-items: center; }
-.cc-inline-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.cc-inline-actions { display: flex; flex-wrap: wrap; gap: var(--control-gap); }
 .cc-kved-list + .cc-inline-actions { margin-top: 8px; }
 .cc-inline-actions .secondary { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; height: 30px; padding: 0 10px; }
 .cc-acc-actions { margin-top: 8px; }

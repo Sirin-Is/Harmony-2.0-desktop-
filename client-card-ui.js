@@ -11,8 +11,8 @@
 // поточний вигляд.
 
 import { escapeHtml, generateId } from './utils';
-import { getClientById, getVisibleClients, getSettings, upsertClient, archiveClient, changeClientGroup } from './state.js';
-import { openAppDialog } from './app-dialog.js';
+import { getClientById, getVisibleClients, getSettings, upsertClient, archiveClient, clientGroupPeriods, setClientGroupPeriods } from './state.js';
+import { openAppDialog, openGroupPeriodsDialog } from './app-dialog.js';
 import { enhanceDateInputs } from './date-input.js';
 import { showToast } from './toast.js';
 import { validateKved, openKvedResults } from './kved-validation.js';
@@ -39,11 +39,25 @@ const FIELD_DEFAULTS = {
   rnokpp: '', birthDate: '', source: '',
   contractFileName: '', agreementsText: '',
   pricingBase: '', pricingStaff: '', pricingPrro: '',
-  prroName: '',
+  prroName: '', bankAccess: '-',
   currency: '', registrationAddress: '',
   kvedMainCode: '', kvedMainName: '', kvedAdditional: [],
   additionalInfo: '', accounts: [], employees: [], formerEmployees: [],
 };
+
+function quarterPeriods(year) {
+  return [
+    ['1 квартал', '01-01', '03-31'],
+    ['2 квартал', '04-01', '06-30'],
+    ['3 квартал', '07-01', '09-30'],
+    ['4 квартал', '10-01', '12-31'],
+  ].map(([label, start, end]) => ({ label, startDate: `${year}-${start}`, endDate: `${year}-${end}` }));
+}
+
+function normalizedBankAccess(value, legacyBanks = '') {
+  if (value === 'є' || value === '-') return value;
+  return Array.isArray(legacyBanks) ? (legacyBanks.length ? 'є' : '-') : (String(legacyBanks).trim() ? 'є' : '-');
+}
 
 let draft = null;
 let isNew = false;
@@ -154,16 +168,18 @@ function bodyHtml() {
         <div class="cc-name">${esc(d.name || 'Новий клієнт')}</div>
         <div class="cc-sub">${esc(d.group || '-')} група${d.rate ? ' / ' + (Number(d.rate) * 100) + '%' : ''}</div>
       </div>
-      ${!isNew ? '<button type="button" class="secondary" data-change-group>Зміна групи</button>' : ''}
     </div>
 
     <div class="cc-grid">
       <fieldset><legend>Основна інформація</legend>
         <label>ПІБ<input id="cc_name" value="${esc(d.name)}" maxlength="200" spellcheck="false" required></label>
-        <label>Група ЄП<select id="cc_group"><option value="" ${d.group ? '' : 'selected'}>Оберіть групу</option>${['1', '2', '3', 'Загальна'].map((g) => `<option ${d.group === g ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
-        <label>Ставка ЄП<select id="cc_rate"><option value="" ${d.rate ? '' : 'selected'}>${d.group ? 'Оберіть ставку' : 'Спочатку оберіть групу'}</option>${rateOpts.map((o) => `<option value="${o.value}" ${String(o.value) === String(d.rate) ? 'selected' : ''}>${o.label}</option>`).join('')}</select></label>
+        <div class="cc-group-rate-row">
+          <label>Група ЄП<select id="cc_group"><option value="" ${d.group ? '' : 'selected'}>Оберіть</option>${['1', '2', '3', 'Загальна'].map((g) => `<option ${d.group === g ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
+          <label>Ставка ЄП<select id="cc_rate"><option value="" ${d.rate ? '' : 'selected'}>${d.group ? 'Оберіть' : 'Оберіть групу'}</option>${rateOpts.map((o) => `<option value="${o.value}" ${String(o.value) === String(d.rate) ? 'selected' : ''}>${o.label}</option>`).join('')}</select></label>
+        </div>
+        <button type="button" class="secondary cc-group-periods-button" data-change-group${isNew ? ' disabled title="Спочатку збережіть картку"' : ''}>Налаштування періодів перебування на групах ЄП</button>
         <label>РНОКПП<input id="cc_rnokpp" value="${esc(d.rnokpp)}" inputmode="numeric" maxlength="10" pattern="[0-9]{10}"></label>
-        <label>Дата народження<input id="cc_birthDate" type="date" value="${esc(d.birthDate)}"></label>
+        <label>Дата народження<span class="cc-birth-date-row"><input id="cc_birthDate" type="date" value="${esc(d.birthDate)}"><button type="button" class="secondary" data-autodetect-birth-date>Автовизначення</button></span></label>
         <label>Телефон<input id="cc_phone" value="${esc(d.phone)}"></label>
         <label>Ел. пошта<input id="cc_email" type="email" maxlength="320" value="${esc(d.email)}"></label>
         <label>Джерело залучення<input id="cc_source" value="${esc(d.source)}"></label>
@@ -179,7 +195,7 @@ function bodyHtml() {
       </fieldset>
 
       <fieldset><legend>Обслуговування та КЕП</legend>
-        <label>Клієнт-банк(и)<textarea id="cc_banks">${esc(d.banks)}</textarea></label>
+        <label>Доступ до банку<select id="cc_bankAccess"><option value="є" ${d.bankAccess === 'є' ? 'selected' : ''}>є</option><option value="-" ${d.bankAccess !== 'є' ? 'selected' : ''}>-</option></select></label>
         <div class="cc-employees-block"><label>Наймані працівники</label><div class="cc-employees" id="cc_employees">${(d.employees || []).map(employeeRowHtml).join('')}</div><div class="cc-inline-actions"><button type="button" class="secondary" id="cc_addEmployee">+ Працівник</button></div></div>
         <label>ПРРО / РРО<input id="cc_prroName" list="cc_prro_options" value="${esc(d.prroName)}"></label><datalist id="cc_prro_options">${dropdownList('prro')}</datalist>
         <label>Валюта<input id="cc_currency" list="cc_currency_options" value="${esc(d.currency)}"></label><datalist id="cc_currency_options">${dropdownList('currency')}</datalist>
@@ -218,7 +234,7 @@ function bodyHtml() {
 
 function readForm() {
   ['name', 'phone', 'email', 'source', 'contractFileName',
-    'agreementsText', 'pricingBase', 'pricingStaff', 'pricingPrro', 'banks',
+    'agreementsText', 'pricingBase', 'pricingStaff', 'pricingPrro', 'bankAccess',
     'prroName', 'currency', 'kepIssuer', 'kepExpiry', 'registrationAddress', 'taxOffice',
     'kvedMainCode', 'kvedMainName', 'additionalInfo', 'rnokpp', 'birthDate']
     .forEach((k) => { draft[k] = val(`cc_${k}`); });
@@ -456,14 +472,27 @@ function paint() {
   document.getElementById('cc_rnokpp')?.addEventListener('input', (event) => {
     const input = event.currentTarget;
     input.value = input.value.replace(/\D/g, '').slice(0, 10);
-    const birthDate = birthDateFromRnokpp(input.value);
-    if (birthDate) document.getElementById('cc_birthDate').value = birthDate;
+  });
+  overlay.querySelector('[data-autodetect-birth-date]')?.addEventListener('click', () => {
+    const birthDate = birthDateFromRnokpp(document.getElementById('cc_rnokpp')?.value);
+    if (!birthDate) { showToast('Вкажіть коректний 10-значний РНОКПП.', 'error'); return; }
+    const field = document.getElementById('cc_birthDate');
+    if (!field) return;
+    field.value = birthDate;
+    field.dispatchEvent(new Event('change', { bubbles: true }));
   });
   overlay.querySelector('[data-change-group]')?.addEventListener('click', async () => {
-    const result = await openAppDialog({ title: 'Зміна групи ФОП', message: 'Старі податки та звіти залишаться у попередній групі, а нові — з дати переходу в новій.', fields: [{ key: 'effectiveDate', label: 'Дата зміни групи', type: 'date', required: true }, { key: 'group', label: 'Нова група', type: 'select', value: draft.group, options: ['1', '2', '3', 'Загальна'] }], confirmText: 'Змінити' });
+    const year = getSettings().workingYear;
+    const periods = clientGroupPeriods(draft.id, quarterPeriods(year));
+    const result = await openGroupPeriodsDialog({ year, periods, rateOptions: RATE_OPTIONS });
     if (!result) return;
-    if (!changeClientGroup(draft.id, result.group, result.effectiveDate)) { showToast('Перевірте дату та нову групу.', 'error'); return; }
-    draft.group = result.group; paint(); notifyChanged();
+    const updated = setClientGroupPeriods(draft.id, result);
+    if (!updated) { showToast('Перевірте періоди, групи та ставки.', 'error'); return; }
+    draft.group = updated.group;
+    draft.rate = updated.rate;
+    draft.groupChanges = updated.groupChanges;
+    paint();
+    notifyChanged();
   });
 }
 
@@ -516,6 +545,7 @@ export function openClientCard(id) {
   draft.employees = (draft.employees || []).map((employee) => ({ id: employee.id || uid(), ...employee }));
   draft.formerEmployees = (draft.formerEmployees || []).map((employee) => ({ id: employee.id || uid(), ...employee }));
   draft.hadEmployees = Boolean(draft.hadEmployees || draft.employees.length || Number(draft.employeesCount));
+  draft.bankAccess = normalizedBankAccess(draft.bankAccess, draft.banks);
   overlay.classList.add('open');
   paint();
 }
