@@ -891,11 +891,26 @@ function bindCurrentView() {
       refreshDebt();
       return true;
     };
+    const setChargeOnly = () => {
+      const value = toggle.dataset.value || toggle.dataset.defaultValue;
+      if (!value) { showToast('У картці ФОП не вказана вартість обслуговування.', 'info'); return false; }
+      if (!setMonthlyPaymentField(toggle.dataset.client, toggle.dataset.month, 'charged', value)) {
+        showToast(invalidAmountMessage, 'error');
+        return false;
+      }
+      setVisualState(false, value);
+      refreshDebt();
+      return true;
+    };
     toggle.addEventListener('click', () => {
       window.clearTimeout(singleClickTimer);
       singleClickTimer = window.setTimeout(() => {
         const isActive = toggle.dataset.active === 'true';
-        setPaymentStatus(!isActive);
+        const hasCharge = Boolean(toggle.dataset.value);
+        // Empty → accrued (white); accrued → paid (green).
+        // A further click removes only the paid mark and keeps the accrual.
+        if (!hasCharge) setChargeOnly();
+        else setPaymentStatus(!isActive);
       }, 230);
     });
     toggle.addEventListener('dblclick', (event) => {

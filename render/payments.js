@@ -19,7 +19,7 @@ function serviceChargeToggle(item, monthKey) {
   const hasCharge = charged !== undefined && charged !== '' && charged !== '-';
   const active = hasCharge && String(charged) === String(paid);
   const value = formatEditableAmount(hasCharge ? charged : '');
-  return `<td class="month-charge-cell"><button type="button" class="service-charge-toggle ${active ? 'is-active' : ''}" data-service-charge data-client="${escapeHtml(item.id)}" data-month="${escapeHtml(monthKey)}" data-active="${active}" data-value="${escapeHtml(String(hasCharge ? charged : ''))}" data-default-value="${escapeHtml(String(item.serviceCost ?? ''))}" aria-label="Оплата за ${escapeHtml(monthKey)}, ${escapeHtml(item.name)}" title="Натисніть, щоб позначити сплату; двічі швидко — щоб змінити суму">${escapeHtml(value)}</button></td>`;
+  return `<td class="month-charge-cell"><button type="button" class="service-charge-toggle ${active ? 'is-active' : ''}" data-service-charge data-client="${escapeHtml(item.id)}" data-month="${escapeHtml(monthKey)}" data-active="${active}" data-value="${escapeHtml(String(hasCharge ? charged : ''))}" data-default-value="${escapeHtml(String(item.serviceCost ?? ''))}" aria-label="Оплата за ${escapeHtml(monthKey)}, ${escapeHtml(item.name)}" title="Натисніть, щоб додати нарахування; повторно — щоб позначити сплату; двічі швидко — щоб змінити суму">${escapeHtml(value)}</button></td>`;
 }
 
 export function renderPayments() {

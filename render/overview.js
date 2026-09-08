@@ -18,8 +18,16 @@ function kepAlertEntries() {
   }).map((item) => ({ id: item.id, name: shortClientName(item.name) }));
 }
 
+function taxPeriodStartDate(periodKey) {
+  if (/^\d{4}-\d{2}$/.test(periodKey)) return new Date(`${periodKey}-01T00:00:00`);
+  const starts = { q1: '01', half: '04', '9m': '07', year: '10' };
+  return new Date(`${periodKey.slice(0, 4)}-${starts[periodKey.slice(5)] || '01'}-01T00:00:00`);
+}
+
 function taxAlertEntries() {
   const workingYear = getSettings().workingYear;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   const entries = [];
   getVisibleClients().forEach((item) => {
     let worst = null;
@@ -28,6 +36,12 @@ function taxAlertEntries() {
       ...taxPeriodsFor('3', workingYear),
     ];
     periods.forEach((period) => {
+      // The overview must include an unpaid obligation for the current tax
+      // period as well, not only one whose deadline is within five days.
+      // Otherwise an unpaid September tax, for example, was reported as paid
+      // until the warning window opened.
+      const periodStart = taxPeriodStartDate(period.key);
+      if (periodStart > today) return;
       const realGroup = groupAtPeriod(item, period.key);
       const isQuarterPeriod = /^\d{4}-(q1|half|9m|year)$/.test(period.key);
       if (!['1', '2', '3'].includes(realGroup)) return;
@@ -38,7 +52,6 @@ function taxAlertEntries() {
         const deadline = getEffectiveTaxDeadline(realGroup, taxType.key, period.key, record);
         if (!deadline) return;
         const days = daysUntil(deadline);
-        if (days === null || days > 5) return;
         if (!worst || days < worst.days) worst = { period: period.key, days, realGroup };
       });
     });
